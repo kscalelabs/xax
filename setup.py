@@ -28,7 +28,7 @@ setup(
     version=version,
     description="The xax project",
     author="Benjamin Bolte",
-    url="https///github.com/dpshai/xax",
+    url="https://github.com/dpshai/xax",
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
