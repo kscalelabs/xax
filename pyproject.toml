@@ -30,7 +30,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 
 incremental = true
-namespace_packages = false
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 
