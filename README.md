@@ -1,2 +1,3 @@
 # xax
-JAX library for fast experimentation
+
+JAX library for fast experimentation.
