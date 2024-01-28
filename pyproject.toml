@@ -35,6 +35,7 @@ namespace_packages = false
 [[tool.mypy.overrides]]
 
 module = [
+    "setuptools.*",
     "transformers.*",
 ]
 
