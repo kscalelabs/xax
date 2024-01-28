@@ -1,5 +1,9 @@
 # requirements.txt
 
+GitPython
 jax
 jaxtyping
 omegaconf
+psutil
+requests
+types-requests
