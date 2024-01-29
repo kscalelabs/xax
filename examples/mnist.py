@@ -6,6 +6,8 @@ Run this example with `python -m examples.mnist`.
 from dataclasses import dataclass
 
 import flax.linen as nn
+import optax
+from jaxtyping import Array
 
 import xax
 
