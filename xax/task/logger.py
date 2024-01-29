@@ -11,6 +11,7 @@ captions to images, and so on.
 
 import functools
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ from types import TracebackType
 from typing import Callable, Literal, Self, Sequence, TypeVar, get_args
 
 import numpy as np
-from jax._src.basearray import Array
+from jaxtyping import Array
 from omegaconf import DictConfig
 
 from xax.core.state import Phase, State
@@ -93,6 +94,35 @@ class LogLine:
     point_cloud: dict[str, dict[str, LogPointCloud]]
 
 
+@dataclass
+class LogError:
+    message: str
+    location: str | None = None
+
+    @property
+    def message_with_location(self) -> str:
+        message = self.message
+        if self.location is not None:
+            message += f" ({self.location})"
+        return message
+
+
+@dataclass
+class LogStatus:
+    message: str
+    created: float
+    filename: str | None = None
+    lineno: int | None = None
+
+
+@dataclass
+class LogPing:
+    message: str
+    created: float
+    filename: str | None = None
+    lineno: int | None = None
+
+
 class LoggerImpl(ABC):
     def __init__(self, log_interval_seconds: float = 1.0) -> None:
         """Defines some default behavior for loggers.
@@ -121,6 +151,27 @@ class LoggerImpl(ABC):
 
         Args:
             line: The line to write.
+        """
+
+    def write_error(self, error: LogError) -> None:
+        """Handles writing an error line.
+
+        Args:
+            error: The error information to write.
+        """
+
+    def write_status(self, status: LogStatus) -> None:
+        """Handles writing a status line.
+
+        Args:
+            status: The status to write.
+        """
+
+    def write_ping(self, ping: LogPing) -> None:
+        """Handles writing a ping line.
+
+        Args:
+            ping: The ping to write.
         """
 
     def log_git_state(self, git_state: str) -> None:
@@ -156,6 +207,25 @@ class LoggerImpl(ABC):
         return self.tickers[state.phase].tick(state.elapsed_time_s)
 
 
+class ToastHandler(logging.Handler):
+    def __init__(self, logger: "Logger") -> None:
+        super().__init__()
+
+        self.logger = logger
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            match record.levelno:
+                case "PING":
+                    self.logger.write_ping(record.getMessage(), record.filename, record.lineno)
+                case "STATUS":
+                    self.logger.write_status(record.getMessage(), record.filename, record.lineno)
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+
 class Logger:
     """Defines an intermediate container which holds values to log somewhere else."""
 
@@ -169,6 +239,8 @@ class Logger:
         self.point_clouds: dict[str, dict[str, Callable[[], tuple[Array, Array | None]]]] = defaultdict(dict)
         self.default_namespace = default_namespace
         self.loggers: list[LoggerImpl] = []
+
+        # Registers a logging handler to route log messages to the logger.
 
     def add_logger(self, *logger: LoggerImpl) -> None:
         """Add the logger, so that it gets called when `write` is called.
@@ -212,6 +284,32 @@ class Logger:
         self.clear()
         for logger in (logger for logger, should_log in zip(self.loggers, should_log) if should_log):
             logger.write(line)
+
+    def write_error(self, message: str, location: str | None = None) -> None:
+        for logger in self.loggers:
+            logger.write_error(LogError(message, location))
+
+    def write_status(
+        self,
+        message: str,
+        filename: str | None = None,
+        lineno: int | None = None,
+        created: float | None = None,
+    ) -> None:
+        status = LogStatus(message, time.time() if created is None else created, filename, lineno)
+        for logger in self.loggers:
+            logger.write_status(status)
+
+    def write_ping(
+        self,
+        message: str,
+        filename: str | None = None,
+        lineno: int | None = None,
+        created: float | None = None,
+    ) -> None:
+        ping = LogPing(message, time.time() if created is None else created, filename, lineno)
+        for logger in self.loggers:
+            logger.write_ping(ping)
 
     def resolve_namespace(self, namespace: str | None = None) -> str:
         return "_".join([self.default_namespace if namespace is None else namespace] + NAMESPACE_STACK)

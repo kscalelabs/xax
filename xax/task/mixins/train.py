@@ -1,9 +1,6 @@
 """Defines a mixin for running the training loop."""
 
-import bisect
 import contextlib
-import functools
-import itertools
 import logging
 import signal
 import sys
@@ -14,33 +11,29 @@ from dataclasses import dataclass, is_dataclass
 from threading import Thread
 from typing import Any, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
+import jax.numpy as jnp
 import numpy as np
-import torch
-from mlfab.core.conf import field
-from mlfab.core.state import Phase, State
-from mlfab.nn.functions import recursive_chunk
-from mlfab.nn.parallel import is_master
-from mlfab.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from mlfab.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin
-from mlfab.task.mixins.compile import CompileConfig, CompileMixin
-from mlfab.task.mixins.data_loader import DataLoadersConfig, DataLoadersMixin
-from mlfab.task.mixins.device import DeviceConfig, DeviceMixin
-from mlfab.task.mixins.mixed_precision import MixedPrecisionConfig, MixedPrecisionMixin
-from mlfab.task.mixins.optimizer import OptimizerConfig, OptimizerMixin
-from mlfab.task.mixins.profiler import ProfilerConfig, ProfilerMixin
-from mlfab.task.mixins.runnable import RunnableConfig, RunnableMixin
-from mlfab.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
-from mlfab.utils.experiments import (
+from jaxtyping import Array
+from omegaconf import DictConfig
+
+from xax.core.conf import field
+from xax.core.state import Phase, State
+from xax.nn.functions import recursive_chunk
+from xax.nn.parallel import is_master
+from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
+from xax.task.mixins.data_loader import DataLoadersConfig, DataLoadersMixin
+from xax.task.mixins.logger import LoggerConfig, LoggerMixin
+from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
+from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
+from xax.utils.experiments import (
     EpochDoneError,
     StateTimer,
     TrainingFinishedError,
-    add_toast,
     get_git_state,
     get_training_code,
 )
-from mlfab.utils.text import highlight_exception_message, show_info
-from omegaconf import DictConfig
-from torch import Tensor
+from xax.utils.logging import LOG_STATUS
+from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +45,7 @@ Batch = Any
 Output = Any
 Input = Any
 
-Loss = Tensor | dict[str, Tensor] | list[Tensor] | list[dict[str, Tensor]]
+Loss = Array | dict[str, Array] | list[Array] | list[dict[str, Array]]
 
 StepKind = Literal["step", "epoch", "sample", "second"]
 
@@ -66,13 +59,8 @@ def cast_step_kind(s: str) -> StepKind:
 
 @dataclass
 class TrainConfig(
-    CheckpointingConfig,
-    OptimizerConfig,
-    CompileConfig,
-    MixedPrecisionConfig,
     DataLoadersConfig,
-    DeviceConfig,
-    ProfilerConfig,
+    LoggerConfig,
     StepContextConfig,
     ArtifactsConfig,
     RunnableConfig,
@@ -106,13 +94,8 @@ Config = TypeVar("Config", bound=TrainConfig)
 
 
 class TrainMixin(
-    CheckpointingMixin[Config],
-    OptimizerMixin[Config],
-    CompileMixin[Config],
-    MixedPrecisionMixin[Config],
     DataLoadersMixin[Config],
-    DeviceMixin[Config],
-    ProfilerMixin[Config],
+    LoggerMixin[Config],
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
@@ -136,7 +119,7 @@ class TrainMixin(
         # The kind of step that was specified in the config.
         self.__step_kind = cast_step_kind(self.config.step_kind)
 
-    def on_step_end(self, state: State, loss_dict: dict[str, Tensor]) -> None:
+    def on_step_end(self, state: State, loss_dict: dict[str, Array]) -> None:
         super().on_step_end(state, loss_dict)
         state.elapsed_time_s = time.time() - state.start_time_s
 
@@ -187,16 +170,15 @@ class TrainMixin(
         return self.log_valid_step(batch, output, state)
 
     def log_step(self, batch: Batch, output: Output, state: State) -> None:
-        with torch.no_grad():
-            match state.phase:
-                case "train":
-                    self.log_train_step(batch, output, state)
-                case "valid":
-                    self.log_valid_step(batch, output, state)
-                case "test":
-                    self.log_test_step(batch, output, state)
-                case _:
-                    raise KeyError(f"Unknown phase: {state.phase}")
+        match state.phase:
+            case "train":
+                self.log_train_step(batch, output, state)
+            case "valid":
+                self.log_valid_step(batch, output, state)
+            case "test":
+                self.log_test_step(batch, output, state)
+            case _:
+                raise KeyError(f"Unknown phase: {state.phase}")
 
     def get_loss(self, batch: Batch, state: State) -> Loss:
         """Gets the loss for the current batch.
@@ -228,7 +210,7 @@ class TrainMixin(
             The parsed batch size, or None if the batch size could not be
             determined.
         """
-        if isinstance(batch, (np.ndarray, Tensor)):
+        if isinstance(batch, (np.ndarray, Array)):
             return batch.shape[0]
         if is_dataclass(batch):
             for v in batch.__dict__.values():
@@ -283,28 +265,24 @@ class TrainMixin(
             return None
         return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
 
-    def get_single_loss(self, loss: Tensor | dict[str, Tensor]) -> tuple[Tensor, list[str]]:
-        if isinstance(loss, Tensor):
-            if loss.ndim == 0:
-                return loss.unsqueeze(0), ["loss"]
-            if loss.ndim == 1:
-                return loss, ["loss"]
-            return loss.sum().unsqueeze(0) / loss.shape[0], ["loss"]
-        assert isinstance(loss, dict), f"Single loss should be a scalar or dictionary, not {type(loss)}"
-        keys, values = (list(i) for i in zip(*sorted(loss.items())))
-        losses = [v.sum() / v.shape[0] if v.ndim > 0 else v for v in values]
-        single_loss = torch.stack(losses, dim=0)
-        return single_loss, keys
+    def get_single_loss(self, loss: Array | dict[str, Array]) -> tuple[Array, list[str]]:
+        if isinstance(loss, Array):
+            return loss.sum() / loss.shape[self.config.batch_dim], ["loss"]
+        if isinstance(loss, dict):
+            keys, values = (list(i) for i in zip(*sorted(loss.items())))
+            losses = [v.sum() / v.shape[0] if v.ndim > 0 else v for v in values]
+            single_loss = jnp.stack(losses, axis=0)
+            return single_loss, keys
+        raise NotImplementedError(f"Loss should be a scalar, dictionary, or list, not {type(loss)}")
 
-    def get_single_losses(self, losses: Loss) -> list[tuple[Tensor, list[str]]]:
-        if isinstance(losses, (Tensor, dict)):
+    def get_single_losses(self, losses: Loss) -> list[tuple[Array, list[str]]]:
+        if isinstance(losses, (Array, dict)):
             return [self.get_single_loss(losses)]
         assert isinstance(losses, list), f"Loss should be a scalar, dictionary, or list, not {type(losses)}"
         single_losses = [self.get_single_loss(loss) for loss in losses]
-        assert len(single_losses) == len(self.optimizers), f"Expected {len(self.optimizers)} losses, got {len(losses)}"
         return single_losses
 
-    def log_loss_dict(self, loss: Mapping[str, int | float | Tensor], state: State) -> None:
+    def log_loss_dict(self, loss: Mapping[str, int | float | Array], state: State) -> None:
         for k, v in loss.items():
             self.log_scalar(k, v, namespace="loss")
         timer = self.state_timers[state.phase]
@@ -312,129 +290,6 @@ class TrainMixin(
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
                 self.log_scalar(k, v, namespace=ns)
-
-    def train_step(self, batches: Iterator[Batch], state: State) -> dict[str, Tensor]:
-        with self.step_context("change_mode"):
-            state.set_phase(self, "train")
-        total_bsz: int | None = None
-        losses: dict[str, tuple[Tensor, int]] = {}
-        with self.step_context("zero_grads"):
-            self.zero_optimizers()
-        num_steps = 0
-        with self.autocast_context:
-            for batch in batches:
-                bsz = self.get_size_of_batch(batch)
-                if bsz is not None:
-                    total_bsz = bsz if total_bsz is None else total_bsz + bsz
-                with self.step_context("forward"):
-                    loss = self.get_loss(batch, state)
-                with self.step_context("get_single_loss"):
-                    single_losses = self.get_single_losses(loss)
-                with self.step_context("backward"):
-                    for i, ((single_loss, _), optimizer) in enumerate(zip(single_losses, self.optimizers)):
-                        retain_graph = None if len(self.optimizers) == 1 else i < len(self.optimizers) - 1
-                        self.backward_grads(
-                            single_loss,
-                            retain_graph=retain_graph,
-                            inputs=optimizer.parameters(),
-                        )
-                with self.step_context("log_losses"):
-                    self.log_mp_scale()
-                    for single_loss, loss_names in single_losses:
-                        single_loss_detached = single_loss.detach()
-                        for i, name in enumerate(loss_names):
-                            new_loss = single_loss_detached[i]
-                            if name in losses:
-                                old_loss, count = losses[name]
-                                losses[name] = (old_loss + new_loss, count + 1)
-                            else:
-                                losses[name] = (new_loss, 1)
-                num_steps += 1
-        with self.step_context("log_losses"):
-            loss_dict = {k: value / count for k, (value, count) in losses.items()}
-            self.log_loss_dict(loss_dict, state)
-        with self.step_context("step"):
-            for optim_i in self.optimizers:
-                self.step_optimizer(optim_i.optimizer, num_steps)
-                optim_i.step(state)
-                self.log_scalar("lr_scale", optim_i.lr_scale, namespace="📉 optim")
-        with self.step_context("write_logs"), self.autocast_context:
-            self.write_logs(state)
-        with self.step_context("update_state"):
-            state.num_steps += 1
-            state.num_epoch_steps += 1
-            if total_bsz is not None:
-                state.num_samples += total_bsz
-                state.num_epoch_samples += total_bsz
-        return loss_dict
-
-    def val_step(self, batch: Batch, state: State) -> None:
-        with torch.no_grad():
-            with self.step_context("change_mode"):
-                state.set_phase(self, "valid")
-            with self.step_context("forward"), self.autocast_context:
-                loss = self.get_loss(batch, state)
-            with self.step_context("get_single_loss"):
-                single_losses = self.get_single_losses(loss)
-            with self.step_context("log_losses"):
-                for single_loss, loss_names in single_losses:
-                    single_loss_detached = single_loss.detach()
-                    loss_dict = {name: single_loss_detached[i] for i, name in enumerate(loss_names)}
-                    self.log_loss_dict(loss_dict, state)
-            with self.step_context("write_logs"), self.autocast_context:
-                self.write_logs(state)
-            with self.step_context("update_state"):
-                state.num_valid_steps += 1
-
-    def test_step(self, batch: Batch, state: State) -> None:
-        with torch.no_grad():
-            with self.step_context("change_mode"):
-                state.set_phase(self, "test")
-            with self.step_context("forward"), self.autocast_context:
-                loss = self.get_loss(batch, state)
-            with self.step_context("get_single_loss"):
-                single_losses = self.get_single_losses(loss)
-            with self.step_context("log_losses"):
-                for single_loss, loss_names in single_losses:
-                    single_loss_detached = single_loss.detach()
-                    loss_dict = {name: single_loss_detached[i] for i, name in enumerate(loss_names)}
-                    self.log_loss_dict(loss_dict, state)
-            with self.step_context("write_logs"), self.autocast_context:
-                self.write_logs(state)
-            with self.step_context("update_state"):
-                state.num_test_steps += 1
-
-    @functools.lru_cache(maxsize=None)
-    def batches_per_step_schedule(self) -> list[int] | None:
-        schedule = self.config.batches_per_step_schedule
-        if schedule is None:
-            return None
-        if any(s < 1 for s in schedule):
-            raise ValueError("Batch chunk schedule must be positive")
-        return list(itertools.accumulate([0] + schedule))
-
-    def get_batches_per_step(self, state: State) -> int:
-        if (schedule := self.batches_per_step_schedule()) is None:
-            return self.config.batches_per_step
-        step = self.get_step(state)
-        i = bisect.bisect_left(schedule, step)
-        return self.config.batches_per_step * i
-
-    @functools.lru_cache(maxsize=None)
-    def batch_chunks_schedule(self) -> list[int] | None:
-        schedule = self.config.batch_chunks_per_step_schedule
-        if schedule is None:
-            return None
-        if any(s < 1 for s in schedule):
-            raise ValueError("Batch chunk schedule must be positive")
-        return list(itertools.accumulate([0] + schedule))
-
-    def get_batch_chunks(self, state: State) -> int:
-        if (schedule := self.batch_chunks_schedule()) is None:
-            return 1
-        step = self.get_step(state)
-        i = bisect.bisect_left(schedule, step + 1)
-        return len(schedule) - i + 1
 
     def is_valid_step(self, state: State) -> bool:
         if self.last_valid_time is None or self.last_valid_step is None:
@@ -465,8 +320,8 @@ class TrainMixin(
         return False
 
     def log_state(self) -> None:
-        add_toast("status", self.task_path)
-        add_toast("info", self.task_name)
+        logger.log(LOG_STATUS, self.task_path)
+        logger.log(LOG_STATUS, self.task_name)
         self.logger.log_git_state(get_git_state(self))
         self.logger.log_training_code(get_training_code(self))
         self.logger.log_config(cast(DictConfig, self.config))
@@ -487,6 +342,8 @@ class TrainMixin(
             ValueError: If the task is not a supervised learning task
         """
         self.set_loggers()
+
+        breakpoint()
 
         with self.step_context("model_to_device"):
             self.device.module_to(self)

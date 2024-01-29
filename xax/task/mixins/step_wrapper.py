@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import ContextManager, Literal, TypeVar
 
-from mlfab.task.base import BaseConfig, BaseTask
+from xax.task.base import BaseConfig, BaseTask
 
 StepType = Literal[
     "backward",

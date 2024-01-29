@@ -17,10 +17,10 @@ from multiprocessing.managers import SyncManager, ValueProxy
 from multiprocessing.synchronize import Event
 from typing import Generic, Iterable, Pattern, TypeVar
 
-from mlfab.core.conf import field
-from mlfab.core.state import State
-from mlfab.task.mixins.logger import LoggerConfig, LoggerMixin
-from mlfab.task.mixins.process import ProcessConfig, ProcessMixin
+from xax.core.conf import field
+from xax.core.state import State
+from xax.task.mixins.logger import LoggerConfig, LoggerMixin
+from xax.task.mixins.process import ProcessConfig, ProcessMixin
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ class GPUStatsMonitor:
             target=worker,
             args=(self._ping_interval, self._smems, self._main_event, self._events, self._start_event),
             daemon=True,
-            name="mlfab-gpu-stats",
+            name="xax-gpu-stats",
         )
         self._proc.start()
         if wait:

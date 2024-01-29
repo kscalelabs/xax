@@ -16,11 +16,12 @@ from multiprocessing.synchronize import Event
 from typing import Generic, TypeVar
 
 import psutil
-from mlfab.core.conf import field
-from mlfab.core.state import State
-from mlfab.task.base import BaseConfig
-from mlfab.task.mixins.logger import LoggerConfig, LoggerMixin
-from mlfab.task.mixins.process import ProcessConfig, ProcessMixin
+
+from xax.core.conf import field
+from xax.core.state import State
+from xax.task.base import BaseConfig
+from xax.task.mixins.logger import LoggerConfig, LoggerMixin
+from xax.task.mixins.process import ProcessConfig, ProcessMixin
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -187,7 +188,7 @@ class CPUStatsMonitor:
             target=worker,
             args=(self._ping_interval, self._cpu_stats_smem, self._monitor_event, self._start_event, os.getpid()),
             daemon=True,
-            name="mlfab-cpu-stats",
+            name="xax-cpu-stats",
         )
         self._proc.start()
         if wait:

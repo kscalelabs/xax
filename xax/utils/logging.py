@@ -2,14 +2,21 @@
 
 import logging
 import math
+import socket
 import sys
 
 from xax.core.conf import load_user_config
 from xax.utils.text import Color, color_parts, colored
 
 # Logging level to show on all ranks.
-INFOALL: int = logging.INFO + 1
-DEBUGALL: int = logging.DEBUG + 1
+LOG_INFO_ALL: int = logging.INFO + 1
+LOG_DEBUG_ALL: int = logging.DEBUG + 1
+
+# Show as a transient message.
+LOG_PING: int = logging.INFO + 2
+
+# Show as a persistent status message.
+LOG_STATUS: int = logging.INFO + 3
 
 
 class RankFilter(logging.Filter):
@@ -24,10 +31,22 @@ class RankFilter(logging.Filter):
         self.rank = rank
 
         # Log using INFOALL to show on all ranks.
-        logging.addLevelName(INFOALL, "INFOALL")
-        logging.addLevelName(DEBUGALL, "DEBUGALL")
-        levels_to_log_all_ranks = (DEBUGALL, INFOALL, logging.CRITICAL, logging.ERROR, logging.WARNING)
-        self.log_all_ranks = {logging.getLevelName(level) for level in levels_to_log_all_ranks}
+        logging.addLevelName(LOG_INFO_ALL, "INFOALL")
+        logging.addLevelName(LOG_DEBUG_ALL, "DEBUGALL")
+        logging.addLevelName(LOG_PING, "PING")
+        logging.addLevelName(LOG_STATUS, "STATUS")
+
+        self.log_all_ranks = {
+            logging.getLevelName(level)
+            for level in (
+                LOG_DEBUG_ALL,
+                LOG_INFO_ALL,
+                LOG_STATUS,
+                logging.CRITICAL,
+                logging.ERROR,
+                logging.WARNING,
+            )
+        }
 
     def filter(self, record: logging.LogRecord) -> bool:
         if self.rank is None or self.rank == 0:
@@ -125,3 +144,22 @@ def configure_logging(*, rank: int | None = None, world_size: int | None = None)
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
         logging.getLogger("PIL").setLevel(logging.WARNING)
         logging.getLogger("torch").setLevel(logging.WARNING)
+
+
+def port_is_busy(port: int) -> int:
+    """Checks whether a port is busy.
+
+    Args:
+        port: The port to check.
+
+    Returns:
+        Whether the port is busy.
+    """
+    sock = socket.socket()
+    try:
+        sock.bind(("", port))
+        return False
+    except OSError:
+        return True
+    finally:
+        sock.close()

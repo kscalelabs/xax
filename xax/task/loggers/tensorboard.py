@@ -12,14 +12,16 @@ import time
 from pathlib import Path
 from typing import TypeVar
 
-import torch
-import torch.distributed
-from mlfab.core.state import Phase
-from mlfab.nn.parallel import is_master, port_is_busy
-from mlfab.task.logger import TARGET_FPS, LoggerImpl, LogLine
-from mlfab.utils.experiments import add_toast
+import jax
+import PIL.Image
 from omegaconf import DictConfig, OmegaConf
-from torch.utils.tensorboard import SummaryWriter
+
+from xax.core.state import Phase
+from xax.nn.parallel import is_master
+from xax.task.logger import LogError, LoggerImpl, LogLine, LogPing, LogStatus
+from xax.utils.jax import as_float
+from xax.utils.logging import LOG_STATUS, port_is_busy
+from xax.utils.tensorboard import TensorboardWriter, TensorboardWriters
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -55,7 +57,6 @@ class TensorboardLogger(LoggerImpl):
         super().__init__(log_interval_seconds)
 
         self.log_directory = Path(run_directory).expanduser().resolve() / subdirectory
-        self.flush_seconds = flush_seconds
         self.wait_seconds = wait_seconds
         self.start_in_subprocess = start_in_subprocess
         self.use_localhost = use_localhost
@@ -66,6 +67,10 @@ class TensorboardLogger(LoggerImpl):
         self.training_code: str | None = None
         self.config: DictConfig | None = None
 
+        self.writers = TensorboardWriters(
+            log_directory=self.log_directory,
+            flush_seconds=flush_seconds,
+        )
         self._started = False
 
     def _start(self) -> None:
@@ -126,7 +131,7 @@ class TensorboardLogger(LoggerImpl):
                 line_str = line.decode("utf-8")
                 if line_str.startswith("TensorBoard"):
                     line_str = parse_url(make_localhost(line_str))
-                    add_toast("status", line_str)
+                    logging.log(LOG_STATUS, line_str)
                     break
                 lines.append(line_str)
             else:
@@ -144,18 +149,6 @@ class TensorboardLogger(LoggerImpl):
     def __del__(self) -> None:
         self.cleanup()
 
-    @functools.cached_property
-    def train_writer(self) -> SummaryWriter:
-        return SummaryWriter(self.log_directory / "train", flush_secs=self.flush_seconds)
-
-    @functools.cached_property
-    def valid_writer(self) -> SummaryWriter:
-        return SummaryWriter(self.log_directory / "valid", flush_secs=self.flush_seconds)
-
-    @functools.cached_property
-    def test_writer(self) -> SummaryWriter:
-        return SummaryWriter(self.log_directory / "test", flush_secs=self.flush_seconds)
-
     @functools.lru_cache(None)  # Avoid clearing logs multiple times.
     def clear_logs(self) -> None:
         if not self.log_directory.exists():
@@ -165,15 +158,9 @@ class TensorboardLogger(LoggerImpl):
         logger.warning("Clearing TensorBoard logs")
         shutil.rmtree(self.log_directory)
 
-    def get_writer(self, phase: Phase) -> SummaryWriter:
+    def get_writer(self, phase: Phase) -> TensorboardWriter:
         self._start()
-        if phase == "train":
-            return self.train_writer
-        if phase == "valid":
-            return self.valid_writer
-        if phase == "test":
-            return self.test_writer
-        raise NotImplementedError(f"Unexpected phase: {phase}")
+        return self.writers.writer(phase)
 
     def log_git_state(self, git_state: str) -> None:
         if not is_master():
@@ -204,7 +191,7 @@ class TensorboardLogger(LoggerImpl):
             for scalar_key, scalar_value in scalars.items():
                 writer.add_scalar(
                     f"{namespace}/{scalar_key}",
-                    scalar_value,
+                    as_float(scalar_value),
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )
@@ -220,44 +207,10 @@ class TensorboardLogger(LoggerImpl):
 
         for namespace, images in line.images.items():
             for image_key, image_value in images.items():
+                image = PIL.Image.fromarray(jax.device_get(image_value.pixels))
                 writer.add_image(
                     f"{namespace}/{image_key}",
-                    image_value.pixels,
-                    global_step=line.state.num_steps,
-                    walltime=walltime,
-                )
-
-        for namespace, audios in line.audios.items():
-            for audio_key, audio_value in audios.items():
-                writer.add_audio(
-                    f"{namespace}/{audio_key}",
-                    audio_value.frames,
-                    global_step=line.state.num_steps,
-                    walltime=walltime,
-                    sample_rate=audio_value.sample_rate,
-                )
-
-        for namespace, videos in line.videos.items():
-            for video_key, video_value in videos.items():
-                writer.add_video(
-                    f"{namespace}/{video_key}",
-                    video_value.frames.unsqueeze(0),
-                    global_step=line.state.num_steps,
-                    walltime=walltime,
-                    fps=TARGET_FPS,
-                )
-
-        for namespace, point_cloud in line.point_cloud.items():
-            for pc_key, pc_item in point_cloud.items():
-                pc_value, colors = pc_item.xyz, pc_item.colors
-                bsz, _, _ = pc_value.shape
-                if colors is None:
-                    colors = torch.randint(0, 255, (bsz, 1, 3), device=pc_value.device).expand_as(pc_value)
-                pc_value, colors = pc_value.flatten(0, 1).unsqueeze(0), colors.flatten(0, 1).unsqueeze(0)
-                writer.add_mesh(
-                    f"{namespace}/{pc_key}",
-                    pc_value,
-                    colors=colors,
+                    image,
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )

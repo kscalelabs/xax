@@ -3,8 +3,9 @@
 from pathlib import Path
 from typing import Literal
 
-from mlfab.task.logger import LoggerImpl, LogLine
 from omegaconf import DictConfig, OmegaConf
+
+from xax.task.logger import LoggerImpl, LogLine
 
 
 class StateLogger(LoggerImpl):

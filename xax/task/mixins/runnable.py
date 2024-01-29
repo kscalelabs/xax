@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from types import FrameType
 from typing import Callable, TypeVar
 
-from mlfab.task.base import BaseConfig, BaseTask, RawConfigType
-from mlfab.task.launchers.base import BaseLauncher
+from xax.task.base import BaseConfig, BaseTask, RawConfigType
+from xax.task.launchers.base import BaseLauncher
 
 
 @dataclass
@@ -37,7 +37,7 @@ class RunnableMixin(BaseTask[Config], ABC):
         use_cli: bool | list[str] = True,
     ) -> None:
         if launcher is None:
-            from mlfab.task.launchers.cli import CliLauncher
+            from xax.task.launchers.cli import CliLauncher
 
             launcher = CliLauncher()
         launcher.launch(cls, *cfgs, use_cli=use_cli)

@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from multiprocessing.context import BaseContext
 from typing import Generic, TypeVar
 
-from mlfab.core.conf import field
-from mlfab.core.state import State
-from mlfab.task.base import BaseConfig, BaseTask
+from xax.core.conf import field
+from xax.core.state import State
+from xax.task.base import BaseConfig, BaseTask
 
 logger: logging.Logger = logging.getLogger(__name__)
 

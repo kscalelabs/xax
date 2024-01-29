@@ -3,12 +3,10 @@
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from mlfab.task.base import BaseConfig, BaseTask
-from mlfab.task.mixins import (
+from xax.task.base import BaseConfig, BaseTask
+from xax.task.mixins import (
     ArtifactsConfig,
     ArtifactsMixin,
-    CompileConfig,
-    CompileMixin,
     CPUStatsConfig,
     CPUStatsMixin,
     DeviceConfig,
@@ -32,7 +30,6 @@ from mlfab.task.mixins import (
 
 @dataclass
 class ScriptConfig(
-    CompileConfig,
     MixedPrecisionConfig,
     CPUStatsConfig,
     DeviceConfig,
@@ -52,7 +49,6 @@ ConfigT = TypeVar("ConfigT", bound=ScriptConfig)
 
 
 class Script(
-    CompileMixin[ConfigT],
     MixedPrecisionMixin[ConfigT],
     CPUStatsMixin[ConfigT],
     DeviceMixin[ConfigT],

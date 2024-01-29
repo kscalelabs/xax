@@ -550,13 +550,11 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
     from xax.task.launchers.single_process import SingleProcessLauncher
-    from xax.task.launchers.slurm import SlurmLauncher
     from xax.task.logger import LogAudio, Logger, LoggerImpl, LogImage, LogLine, LogVideo
     from xax.task.loggers.json import JsonLogger
     from xax.task.loggers.state import StateLogger
     from xax.task.loggers.stdout import StdoutLogger
     from xax.task.loggers.tensorboard import TensorboardLogger
-    from xax.task.mixins.compile import TorchCompileOptions
     from xax.task.mixins.cpu_stats import CPUStatsOptions
     from xax.task.mixins.data_loader import DataLoaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions

@@ -6,17 +6,18 @@ from pathlib import Path
 from types import TracebackType
 from typing import Callable, Generic, Self, Sequence, TypeVar
 
-from mlfab.core.conf import Device as BaseDeviceConfig, field
-from mlfab.core.state import State
-from mlfab.task.base import BaseConfig, BaseTask
-from mlfab.task.logger import ChannelSelectMode, Logger, LoggerImpl, Number
-from mlfab.task.loggers.json import JsonLogger
-from mlfab.task.loggers.state import StateLogger
-from mlfab.task.loggers.stdout import StdoutLogger
-from mlfab.task.loggers.tensorboard import TensorboardLogger
-from mlfab.task.mixins.artifacts import ArtifactsMixin
-from mlfab.utils.text import is_interactive_session
-from torch import Tensor
+from jaxtyping import Array
+
+from xax.core.conf import Device as BaseDeviceConfig, field
+from xax.core.state import State
+from xax.task.base import BaseConfig, BaseTask
+from xax.task.logger import ChannelSelectMode, Logger, LoggerImpl, Number
+from xax.task.loggers.json import JsonLogger
+from xax.task.loggers.state import StateLogger
+from xax.task.loggers.stdout import StdoutLogger
+from xax.task.loggers.tensorboard import TensorboardLogger
+from xax.task.mixins.artifacts import ArtifactsMixin
+from xax.utils.text import is_interactive_session
 
 
 @dataclass
@@ -65,7 +66,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_image(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         keep_resolution: bool = False,
@@ -80,7 +81,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_labeled_image(
         self,
         key: str,
-        value: Callable[[], tuple[Tensor, str]] | tuple[Tensor, str],
+        value: Callable[[], tuple[Array, str]] | tuple[Array, str],
         *,
         namespace: str | None = None,
         max_line_length: int | None = None,
@@ -99,7 +100,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_images(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         keep_resolution: bool = False,
@@ -118,7 +119,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_labeled_images(
         self,
         key: str,
-        value: Callable[[], tuple[Tensor, Sequence[str]]] | tuple[Tensor, Sequence[str]],
+        value: Callable[[], tuple[Array, Sequence[str]]] | tuple[Array, Sequence[str]],
         *,
         namespace: str | None = None,
         max_line_length: int | None = None,
@@ -141,7 +142,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_audio(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         sample_rate: int = 44100,
@@ -166,7 +167,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_audios(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         sep_ms: float = 0.0,
@@ -197,7 +198,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_spectrogram(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         sample_rate: int = 44100,
@@ -220,7 +221,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_spectrograms(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         max_audios: int | None = None,
@@ -247,7 +248,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_video(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         fps: int | None = None,
@@ -264,7 +265,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
     def log_videos(
         self,
         key: str,
-        value: Callable[[], Tensor | list[Tensor]] | Tensor | list[Tensor],
+        value: Callable[[], Array | list[Array]] | Array | list[Array],
         *,
         namespace: str | None = None,
         max_videos: int | None = None,
@@ -282,17 +283,17 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
             length=length,
         )
 
-    def log_histogram(self, key: str, value: Callable[[], Tensor] | Tensor, *, namespace: str | None = None) -> None:
+    def log_histogram(self, key: str, value: Callable[[], Array] | Array, *, namespace: str | None = None) -> None:
         self.logger.log_histogram(key, value, namespace=namespace)
 
     def log_point_cloud(
         self,
         key: str,
-        value: Callable[[], Tensor] | Tensor,
+        value: Callable[[], Array] | Array,
         *,
         namespace: str | None = None,
         max_points: int = 1000,
-        colors: Callable[[], Tensor] | Tensor | None = None,
+        colors: Callable[[], Array] | Array | None = None,
     ) -> None:
         self.logger.log_point_cloud(
             key,

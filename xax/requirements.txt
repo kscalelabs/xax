@@ -1,9 +1,16 @@
 # requirements.txt
 
-GitPython
+flax
+gitpython
 jax
 jaxtyping
 omegaconf
+optax
+pillow
 psutil
 requests
+
+# Types.
+types-pillow
+types-psutil
 types-requests

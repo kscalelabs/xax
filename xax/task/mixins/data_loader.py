@@ -4,22 +4,17 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Generic, Sized, TypeVar
 
-from mlfab.core.conf import field, is_missing
-from mlfab.core.state import Phase
-from mlfab.nn.functions import set_random_seed
-from mlfab.task.base import BaseConfig, BaseTask
-from mlfab.task.mixins.process import ProcessConfig, ProcessMixin
-from mlfab.utils.data.collate import CollateMode, collate
-from mlfab.utils.data.error_handling import error_handling_dataset
 from omegaconf import II, MISSING
-from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.datapipes.datapipe import IterDataPipe, MapDataPipe
-from torch.utils.data.dataset import Dataset
-from torch.utils.data.sampler import Sampler
+
+from xax.core.conf import field, is_missing
+from xax.core.state import Phase
+from xax.nn.functions import set_random_seed
+from xax.task.base import BaseConfig, BaseTask
+from xax.task.mixins.process import ProcessConfig, ProcessMixin
+from xax.utils.data.collate import CollateMode, collate
+from xax.utils.data.error_handling import error_handling_dataset
 
 logger = logging.getLogger(__name__)
-
-DataPipeT = TypeVar("DataPipeT", bound=IterDataPipe | MapDataPipe)
 
 
 @dataclass
@@ -39,7 +34,7 @@ class DataLoaderConfig:
 @dataclass
 class DataLoadersConfig(ProcessConfig, BaseConfig):
     batch_size: int = field(MISSING, help="Size of each batch")
-    num_dataloader_workers: int = field(II("mlfab.num_workers:-1"), help="Default number of dataloader workers")
+    num_dataloader_workers: int = field(II("xax.num_workers:-1"), help="Default number of dataloader workers")
     train_dl: DataLoaderConfig = field(
         DataLoaderConfig(
             batch_size=II("batch_size"),
@@ -95,28 +90,6 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
                 return self.config.test_dl
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
-
-    def apply_datapipe_transformations(self, datapipe: DataPipeT, phase: Phase) -> DataPipeT:
-        """Applies transformations to the datapipe.
-
-        Args:
-            datapipe: The datapipe to transform
-            phase: The dataset's phase
-
-        Returns:
-            The transformed datapipe
-        """
-        cfg = self.dataloader_config(phase)
-
-        # Wraps the dataset in an error-handling dataset.
-        datapipe = error_handling_dataset(datapipe)
-
-        datapipe = datapipe.shuffle() if phase == "train" else datapipe
-        datapipe = datapipe.sharding_filter()
-        datapipe = datapipe.batch(round(cfg.batch_size * cfg.batch_size_multiplier), drop_last=cfg.drop_last)
-        datapipe = datapipe.collate(collate_fn=self.collate_fn)
-
-        return datapipe
 
     def get_datapipe_dataloader(self, datapipe: MapDataPipe | IterDataPipe, phase: Phase) -> DataLoader:
         debugging = self.config.debug_dataloader

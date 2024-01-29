@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 
 import git
 import requests
-from jax._src.typing import Array
+from jaxtyping import Array
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from xax.core.conf import get_data_dir, get_pretrained_models_dir
@@ -185,7 +185,7 @@ def get_random_port(default: int = 1337) -> int:
         return default
 
 
-OmegaConf.register_new_resolver("mlfab.get_random_port", get_random_port, replace=True)
+OmegaConf.register_new_resolver("xax.get_random_port", get_random_port, replace=True)
 
 
 class NaNError(Exception):

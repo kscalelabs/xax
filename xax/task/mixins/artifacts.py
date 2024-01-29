@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self, TypeVar
 
-from mlfab.core.conf import field, get_run_dir
-from mlfab.core.state import State
-from mlfab.nn.parallel import is_master
-from mlfab.task.base import BaseConfig, BaseTask
-from mlfab.utils.experiments import add_toast, stage_environment
-from mlfab.utils.text import show_info
+from xax.core.conf import field, get_run_dir
+from xax.core.state import State
+from xax.nn.parallel import is_master
+from xax.task.base import BaseConfig, BaseTask
+from xax.utils.experiments import stage_environment
+from xax.utils.logging import LOG_STATUS
+from xax.utils.text import show_info
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class ArtifactsMixin(BaseTask[Config]):
             exp_dir = Path(self.config.exp_dir).expanduser().resolve()
             exp_dir.mkdir(parents=True, exist_ok=True)
             self._exp_dir = exp_dir
-            add_toast("status", self._exp_dir)
+            logger.log(LOG_STATUS, self._exp_dir)
             return self._exp_dir
 
         def get_exp_dir(run_id: int) -> Path:
@@ -78,7 +79,7 @@ class ArtifactsMixin(BaseTask[Config]):
             run_id += 1
         exp_dir.mkdir(exist_ok=True, parents=True)
         self._exp_dir = exp_dir.expanduser().resolve()
-        add_toast("status", self._exp_dir)
+        logger.log(LOG_STATUS, self._exp_dir)
         return self._exp_dir
 
     def set_exp_dir(self, exp_dir: Path) -> Self:

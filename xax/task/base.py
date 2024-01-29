@@ -15,10 +15,12 @@ from pathlib import Path
 from types import TracebackType
 from typing import Generic, Self, TypeVar, cast
 
-from mlfab.core.state import State
-from mlfab.utils.text import camelcase_to_snakecase
+import flax.linen as nn
+from jaxtyping import Array
 from omegaconf import Container, DictConfig, OmegaConf
-from torch import Tensor, nn
+
+from xax.core.state import State
+from xax.utils.text import camelcase_to_snakecase
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,7 @@ class BaseTask(nn.Module, Generic[Config]):
     def on_step_start(self, state: State) -> None:
         pass
 
-    def on_step_end(self, state: State, loss_dict: dict[str, Tensor]) -> None:
+    def on_step_end(self, state: State, loss_dict: dict[str, Array]) -> None:
         pass
 
     def on_epoch_start(self, state: State) -> None:
@@ -97,13 +99,6 @@ class BaseTask(nn.Module, Generic[Config]):
 
     def on_after_save_checkpoint(self, ckpt_path: Path) -> None:
         pass
-
-    def load_task_state_dict(self, state_dict: dict, strict: bool = True, assign: bool = False) -> None:
-        weights = state_dict.pop("weights")
-        return self.load_state_dict(weights, strict=strict, assign=assign)
-
-    def task_state_dict(self) -> dict:
-        return {"weights": self.state_dict()}
 
     @functools.cached_property
     def task_class_name(self) -> str:

@@ -5,9 +5,9 @@ import sys
 from dataclasses import asdict
 from typing import Any, Literal, TextIO
 
-from jax._src.basearray import Array
+from jaxtyping import Array
 
-from xax.task.logger import LoggerImpl, LogLine
+from xax.task.logger import LogError, LoggerImpl, LogLine, LogPing, LogStatus
 
 
 def get_json_value(value: Any) -> Any:  # noqa: ANN401
@@ -80,8 +80,42 @@ class JsonLogger(LoggerImpl):
         if self.flush_immediately:
             self.fp.flush()
 
-    def handle_toast(self, message: str) -> None:
-        self.err_fp.write(message)
+    def write_error(self, error: LogError) -> None:
+        self.err_fp.write(error.message)
+        if error.location is not None:
+            self.err_fp.write(f" ({error.location})")
         self.err_fp.write(self.line_sep)
         if self.flush_immediately:
             self.err_fp.flush()
+
+    def write_ping(self, ping: LogPing) -> None:
+        self.fp.write(
+            json.dumps(
+                {
+                    "ping": {
+                        "message": ping.message,
+                        "filename": ping.filename,
+                        "lineno": ping.lineno,
+                    },
+                },
+            ),
+        )
+        self.fp.write(self.line_sep)
+        if self.flush_immediately:
+            self.fp.flush()
+
+    def write_status(self, status: LogStatus) -> None:
+        self.fp.write(
+            json.dumps(
+                {
+                    "status": {
+                        "message": status.message,
+                        "filename": status.filename,
+                        "lineno": status.lineno,
+                    },
+                },
+            ),
+        )
+        self.fp.write(self.line_sep)
+        if self.flush_immediately:
+            self.fp.flush()

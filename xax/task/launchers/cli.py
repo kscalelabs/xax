@@ -7,13 +7,12 @@ from typing import TYPE_CHECKING, Literal, get_args
 from xax.task.base import RawConfigType
 from xax.task.launchers.base import BaseLauncher
 from xax.task.launchers.single_process import SingleProcessLauncher
-from xax.task.launchers.slurm import SlurmLauncher
 
 if TYPE_CHECKING:
     from xax.task.mixins.runnable import Config, RunnableMixin
 
 
-LauncherChoice = Literal["single", "mp", "slurm"]
+LauncherChoice = Literal["single"]
 
 
 class CliLauncher(BaseLauncher):
@@ -30,7 +29,7 @@ class CliLauncher(BaseLauncher):
             "--launcher",
             choices=get_args(LauncherChoice),
             default="single",
-            help="The launcher to use; `single` for single-process, `slurm` for SLURM",
+            help="The launcher to use",
         )
         args, cli_args_rest = parser.parse_known_intermixed_args(args=args)
         launcher_choice: LauncherChoice = args.launcher
@@ -39,14 +38,5 @@ class CliLauncher(BaseLauncher):
         match launcher_choice:
             case "single":
                 SingleProcessLauncher().launch(task, *cfgs, use_cli=use_cli_next)
-            case "slurm":
-                slurm_args, cli_args_rest = SlurmLauncher.parse_args_from_cli()
-                SlurmLauncher(
-                    partition=slurm_args.partition,
-                    gpus_per_node=slurm_args.gpus_per_node,
-                    num_nodes=slurm_args.num_nodes,
-                    num_jobs=slurm_args.num_jobs,
-                    account=slurm_args.account,
-                ).launch(task, *cfgs, use_cli=use_cli_next)
             case _:
                 raise ValueError(f"Invalid launcher choice: {launcher_choice}")
