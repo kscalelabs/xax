@@ -78,7 +78,11 @@ class Dataset(Iterator[T], Generic[T], ABC):
                 spaces.
         """
         configure_logging()
-        ds = ErrorHandlingDataset(self, flush_every_n=max_samples) if handle_errors else self
+        ds = (
+            ErrorHandlingDataset(self, flush_every_n_steps=max_samples, flush_every_n_seconds=None)
+            if handle_errors
+            else self
+        )
         start_time = time.time()
         ws_regex = re.compile(r"\s+") if replace_whitespace else None
         for i, sample in enumerate(itertools.islice(ds, max_samples)):
@@ -230,6 +234,7 @@ def get_loc(num_excs: int = 1) -> str:
 @dataclass(frozen=True)
 class ExceptionSummary:
     num_steps: int
+    elapsed_time: float
     num_exceptions: int
     top_exception_messages: list[tuple[str, int]]
     top_exception_types: list[tuple[str, int]]
@@ -241,7 +246,13 @@ class ExceptionSummary:
 
         blocks += [
             [
-                TextBlock(f"Error Summary ({self.num_steps} steps)", color="red", bold=True, width=60, center=True),
+                TextBlock(
+                    f"Error Summary ({self.num_steps} steps, {self.elapsed_time:.2f} seconds)",
+                    color="red",
+                    bold=True,
+                    width=60,
+                    center=True,
+                ),
                 TextBlock("Count", color="yellow", bold=False, width=10, center=True),
                 TextBlock("Percent", color="yellow", bold=False, width=10, center=True),
             ],
@@ -304,8 +315,13 @@ class ExceptionSummaryWriter:
 
         self.last_exception: Exception | None = None
         self.num_steps = 0
+        self.start_time = time.time()
         self.step_has_error = False
         self.total_exceptions = 0
+
+    @property
+    def elapsed_time(self) -> float:
+        return time.time() - self.start_time
 
     def next(self) -> None:
         self.num_steps += 1
@@ -329,6 +345,7 @@ class ExceptionSummaryWriter:
     def summary(self) -> ExceptionSummary:
         return ExceptionSummary(
             num_steps=self.num_steps,
+            elapsed_time=self.elapsed_time,
             num_exceptions=self.total_exceptions,
             top_exception_messages=self.exceptions.most_common(self.max_exceptions),
             top_exception_types=self.exception_classes.most_common(self.max_exceptions),
@@ -342,6 +359,7 @@ class ExceptionSummaryWriter:
         self.exception_locs.clear()
 
         self.num_steps = 0
+        self.start_time = time.time()
         self.step_has_error = False
         self.total_exceptions = 0
 
@@ -363,7 +381,8 @@ class ErrorHandlingDataset(Dataset[T]):
             off (i.e. increasing the sleep time).
         traceback_depth: The number of stack frames to include in the
             exception traceback.
-        flush_every_n: Flush the exception summary every N steps.
+        flush_every_n_steps: Flush the exception summary every N steps.
+        flush_every_n_seconds: Flush the exception summary every N seconds.
     """
 
     def __init__(
@@ -374,7 +393,8 @@ class ErrorHandlingDataset(Dataset[T]):
         maximum_exceptions: int = 10,
         backoff_after: int = 5,
         traceback_depth: int = 3,
-        flush_every_n: int = 10000,
+        flush_every_n_steps: int | None = None,
+        flush_every_n_seconds: float | None = 60.0,
     ) -> None:
         super().__init__()
 
@@ -384,10 +404,18 @@ class ErrorHandlingDataset(Dataset[T]):
         self.maximum_exceptions = maximum_exceptions
         self.backoff_after = backoff_after
         self.traceback_depth = traceback_depth
-        self.flush_every_n = flush_every_n
+        self.flush_every_n_steps = flush_every_n_steps
+        self.flush_every_n_seconds = flush_every_n_seconds
         self.log_exceptions = True
 
         self.exc_summary = ExceptionSummaryWriter()
+
+    def should_flush_summary(self) -> bool:
+        if self.flush_every_n_steps is not None and self.exc_summary.num_steps >= self.flush_every_n_steps:
+            return True
+        if self.flush_every_n_seconds is not None and self.exc_summary.elapsed_time >= self.flush_every_n_seconds:
+            return True
+        return False
 
     def worker_init(self, worker_id: int, num_workers: int) -> None:
         self.dataset.worker_init(worker_id, num_workers)
@@ -399,7 +427,7 @@ class ErrorHandlingDataset(Dataset[T]):
         backoff_time = self.sleep_backoff
         self.exc_summary.next()
 
-        if self.exc_summary.num_steps >= self.flush_every_n:
+        if self.should_flush_summary():
             if self.log_exceptions and self.exc_summary:
                 logger.info("Exception summary:\n%s", self.exc_summary.summary())
             self.exc_summary.clear()

@@ -68,4 +68,4 @@ class MNIST(Dataset[tuple[np.ndarray, np.ndarray]]):
 
 if __name__ == "__main__":
     # python -m xax.utils.data.impl.mnist
-    MNIST(True, "float32").test(max_samples=1000)
+    MNIST(True, "float32").test(max_samples=1000, handle_errors=True)

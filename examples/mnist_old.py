@@ -39,7 +39,6 @@ def main() -> None:
     rng = random.PRNGKey(0)
 
     step_size = 0.001
-    num_epochs = 10
     batch_size = 128
     momentum_mass = 0.9
 

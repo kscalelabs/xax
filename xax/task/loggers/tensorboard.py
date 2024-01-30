@@ -18,7 +18,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from xax.core.state import Phase
 from xax.nn.parallel import is_master
-from xax.task.logger import LogError, LoggerImpl, LogLine, LogPing, LogStatus
+from xax.task.logger import LoggerImpl, LogLine
 from xax.utils.jax import as_float
 from xax.utils.logging import LOG_STATUS, port_is_busy
 from xax.utils.tensorboard import TensorboardWriter, TensorboardWriters

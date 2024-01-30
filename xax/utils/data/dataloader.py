@@ -78,7 +78,7 @@ class Dataloader(Generic[T]):
             on a pool of workers. If not provided, it will default to the
             number of CPUs on the system.
         batch_size: The batch size to use.
-        preload_factor: The number of batches to pre-load from the dataset.
+        prefetch_factor: The number of batches to pre-load from the dataset.
         ctx: The multiprocessing context to use. If not provided, the default
             context will be used.
     """
@@ -88,7 +88,7 @@ class Dataloader(Generic[T]):
         dataset: Dataset[T],
         num_workers: int | None = None,
         batch_size: int = 1,
-        preload_factor: int = 2,
+        prefetch_factor: int = 2,
         ctx: BaseContext | None = None,
     ) -> None:
         super().__init__()
@@ -99,8 +99,8 @@ class Dataloader(Generic[T]):
             raise ValueError("`num_workers` must be greater than or equal to 0")
         if batch_size < 1:
             raise ValueError("`batch_size` must be greater than or equal to 1")
-        if preload_factor < 1:
-            raise ValueError("`preload_factor` must be greater than or equal to 1")
+        if prefetch_factor < 1:
+            raise ValueError("`prefetch_factor` must be greater than or equal to 1")
 
         self.dataset = dataset
         self.num_workers = num_workers
@@ -110,7 +110,7 @@ class Dataloader(Generic[T]):
 
         self.processes: list[mp.Process] | None = None
         self.single_process_thread: threading.Thread | None = None
-        self.queue: Queue[DataLoaderItem[T]] = self.manager.Queue(maxsize=batch_size * preload_factor)
+        self.queue: Queue[DataLoaderItem[T]] = self.manager.Queue(maxsize=batch_size * prefetch_factor)
         self.stop_event: Event = self.manager.Event()
 
     def __iter__(self) -> "Dataloader[T]":
