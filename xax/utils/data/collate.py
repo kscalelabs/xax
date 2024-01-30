@@ -5,7 +5,6 @@ from typing import Any, Callable, Literal
 
 import numpy as np
 from PIL.Image import Image as PILImage
-from jaxtyping import ArrayLike
 
 CollateMode = Literal["stack", "concat"]
 
@@ -47,7 +46,7 @@ def pad_sequence(
     if num_dims == 0:
         raise ValueError("Tensor dimensions must be greater than zero")
     if not all(t.ndim == num_dims for t in tensors):
-        tensor_dims = {tndim for t in tensors}
+        tensor_dims = {t.ndim for t in tensors}
         raise ValueError(f"All tensors should have the same number of dimensions; got {tensor_dims}")
 
     dim = dim if dim >= 0 else num_dims + dim
@@ -56,7 +55,7 @@ def pad_sequence(
         target_length = min(target_length, max_length)
 
     def pad_tensor(t: np.ndarray) -> np.ndarray:
-        length = t.size(dim)
+        length = t.shape[dim]
         if length > target_length:
             t = np.take(t, range(length - target_length if left_truncate else 0, target_length), axis=dim)
         elif length < target_length:
@@ -69,13 +68,13 @@ def pad_sequence(
 
 
 def pad_all(
-    tensors: list[Tensor],
+    tensors: list[np.ndarray],
     *,
     max_length: int | None = None,
     left_pad: bool = False,
     left_truncate: bool = False,
     pad_value: int | float | bool = 0,
-) -> list[Tensor]:
+) -> list[np.ndarray]:
     """Pads all tensors to the same shape.
 
     Args:
@@ -93,12 +92,12 @@ def pad_all(
         return tensors
 
     # Gets the tensor dimension.
-    all_dims = set(t.dim() for t in tensors)
+    all_dims = set(t.ndim for t in tensors)
     assert len(all_dims) == 1, f"Got different numbers of tensor dimensions: {all_dims}"
     dims = list(all_dims)[0]
 
     for dim in range(dims):
-        all_sizes = set(t.size(dim) for t in tensors)
+        all_sizes = set(t.shape[dim] for t in tensors)
         if len(all_sizes) > 1:
             tensors = pad_sequence(
                 tensors,
@@ -115,8 +114,8 @@ def pad_all(
 def collate(
     items: list[Any],
     *,
-    mode: CollateMode | Callable[[list[Tensor]], Tensor] = "stack",
-    pad: bool | Callable[[list[Tensor]], list[Tensor]] = False,
+    mode: CollateMode | Callable[[list[np.ndarray]], np.ndarray] = "stack",
+    pad: bool | Callable[[list[np.ndarray]], list[np.ndarray]] = False,
 ) -> Any | None:  # noqa: ANN401
     """Defines a general-purpose collating function.
 
@@ -141,24 +140,8 @@ def collate(
     if item is None:
         return None
 
-    # All Numpy arrays are converted to tensors.
-    if isinstance(item, np.ndarray):
-        return collate([torch.from_numpy(i) for i in items], mode=mode, pad=pad)
-
-    # All images are converted to tensors.
-    if isinstance(item, PILImage):
-        return collate([pil_to_tensor(i) for i in items], mode=mode, pad=pad)
-
-    # Numbers are converted to a list of tensors.
-    if isinstance(item, bool):
-        return collate([torch.BoolTensor([i]) for i in items], mode=mode, pad=pad)
-    if isinstance(item, int):
-        return collate([torch.IntTensor([i]) for i in items], mode=mode, pad=pad)
-    if isinstance(item, float):
-        return collate([torch.FloatTensor([i]) for i in items], mode=mode, pad=pad)
-
     # Tensors are either concatenated or stacked.
-    if isinstance(item, Tensor):
+    if isinstance(item, np.ndarray):
         if callable(mode):
             return mode(items)
         if isinstance(mode, str):
@@ -167,11 +150,19 @@ def collate(
             if callable(pad):
                 items = pad(items)
             if mode == "stack":
-                return torch.stack(items, dim=0)
+                return np.stack(items, axis=0)
             if mode == "concat":
-                return torch.cat(items, dim=0)
+                return np.concatenate(items, axis=0)
             raise NotImplementedError(f"Invalid collate mode: {mode}")
         raise NotImplementedError(f"Invalid mode type: {type(mode)}")
+
+    # All images are converted to tensors.
+    if isinstance(item, PILImage):
+        return collate([np.asarray(i) for i in items], mode=mode, pad=pad)
+
+    # Numbers are converted to a list of tensors.
+    if isinstance(item, (bool, int, float)):
+        return collate([np.asarray([i]) for i in items], mode=mode, pad=pad)
 
     # Collate dictionaries if they have the same keys.
     if isinstance(item, dict) and all(set(i.keys()) == set(item.keys()) for i in items):
@@ -207,8 +198,8 @@ def collate(
 def collate_non_null(
     items: list[Any],
     *,
-    mode: CollateMode | Callable[[list[Tensor]], Tensor] = "stack",
-    pad: bool | Callable[[list[Tensor]], list[Tensor]] = False,
+    mode: CollateMode | Callable[[list[np.ndarray]], np.ndarray] = "stack",
+    pad: bool | Callable[[list[np.ndarray]], list[np.ndarray]] = False,
 ) -> Any:  # noqa: ANN401
     collated = collate(items, mode=mode, pad=pad)
     assert collated is not None

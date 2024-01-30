@@ -9,18 +9,12 @@ from xax.task.mixins import (
     ArtifactsMixin,
     CPUStatsConfig,
     CPUStatsMixin,
-    DeviceConfig,
-    DeviceMixin,
     GPUStatsConfig,
     GPUStatsMixin,
     LoggerConfig,
     LoggerMixin,
-    MixedPrecisionConfig,
-    MixedPrecisionMixin,
     ProcessConfig,
     ProcessMixin,
-    ProfilerConfig,
-    ProfilerMixin,
     RunnableConfig,
     RunnableMixin,
     StepContextConfig,
@@ -30,12 +24,9 @@ from xax.task.mixins import (
 
 @dataclass
 class ScriptConfig(
-    MixedPrecisionConfig,
     CPUStatsConfig,
-    DeviceConfig,
     GPUStatsConfig,
     ProcessConfig,
-    ProfilerConfig,
     LoggerConfig,
     StepContextConfig,
     ArtifactsConfig,
@@ -49,12 +40,9 @@ ConfigT = TypeVar("ConfigT", bound=ScriptConfig)
 
 
 class Script(
-    MixedPrecisionMixin[ConfigT],
     CPUStatsMixin[ConfigT],
-    DeviceMixin[ConfigT],
     GPUStatsMixin[ConfigT],
     ProcessMixin[ConfigT],
-    ProfilerMixin[ConfigT],
     LoggerMixin[ConfigT],
     StepContextMixin[ConfigT],
     ArtifactsMixin[ConfigT],

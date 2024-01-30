@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Generic, Sized, TypeVar
+from typing import Any, Generic, TypeVar
 
 from omegaconf import II, MISSING
 
@@ -12,9 +12,12 @@ from xax.nn.functions import set_random_seed
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
 from xax.utils.data.collate import CollateMode, collate
-from xax.utils.data.error_handling import error_handling_dataset
+from xax.utils.data.dataloader import Dataloader
+from xax.utils.data.dataset import Dataset, ErrorHandlingDataset
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -91,27 +94,6 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
-    def get_datapipe_dataloader(self, datapipe: MapDataPipe | IterDataPipe, phase: Phase) -> DataLoader:
-        debugging = self.config.debug_dataloader
-        if debugging:
-            logger.warning("Parallel dataloaders disabled in debugging mode")
-
-        cfg = self.dataloader_config(phase)
-
-        datapipe = self.apply_datapipe_transformations(datapipe, phase)
-
-        return DataLoader(
-            datapipe,
-            num_workers=0 if debugging else cfg.num_workers,
-            pin_memory=cfg.pin_memory,
-            timeout=0 if debugging else cfg.timeout,
-            worker_init_fn=self.worker_init_fn,
-            multiprocessing_context=None if debugging or cfg.num_workers <= 0 else self.multiprocessing_context,
-            generator=None,
-            prefetch_factor=None if debugging or cfg.num_workers == 0 else cfg.prefetch_factor,
-            persistent_workers=False if debugging or cfg.num_workers == 0 else cfg.persistent_workers,
-        )
-
     def get_dataset(self, phase: Phase) -> Dataset:
         """Returns the dataset for the given phase.
 
@@ -123,43 +105,7 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
         """
         raise NotImplementedError("The task should implement `get_dataset`")
 
-    def get_sampler(self, dataset: Dataset, cfg: DataLoaderConfig, phase: Phase) -> Sampler[int]:
-        """Returns a dataset sampler to use instead of random sampling.
-
-        The default behavior for a non-iterable dataset is to use a
-        RandomSampler for all the elements from the dataset. The sampler
-        should yield integer indices into the dataset.
-
-        Args:
-            dataset: The dataset to sample from
-            cfg: The associated dataloader config
-            phase: The dataset's phase
-
-        Raises:
-            NotImplementedError: If this method is not overridden
-        """
-        raise NotImplementedError("`get_sampler` should be implemented for the specific task")
-
-    def get_batch_sampler(self, sampler: Sampler, cfg: DataLoaderConfig, phase: Phase) -> Sampler[list[int]]:
-        """Returns a dataset batch sampler to use instead fo sequential sampling.
-
-        The batch sampler should yield lists of integer indices, which
-        are the samples that are passed to the dataset.
-
-        Args:
-            sampler: The underlying sampler
-            cfg: The associated dataloader config
-            phase: The dataset's phase
-
-        Raises:
-            NotImplementedError: If this method is not overridden
-        """
-        raise NotImplementedError("`get_sampler` should be implemented for the specific task")
-
-    def get_dataloader(self, dataset: Dataset, phase: Phase) -> DataLoader:
-        if isinstance(dataset, (MapDataPipe, IterDataPipe)):
-            return self.get_datapipe_dataloader(dataset, phase)
-
+    def get_dataloader(self, dataset: Dataset[T], phase: Phase) -> Dataloader[T]:
         debugging = self.config.debug_dataloader
         if debugging:
             logger.warning("Parallel dataloaders disabled in debugging mode")
@@ -167,47 +113,12 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
         cfg = self.dataloader_config(phase)
 
         # Wraps the dataset to handle errors.
-        dataset = error_handling_dataset(dataset)
+        dataset = ErrorHandlingDataset(dataset)
 
-        # Arguments shared by all dataloaders.
-        common_kwargs = {
-            "num_workers": 0 if debugging else cfg.num_workers,
-            "collate_fn": self.collate_fn,
-            "pin_memory": cfg.pin_memory,
-            "timeout": 0 if debugging else cfg.timeout,
-            "worker_init_fn": self.worker_init_fn,
-            "multiprocessing_context": None,
-            "generator": None,
-            "prefetch_factor": None if debugging or cfg.num_workers == 0 else cfg.prefetch_factor,
-            "persistent_workers": False if debugging or cfg.num_workers == 0 else cfg.persistent_workers,
-        }
-
-        try:
-            sampler = self.get_sampler(dataset, cfg, phase)
-        except NotImplementedError:
-            return DataLoader(
-                dataset=dataset,
-                batch_size=round(cfg.batch_size * cfg.batch_size_multiplier),
-                drop_last=cfg.drop_last,
-                shuffle=cfg.shuffle if isinstance(dataset, Sized) else False,
-                **common_kwargs,  # type: ignore[arg-type]
-            )
-
-        try:
-            batch_sampler = self.get_batch_sampler(sampler, cfg, phase)
-        except NotImplementedError:
-            return DataLoader(
-                dataset=dataset,
-                sampler=sampler,
-                batch_size=round(cfg.batch_size * cfg.batch_size_multiplier),
-                drop_last=cfg.drop_last,
-                **common_kwargs,  # type: ignore[arg-type]
-            )
-
-        return DataLoader(
+        return Dataloader(
             dataset=dataset,
-            batch_sampler=batch_sampler,
-            **common_kwargs,  # type: ignore[arg-type]
+            batch_size=round(cfg.batch_size * cfg.batch_size_multiplier),
+            num_workers=0 if debugging else cfg.num_workers,
         )
 
     @classmethod
