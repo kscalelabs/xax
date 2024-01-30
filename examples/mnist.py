@@ -3,11 +3,14 @@
 Run this example with `python -m examples.mnist`.
 """
 
+import array
+import gzip
+import struct
 from dataclasses import dataclass
 
 import flax.linen as nn
+import numpy as np
 import optax
-from jaxtyping import Array
 
 import xax
 
@@ -38,9 +41,8 @@ class MnistClassification(xax.Task[Config]):
             ],
         )
 
-    def get_dataset(self, phase: xax.Phase) -> Dataset[tuple[Array, Array]]:
-        root_dir = xax.get_data_dir() / "mnist"
-        return MNIST(root=root_dir, train=phase == "train", download=not root_dir.exists())
+    def get_dataset(self, phase: xax.Phase) -> MNIST:
+        return MNIST(train=phase == "train")
 
     def build_optimizer(self) -> Optimizer:
         return optax.adam

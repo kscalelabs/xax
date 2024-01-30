@@ -1,8 +1,10 @@
 """Defines an interface for loading data."""
 
 import bdb
+import itertools
 import logging
 import random
+import re
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -10,6 +12,7 @@ from collections import Counter, deque
 from dataclasses import dataclass
 from typing import Deque, Generic, Iterator, Sequence, TypeVar
 
+from xax.utils.logging import configure_logging
 from xax.utils.text import TextBlock, render_text_blocks
 
 logger = logging.getLogger(__name__)
@@ -62,6 +65,42 @@ class Dataset(ABC, Iterator[T], Generic[T]):
         # Don't override this! Use `next` instead.
         return self.next()
 
+    def test(
+        self,
+        max_samples: int = 10,
+        handle_errors: bool = False,
+        log_interval: int = 1,
+        truncate: int | None = 80,
+        replace_whitespace: bool = True,
+    ) -> None:
+        """Defines a function for doing adhoc testing of the dataset.
+
+        Args:
+            max_samples: The maximum number of samples to test.
+            handle_errors: If set, wraps the dataset in an error handling
+                wrapper that will catch and log exceptions.
+            log_interval: How often to log a sample.
+            truncate: The maximum number of characters to show in a sample.
+                If None, shows the entire sample.
+            replace_whitespace: If set, replaces whitespace characters with
+                spaces.
+        """
+        configure_logging()
+        ds = ErrorHandlingDataset(self, flush_every_n=max_samples) if handle_errors else self
+        start_time = time.time()
+        ws_regex = re.compile(r"\s+") if replace_whitespace else None
+        for i, sample in enumerate(itertools.islice(ds, max_samples)):
+            if i % log_interval == 0:
+                sample_str = str(sample)
+                if ws_regex is not None:
+                    sample_str = ws_regex.sub(" ", sample_str)
+                if truncate is not None and len(sample_str) > truncate:
+                    sample_str = sample_str[: truncate - 3] + "..."
+                logger.info("Sample %d: %s", i, sample_str)
+        elapsed_time = time.time() - start_time
+        samples_per_second = i / elapsed_time
+        logger.info("Tested %d samples in %f seconds (%f samples per second)", i + 1, elapsed_time, samples_per_second)
+
 
 class RoundRobinDataset(Dataset[T], Generic[T]):
     """Defines a dataset that yields samples in round robin fashion.
@@ -84,6 +123,10 @@ class RoundRobinDataset(Dataset[T], Generic[T]):
         self.datasets = datasets
         self.stop_on_first = stop_on_first
         self.datasets_queue: Deque[Dataset[T]] = deque()
+
+    def worker_init(self, worker_id: int, num_workers: int) -> None:
+        for dataset in self.datasets:
+            dataset.worker_init(worker_id, num_workers)
 
     def start(self) -> None:
         self.datasets_queue.clear()
@@ -128,6 +171,10 @@ class RandomDataset(Dataset[T], Generic[T]):
         self.stop_on_first = stop_on_first
         self.dataset_list: list[Dataset[T]] = []
 
+    def worker_init(self, worker_id: int, num_workers: int) -> None:
+        for dataset in self.datasets:
+            dataset.worker_init(worker_id, num_workers)
+
     def start(self) -> None:
         self.dataset_list.clear()
         for dataset in self.datasets:
@@ -162,6 +209,8 @@ def get_loc(num_excs: int = 1) -> str:
 
 @dataclass(frozen=True)
 class ExceptionSummary:
+    num_steps: int
+    num_exceptions: int
     top_exception_messages: list[tuple[str, int]]
     top_exception_types: list[tuple[str, int]]
     top_exception_locations: list[tuple[str, int]]
@@ -172,8 +221,9 @@ class ExceptionSummary:
 
         blocks += [
             [
-                TextBlock("Error Summary", color="red", bold=True, width=60, center=True),
+                TextBlock(f"Error Summary ({self.num_steps} steps)", color="red", bold=True, width=60, center=True),
                 TextBlock("Count", color="yellow", bold=False, width=10, center=True),
+                TextBlock("Percent", color="yellow", bold=False, width=10, center=True),
             ],
         ]
 
@@ -182,6 +232,7 @@ class ExceptionSummary:
                 [
                     TextBlock(s, color="yellow", bold=True, width=60),
                     TextBlock("", width=10),
+                    TextBlock("", width=10),
                 ],
             ]
 
@@ -189,6 +240,7 @@ class ExceptionSummary:
             line = [
                 TextBlock(ks, width=60, no_sep=True),
                 TextBlock(f"{v}", width=10, no_sep=True),
+                TextBlock(f"{v / self.num_steps * 100:.2f}%", width=10, no_sep=True),
             ]
             return [line]
 
@@ -206,6 +258,10 @@ class ExceptionSummary:
         blocks += get_header("Locations")
         for k, v in self.top_exception_locations:
             blocks += get_line(k, v)
+
+        # Logs the total number of exceptions.
+        blocks += get_header("Total")
+        blocks += get_line("Total", self.num_exceptions)
 
         return render_text_blocks(blocks)
 
@@ -240,6 +296,12 @@ class ExceptionSummaryWriter:
         self.num_steps += 1
         self.step_has_error = False
 
+    def __len__(self) -> int:
+        return len(self.exceptions)
+
+    def __bool__(self) -> bool:
+        return len(self.exceptions) > 0
+
     def add_exception(self, exc: Exception, loc: str) -> None:
         self.last_exception = exc
         self.exceptions[f"{exc.__class__.__name__}: {exc}"] += 1
@@ -251,6 +313,8 @@ class ExceptionSummaryWriter:
 
     def summary(self) -> ExceptionSummary:
         return ExceptionSummary(
+            num_steps=self.num_steps,
+            num_exceptions=self.total_exceptions,
             top_exception_messages=self.exceptions.most_common(self.max_exceptions),
             top_exception_types=self.exception_classes.most_common(self.max_exceptions),
             top_exception_locations=self.exception_locs.most_common(self.max_exceptions),
@@ -280,6 +344,7 @@ class ErrorHandlingDataset(Dataset[T]):
             off (i.e. increasing the sleep time).
         traceback_depth: The number of stack frames to include in the
             exception traceback.
+        flush_every_n: Flush the exception summary every N steps.
     """
 
     def __init__(
@@ -290,6 +355,7 @@ class ErrorHandlingDataset(Dataset[T]):
         maximum_exceptions: int = 10,
         backoff_after: int = 5,
         traceback_depth: int = 3,
+        flush_every_n: int = 10000,
     ) -> None:
         super().__init__()
 
@@ -299,8 +365,15 @@ class ErrorHandlingDataset(Dataset[T]):
         self.maximum_exceptions = maximum_exceptions
         self.backoff_after = backoff_after
         self.traceback_depth = traceback_depth
+        self.flush_every_n = flush_every_n
+        self.log_exceptions = True
 
         self.exc_summary = ExceptionSummaryWriter()
+
+    def worker_init(self, worker_id: int, num_workers: int) -> None:
+        self.dataset.worker_init(worker_id, num_workers)
+        if worker_id != 0:
+            self.log_exceptions = False
 
     def start(self) -> None:
         self.dataset.start()
@@ -310,6 +383,11 @@ class ErrorHandlingDataset(Dataset[T]):
         num_exceptions = 0
         backoff_time = self.sleep_backoff
         self.exc_summary.next()
+
+        if self.exc_summary.num_steps >= self.flush_every_n:
+            if self.log_exceptions and self.exc_summary:
+                logger.info("Exception summary:\n%s", self.exc_summary.summary())
+            self.exc_summary.clear()
 
         while num_exceptions < self.maximum_exceptions:
             try:
