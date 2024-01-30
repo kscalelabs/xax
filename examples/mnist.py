@@ -3,14 +3,9 @@
 Run this example with `python -m examples.mnist`.
 """
 
-import array
-import gzip
-import struct
 from dataclasses import dataclass
 
 import flax.linen as nn
-import numpy as np
-import optax
 
 import xax
 
@@ -41,27 +36,10 @@ class MnistClassification(xax.Task[Config]):
             ],
         )
 
-    def get_dataset(self, phase: xax.Phase) -> MNIST:
-        return MNIST(train=phase == "train")
-
-    def build_optimizer(self) -> Optimizer:
-        return optax.adam
-
-    def get_loss(self, batch: tuple[Tensor, Tensor], state: mlfab.State) -> Tensor:
-        x, y = batch
-        yhat = self(x)
-        self.log_step(batch, yhat, state)
-        return F.cross_entropy(yhat, y.squeeze(-1).long())
-
-    def log_valid_step(self, batch: tuple[Tensor, Tensor], output: Tensor, state: mlfab.State) -> None:
-        (x, y), yhat = batch, output
-
-        def get_label_strings() -> list[str]:
-            ytrue, ypred = y.squeeze(-1), yhat.argmax(-1)
-            return [f"ytrue={ytrue[i]}, ypred={ypred[i]}" for i in range(len(ytrue))]
-
-        self.log_labeled_images("images", lambda: (x, get_label_strings()))
+    def get_dataset(self, phase: xax.Phase) -> xax.MNIST:
+        return xax.MNIST(train=phase == "train")
 
 
 if __name__ == "__main__":
+    # python -m examples.mnist
     MnistClassification.launch(Config(batch_size=16))

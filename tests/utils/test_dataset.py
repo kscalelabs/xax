@@ -1,53 +1,55 @@
 """Tests the dataset classes."""
 
 import itertools
-import random
-
-import pytest
+from typing import Iterator
 
 import xax
 
 
 class DummyDataset(xax.Dataset[int]):
-    def __init__(self, max_len: int) -> None:
+    def __init__(self, value: int) -> None:
         super().__init__()
 
-        self.max_len = max_len
-        self.i = 0
-
-    def start(self) -> None:
-        self.i = 0
+        self.value = value
 
     def next(self) -> int:
-        if self.i >= self.max_len:
-            raise StopIteration
-        self.i += 1
-        return random.randint(0, 5)
+        return self.value
 
 
 def test_dataset_simple() -> None:
-    ds = DummyDataset(10)
+    ds = DummyDataset(1)
     for sample in itertools.islice(ds, 10):
-        assert isinstance(sample, int)
+        assert sample == 1
 
 
-@pytest.mark.parametrize("stop_on_first", [True, False])
-def test_round_robin_dataset(stop_on_first: bool) -> None:
-    dss = [DummyDataset(i) for i in range(1, 5)]
-    ds = xax.RoundRobinDataset(dss, stop_on_first=stop_on_first)
-    num_samples = sum(1 for _ in ds)
-    assert num_samples == (4 if stop_on_first else sum(range(1, 5)))
+def test_round_robin_dataset() -> None:
+    dss = [DummyDataset(i) for i in range(5)]
+    ds = xax.RoundRobinDataset(dss)
+    assert list(itertools.islice(ds, 10)) == [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]
 
 
-@pytest.mark.parametrize("stop_on_first", [True, False])
-def test_random_dataset(stop_on_first: bool) -> None:
-    dss = [DummyDataset(i) for i in range(1, 5)]
-    ds = xax.RandomDataset(dss, stop_on_first=stop_on_first)
-    num_samples = sum(1 for _ in ds)
-    if not stop_on_first:
-        assert num_samples == sum(range(1, 5))
+def test_random_dataset() -> None:
+    dss = [DummyDataset(i) for i in range(5)]
+    ds = xax.RandomDataset(dss)
+    assert all(0 <= i < 5 for i in itertools.islice(ds, 10))
+
+
+class DummyChunkedDataset(xax.ChunkedDataset[int]):
+    def __init__(self, value: int) -> None:
+        super().__init__()
+
+        self.value = value
+
+    def next_chunk(self) -> Iterator[int]:
+        for i in range(self.value):
+            yield i
+
+
+def test_chunked_dataset() -> None:
+    ds = DummyChunkedDataset(5)
+    assert list(itertools.islice(ds, 10)) == [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]
 
 
 if __name__ == "__main__":
     # python -m tests.utils.test_dataset
-    test_round_robin_dataset(False)
+    test_round_robin_dataset()

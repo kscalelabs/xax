@@ -37,14 +37,16 @@ def dataloader_worker(
     num_workers: int,
 ) -> None:
     dataset.worker_init(worker_id, num_workers)
+    dataset_iterator = dataset.__iter__()
     while True:
         if stop_event.is_set():
-            break
+            return
         try:
-            queue.put(DataLoaderItem(dataset.next(), None, worker_id))
+            sample = dataset_iterator.__next__()
+            queue.put(DataLoaderItem(sample, None, worker_id))
         except BaseException as e:
             queue.put(DataLoaderItem(None, e, worker_id))
-            raise
+            break
 
 
 def default_num_workers(default: int) -> int:

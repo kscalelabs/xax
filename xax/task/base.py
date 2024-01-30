@@ -59,6 +59,8 @@ def get_config(cfg: RawConfigType, task_path: Path) -> DictConfig:
 
 
 class BaseTask(nn.Module, Generic[Config]):
+    config: Config
+
     def __init__(self, config: Config) -> None:
         super().__init__()
 

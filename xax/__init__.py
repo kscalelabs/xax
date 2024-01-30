@@ -46,12 +46,14 @@ __all__ = [
     "collate",
     "collate_non_null",
     "Dataloader",
+    "ChunkedDataset",
     "Dataset",
     "ErrorHandlingDataset",
     "ExceptionSummary",
     "ExceptionSummaryWriter",
     "RandomDataset",
     "RoundRobinDataset",
+    "MNIST",
     "BaseFileDownloader",
     "DataDownloader",
     "ModelDownloader",
@@ -63,6 +65,9 @@ __all__ = [
     "save_config",
     "ColoredFormatter",
     "configure_logging",
+    "one_hot",
+    "partial_flatten",
+    "worker_chunk",
     "TextBlock",
     "colored",
     "format_datetime",
@@ -122,12 +127,14 @@ NAME_MAP: dict[str, str] = {
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
     "Dataloader": "utils.data.dataloader",
+    "ChunkedDataset": "utils.data.dataset",
     "Dataset": "utils.data.dataset",
     "ErrorHandlingDataset": "utils.data.dataset",
     "ExceptionSummary": "utils.data.dataset",
     "ExceptionSummaryWriter": "utils.data.dataset",
     "RandomDataset": "utils.data.dataset",
     "RoundRobinDataset": "utils.data.dataset",
+    "MNIST": "utils.data.impl.mnist",
     "BaseFileDownloader": "utils.experiments",
     "DataDownloader": "utils.experiments",
     "ModelDownloader": "utils.experiments",
@@ -139,6 +146,9 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "ColoredFormatter": "utils.logging",
     "configure_logging": "utils.logging",
+    "one_hot": "utils.numpy",
+    "partial_flatten": "utils.numpy",
+    "worker_chunk": "utils.numpy",
     "TextBlock": "utils.text",
     "colored": "utils.text",
     "format_datetime": "utils.text",
@@ -195,6 +205,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
     from xax.utils.data.dataloader import Dataloader
     from xax.utils.data.dataset import (
+        ChunkedDataset,
         Dataset,
         ErrorHandlingDataset,
         ExceptionSummary,
@@ -202,6 +213,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         RandomDataset,
         RoundRobinDataset,
     )
+    from xax.utils.data.impl.mnist import MNIST
     from xax.utils.experiments import (
         BaseFileDownloader,
         DataDownloader,
@@ -214,6 +226,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         save_config,
     )
     from xax.utils.logging import ColoredFormatter, configure_logging
+    from xax.utils.numpy import one_hot, partial_flatten, worker_chunk
     from xax.utils.text import (
         TextBlock,
         colored,

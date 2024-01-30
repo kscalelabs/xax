@@ -6,11 +6,13 @@ import logging
 import random
 import re
 import sys
+import threading
 import time
 from abc import ABC, abstractmethod
-from collections import Counter, deque
+from collections import Counter
 from dataclasses import dataclass
-from typing import Deque, Generic, Iterator, Sequence, TypeVar
+from queue import Queue
+from typing import Generic, Iterator, Sequence, TypeVar
 
 from xax.utils.logging import configure_logging
 from xax.utils.text import TextBlock, render_text_blocks
@@ -20,30 +22,12 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class Dataset(ABC, Iterator[T], Generic[T]):
+class Dataset(Iterator[T], Generic[T], ABC):
     """Defines the Xax dataset interface.
 
-    Xax datasets are analogous to PyTorch's iterable datasets.
+    Xax datasets are analogous to a PyTorch iterable datasets that iterates
+    forever. This means that there is no concept of an epoch or dataset size.
     """
-
-    @abstractmethod
-    def start(self) -> None:
-        """Starts the dataset.
-
-        This method is called before the first call to `next`, signifies the
-        beginning of a new epoch.
-        """
-
-    @abstractmethod
-    def next(self) -> T:
-        """Returns the next item in the dataset.
-
-        Returns:
-            The next item in the dataset.
-
-        Raises:
-            StopIteration: If the dataset has been exhausted.
-        """
 
     def worker_init(self, worker_id: int, num_workers: int) -> None:
         """Initializes the dataset worker.
@@ -56,9 +40,16 @@ class Dataset(ABC, Iterator[T], Generic[T]):
             num_workers: The number of workers in the worker pool.
         """
 
+    @abstractmethod
+    def next(self) -> T:
+        """Returns the next item in the dataset.
+
+        Returns:
+            The next item in the dataset.
+        """
+
     def __iter__(self) -> "Dataset[T]":
-        # Don't override this! Use `start` instead.
-        self.start()
+        # Don't override this! Use `worker_init` instead.
         return self
 
     def __next__(self) -> T:
@@ -69,7 +60,7 @@ class Dataset(ABC, Iterator[T], Generic[T]):
         self,
         max_samples: int = 10,
         handle_errors: bool = False,
-        log_interval: int = 1,
+        log_interval: int | None = 1,
         truncate: int | None = 80,
         replace_whitespace: bool = True,
     ) -> None:
@@ -79,7 +70,8 @@ class Dataset(ABC, Iterator[T], Generic[T]):
             max_samples: The maximum number of samples to test.
             handle_errors: If set, wraps the dataset in an error handling
                 wrapper that will catch and log exceptions.
-            log_interval: How often to log a sample.
+            log_interval: How often to log a sample. If None, don't log any
+                samples.
             truncate: The maximum number of characters to show in a sample.
                 If None, shows the entire sample.
             replace_whitespace: If set, replaces whitespace characters with
@@ -90,7 +82,7 @@ class Dataset(ABC, Iterator[T], Generic[T]):
         start_time = time.time()
         ws_regex = re.compile(r"\s+") if replace_whitespace else None
         for i, sample in enumerate(itertools.islice(ds, max_samples)):
-            if i % log_interval == 0:
+            if log_interval is not None and i % log_interval == 0:
                 sample_str = str(sample)
                 if ws_regex is not None:
                     sample_str = ws_regex.sub(" ", sample_str)
@@ -102,51 +94,100 @@ class Dataset(ABC, Iterator[T], Generic[T]):
         logger.info("Tested %d samples in %f seconds (%f samples per second)", i + 1, elapsed_time, samples_per_second)
 
 
+class ChunkedDataset(Dataset[T], Generic[T], ABC):
+    """Defines a dataset that yields chunks of samples in a separate thread.
+
+    This dataset is useful for implementing IO bound datasets such as
+    datasets that read from disk or download data from the internet. Subclasses
+    should implement the `next_chunk` method, which iterates over the next
+    chunk of data. For example, a dataset that reads from a spinning disk
+    might implement `next_chunk` as follows:
+
+    .. code-block:: python
+
+        def next_chunk(self) -> Iterator[T]:
+            path = self.paths[self.current_path]
+            self.current_path = (self.current_path + 1) % len(self.paths)
+            with open(path, "rb", buffering=BIG_BUFFERING_SIZE) as fh:
+                for line in fh:
+                    yield line
+
+    In the above example, we use a large buffer size to reduce the number of
+    IO operations. Since this happens in a separate thread, we don't need to
+    worry about creating a new file pointer for each chunk.
+
+    Parameters:
+        max_queue_size: The maximum number of samples to keep in the
+            queue at a time.
+    """
+
+    def __init__(self, max_queue_size: int = 32) -> None:
+        super().__init__()
+
+        self.next_chunk_queue: Queue[T] = Queue(maxsize=max_queue_size)
+        self.error_queue: Queue[Exception] = Queue()
+        self.next_chunk_event = threading.Event()
+        self.next_chunk_thread: threading.Thread | None = None
+
+    @abstractmethod
+    def next_chunk(self) -> Iterator[T]:
+        """Returns the next chunk of data.
+
+        Returns:
+            The next chunk of data.
+        """
+
+    def chunked_dataset_thread(self) -> None:
+        while True:
+            try:
+                for sample in self.next_chunk():
+                    if self.next_chunk_queue.full():
+                        self.next_chunk_event.clear()
+                        self.next_chunk_event.wait()
+                    self.next_chunk_queue.put(sample)
+            except (bdb.BdbQuit, KeyboardInterrupt, StopIteration):
+                raise
+            except Exception as e:
+                self.error_queue.put(e)
+
+    def next(self) -> T:
+        if self.next_chunk_thread is None:
+            self.next_chunk_thread = threading.Thread(target=self.chunked_dataset_thread, daemon=True)
+            self.next_chunk_thread.start()
+
+        # If there are any errors in the error queue, raise them.
+        if not self.error_queue.empty():
+            raise self.error_queue.get()
+
+        # If the thread is blocking but we're out of samples in the queue,
+        # signal the thread to start adding samples again.
+        if not self.next_chunk_event.is_set() and self.next_chunk_queue.empty():
+            self.next_chunk_event.set()
+
+        return self.next_chunk_queue.get()
+
+
 class RoundRobinDataset(Dataset[T], Generic[T]):
     """Defines a dataset that yields samples in round robin fashion.
 
     Parameters:
         datasets: The datasets to sample from.
-        stop_on_first: Whether to stop after the first dataset is exhausted,
-            or to continue sampling until all datasets are exhausted. The
-            former case ensures that your samples are balanced across datasets,
-            while the latter case ensures that you use all of your data.
     """
 
-    def __init__(
-        self,
-        datasets: Sequence[Dataset[T]],
-        stop_on_first: bool = False,
-    ) -> None:
+    def __init__(self, datasets: Sequence[Dataset[T]]) -> None:
         super().__init__()
 
         self.datasets = datasets
-        self.stop_on_first = stop_on_first
-        self.datasets_queue: Deque[Dataset[T]] = deque()
+        self.i = 0
 
     def worker_init(self, worker_id: int, num_workers: int) -> None:
         for dataset in self.datasets:
             dataset.worker_init(worker_id, num_workers)
 
-    def start(self) -> None:
-        self.datasets_queue.clear()
-        for dataset in self.datasets:
-            dataset.start()
-            self.datasets_queue.append(dataset)
-
     def next(self) -> T:
-        while True:
-            if len(self.datasets_queue) == 0:
-                raise StopIteration
-            dataset = self.datasets_queue.popleft()
-            try:
-                next_item = dataset.next()
-                self.datasets_queue.append(dataset)
-                return next_item
-            except StopIteration:
-                if self.stop_on_first:
-                    raise
-                continue
+        next_item = self.datasets[self.i].next()
+        self.i = (self.i + 1) % len(self.datasets)
+        return next_item
 
 
 class RandomDataset(Dataset[T], Generic[T]):
@@ -154,10 +195,6 @@ class RandomDataset(Dataset[T], Generic[T]):
 
     Parameters:
         datasets: The datasets to sample from.
-        stop_on_first: Whether to stop after the first dataset is exhausted,
-            or to continue sampling until all datasets are exhausted. The
-            former case ensures that your samples are balanced across datasets,
-            while the latter case ensures that you use all of your data.
     """
 
     def __init__(
@@ -169,30 +206,13 @@ class RandomDataset(Dataset[T], Generic[T]):
 
         self.datasets = datasets
         self.stop_on_first = stop_on_first
-        self.dataset_list: list[Dataset[T]] = []
 
     def worker_init(self, worker_id: int, num_workers: int) -> None:
         for dataset in self.datasets:
             dataset.worker_init(worker_id, num_workers)
 
-    def start(self) -> None:
-        self.dataset_list.clear()
-        for dataset in self.datasets:
-            dataset.start()
-            self.dataset_list.append(dataset)
-
     def next(self) -> T:
-        while True:
-            if len(self.dataset_list) == 0:
-                raise StopIteration
-            dataset = random.choice(self.dataset_list)
-            try:
-                return dataset.next()
-            except StopIteration:
-                if self.stop_on_first:
-                    raise
-                self.dataset_list.remove(dataset)
-                continue
+        return random.choice(self.datasets).next()
 
 
 def get_loc(num_excs: int = 1) -> str:
@@ -287,11 +307,6 @@ class ExceptionSummaryWriter:
         self.step_has_error = False
         self.total_exceptions = 0
 
-    def start(self) -> None:
-        self.num_steps = 0
-        self.step_has_error = False
-        self.total_exceptions = 0
-
     def next(self) -> None:
         self.num_steps += 1
         self.step_has_error = False
@@ -325,6 +340,10 @@ class ExceptionSummaryWriter:
         self.exceptions.clear()
         self.exception_classes.clear()
         self.exception_locs.clear()
+
+        self.num_steps = 0
+        self.step_has_error = False
+        self.total_exceptions = 0
 
     def __str__(self) -> str:
         return str(self.summary())
@@ -374,10 +393,6 @@ class ErrorHandlingDataset(Dataset[T]):
         self.dataset.worker_init(worker_id, num_workers)
         if worker_id != 0:
             self.log_exceptions = False
-
-    def start(self) -> None:
-        self.dataset.start()
-        self.exc_summary.start()
 
     def next(self) -> T:
         num_exceptions = 0
