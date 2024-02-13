@@ -35,6 +35,8 @@ def get_env_var(name: str, default: bool) -> bool:
 
 
 class LoggerMixin(BaseTask[Config], Generic[Config]):
+    logger: Logger
+
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 

@@ -72,6 +72,8 @@ class ColoredFormatter(logging.Formatter):
         "CRITICAL": "yellow",
         "FATAL": "red",
         "ERROR": "red",
+        "STATUS": "green",
+        "PING": "magenta",
     }
 
     def __init__(

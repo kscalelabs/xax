@@ -326,7 +326,7 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def scalar_future() -> Number:
-            raise NotImplementedError
+            return value() if callable(value) else value
 
         self.scalars[namespace][key] = scalar_future
 
@@ -342,7 +342,7 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def value_future() -> str:
-            raise NotImplementedError
+            return value() if callable(value) else value
 
         self.strings[namespace][key] = value_future
 

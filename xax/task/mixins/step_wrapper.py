@@ -16,6 +16,7 @@ StepType = Literal[
     "get_dataset",
     "get_prefetcher",
     "get_single_loss",
+    "get_update_fn",
     "load_checkpoint",
     "log_losses",
     "model_to_device",
@@ -55,5 +56,8 @@ Config = TypeVar("Config", bound=StepContextConfig)
 
 
 class StepContextMixin(BaseTask[Config]):
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+
     def step_context(self, step: StepType) -> ContextManager:
         return StepContext(step)

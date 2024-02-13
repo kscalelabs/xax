@@ -219,10 +219,12 @@ class GPUStatsMonitor:
 class GPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
     """Defines a task mixin for getting GPU statistics."""
 
+    _gpu_stats_monitor: GPUStatsMonitor | None
+
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-        self._gpu_stats_monitor: GPUStatsMonitor | None = None
+        self._gpu_stats_monitor = None
         if shutil.which("nvidia-smi") is not None:
             self._gpu_stats_monitor = GPUStatsMonitor(config.gpu_stats.ping_interval, self._mp_manager)
 

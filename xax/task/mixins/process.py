@@ -4,6 +4,7 @@ import logging
 import multiprocessing as mp
 from dataclasses import dataclass
 from multiprocessing.context import BaseContext
+from multiprocessing.managers import SyncManager
 from typing import Generic, TypeVar
 
 from xax.core.conf import field
@@ -24,6 +25,9 @@ Config = TypeVar("Config", bound=ProcessConfig)
 class ProcessMixin(BaseTask[Config], Generic[Config]):
     """Defines a base trainer mixin for handling monitoring processes."""
 
+    _mp_ctx: BaseContext
+    _mp_manager: SyncManager
+
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
@@ -33,11 +37,6 @@ class ProcessMixin(BaseTask[Config], Generic[Config]):
     @property
     def multiprocessing_context(self) -> BaseContext:
         return self._mp_ctx
-
-    def on_training_start(self, state: State) -> None:
-        super().on_training_start(state)
-
-        self._mp_manager = mp.Manager()
 
     def on_training_end(self, state: State) -> None:
         super().on_training_end(state)

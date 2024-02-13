@@ -208,6 +208,8 @@ class CPUStatsMonitor:
 class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
     """Defines a task mixin for getting CPU statistics."""
 
+    _cpu_stats_monitor: CPUStatsMonitor
+
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 

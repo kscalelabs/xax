@@ -15,7 +15,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Generic, Self, TypeVar, cast
 
-import flax.linen as nn
+import equinox as eqx
 from jaxtyping import Array
 from omegaconf import Container, DictConfig, OmegaConf
 
@@ -58,7 +58,7 @@ def get_config(cfg: RawConfigType, task_path: Path) -> DictConfig:
     return cast(DictConfig, cfg)
 
 
-class BaseTask(nn.Module, Generic[Config]):
+class BaseTask(eqx.Module, Generic[Config]):
     config: Config
 
     def __init__(self, config: Config) -> None:

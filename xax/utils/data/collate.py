@@ -5,6 +5,7 @@ from typing import Any, Callable, Literal
 
 import numpy as np
 from PIL.Image import Image as PILImage
+from jaxtyping import ArrayLike
 
 CollateMode = Literal["stack", "concat"]
 
@@ -161,8 +162,8 @@ def collate(
         return collate([np.asarray(i) for i in items], mode=mode, pad=pad)
 
     # Numbers are converted to a list of tensors.
-    if isinstance(item, (bool, int, float)):
-        return collate([np.asarray([i]) for i in items], mode=mode, pad=pad)
+    if isinstance(item, (bool, int, float, complex, np.bool_, np.number)):
+        return collate([np.asarray(i) for i in items], mode=mode, pad=pad)
 
     # Collate dictionaries if they have the same keys.
     if isinstance(item, dict) and all(set(i.keys()) == set(item.keys()) for i in items):

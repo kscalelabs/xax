@@ -45,15 +45,6 @@ __all__ = [
     "Task",
     "collate",
     "collate_non_null",
-    "Dataloader",
-    "ChunkedDataset",
-    "Dataset",
-    "ErrorHandlingDataset",
-    "ExceptionSummary",
-    "ExceptionSummaryWriter",
-    "RandomDataset",
-    "RoundRobinDataset",
-    "MNIST",
     "BaseFileDownloader",
     "DataDownloader",
     "ModelDownloader",
@@ -126,15 +117,6 @@ NAME_MAP: dict[str, str] = {
     "Task": "task.task",
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
-    "Dataloader": "utils.data.dataloader",
-    "ChunkedDataset": "utils.data.dataset",
-    "Dataset": "utils.data.dataset",
-    "ErrorHandlingDataset": "utils.data.dataset",
-    "ExceptionSummary": "utils.data.dataset",
-    "ExceptionSummaryWriter": "utils.data.dataset",
-    "RandomDataset": "utils.data.dataset",
-    "RoundRobinDataset": "utils.data.dataset",
-    "MNIST": "utils.data.impl.mnist",
     "BaseFileDownloader": "utils.experiments",
     "DataDownloader": "utils.experiments",
     "ModelDownloader": "utils.experiments",
@@ -203,17 +185,6 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
-    from xax.utils.data.dataloader import Dataloader
-    from xax.utils.data.dataset import (
-        ChunkedDataset,
-        Dataset,
-        ErrorHandlingDataset,
-        ExceptionSummary,
-        ExceptionSummaryWriter,
-        RandomDataset,
-        RoundRobinDataset,
-    )
-    from xax.utils.data.impl.mnist import MNIST
     from xax.utils.experiments import (
         BaseFileDownloader,
         DataDownloader,

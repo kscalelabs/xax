@@ -1,6 +1,6 @@
 # requirements.txt
 
-flax
+equinox
 gitpython
 jax
 jaxtyping

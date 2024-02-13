@@ -1,8 +1,10 @@
 """Defines a mixin for running the training loop."""
 
+import bisect
 import contextlib
+import functools
+import itertools
 import logging
-import signal
 import sys
 import textwrap
 import time
@@ -11,8 +13,11 @@ from dataclasses import dataclass, is_dataclass
 from threading import Thread
 from typing import Any, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
+import optax
 from jaxtyping import Array
 from omegaconf import DictConfig
 
@@ -23,6 +28,7 @@ from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
 from xax.task.mixins.data_loader import DataLoadersConfig, DataLoadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
+from xax.task.mixins.optimizer import OptimizerConfig, OptimizerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
@@ -36,6 +42,8 @@ from xax.utils.logging import LOG_STATUS
 from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
+
+Params = Any
 
 # Batch = TypeVar("Batch")
 # Output = TypeVar("Output")
@@ -57,8 +65,77 @@ def cast_step_kind(s: str) -> StepKind:
     return cast(StepKind, s)
 
 
+@functools.lru_cache(maxsize=None)
+def batch_chunks_schedule(schedule: list[int] | None) -> list[int] | None:
+    if schedule is None:
+        return None
+    if any(s < 1 for s in schedule):
+        raise ValueError("Batch chunk schedule must be positive")
+    return list(itertools.accumulate([0] + schedule))
+
+
+@functools.lru_cache(maxsize=None)
+def batches_per_step_schedule(schedule: list[int] | None) -> list[int] | None:
+    if schedule is None:
+        return None
+    if any(s < 1 for s in schedule):
+        raise ValueError("Batch chunk schedule must be positive")
+    return list(itertools.accumulate([0] + schedule))
+
+
+class ValidStepTimer:
+    def __init__(
+        self,
+        valid_every_n_steps: int | None = None,
+        valid_first_n_steps: int = 0,
+        valid_every_n_seconds: float | None = None,
+        valid_first_n_seconds: float | None = None,
+    ) -> None:
+        super().__init__()
+
+        self.valid_every_n_steps = valid_every_n_steps
+        self.valid_first_n_steps = valid_first_n_steps
+        self.valid_every_n_seconds = valid_every_n_seconds
+        self.valid_first_n_seconds = valid_first_n_seconds
+
+        self.last_valid_time: float | None = None
+        self.last_valid_step: int | None = None
+
+    def is_valid_step(self, state: State) -> bool:
+        if state.num_steps < self.valid_first_n_steps:
+            return True
+
+        if self.last_valid_time is None or self.last_valid_step is None:
+            self.last_valid_time = state.elapsed_time_s
+            self.last_valid_step = state.num_steps
+            return True
+
+        # Step-based validation.
+        valid_every_n_steps = self.valid_every_n_steps
+        if valid_every_n_steps is not None and state.num_steps > valid_every_n_steps + self.last_valid_step:
+            self.last_valid_step = state.num_steps
+            return True
+
+        # Time-based validation.
+        valid_every_n_seconds = self.valid_every_n_seconds
+        if valid_every_n_seconds is not None and state.elapsed_time_s - self.last_valid_time >= valid_every_n_seconds:
+            self.last_valid_time = state.elapsed_time_s
+            return True
+
+        # Time-based validation for first validation step.
+        if self.first_valid_step_flag:
+            valid_first_n_seconds = self.valid_first_n_seconds
+            if valid_first_n_seconds is not None and state.elapsed_time_s >= valid_first_n_seconds:
+                self.last_valid_time = state.elapsed_time_s
+                self.first_valid_step_flag = False
+                return True
+
+        return False
+
+
 @dataclass
 class TrainConfig(
+    OptimizerConfig,
     DataLoadersConfig,
     LoggerConfig,
     StepContextConfig,
@@ -66,6 +143,7 @@ class TrainConfig(
     RunnableConfig,
 ):
     valid_every_n_steps: int | None = field(None, help="Number of training steps to run per validation step")
+    valid_first_n_steps: int = field(0, help="Treat the first N steps as validation steps")
     valid_every_n_seconds: float | None = field(60.0 * 10.0, help="Run validation every N seconds")
     valid_first_n_seconds: float | None = field(60.0, help="Run first validation after N seconds")
     batches_per_step: int = field(1, help="Batches to accumulate per training step, to simulate larger batch sizes")
@@ -88,12 +166,14 @@ class TrainConfig(
     batch_dim: int = field(0, help="The batch dimension, for splitting batches into chunks")
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
+    random_seed: int = field(1337, help="Random seed for the task")
 
 
 Config = TypeVar("Config", bound=TrainConfig)
 
 
 class TrainMixin(
+    OptimizerMixin[Config],
     DataLoadersMixin[Config],
     LoggerMixin[Config],
     StepContextMixin[Config],
@@ -101,23 +181,42 @@ class TrainMixin(
     RunnableMixin[Config],
     Generic[Config],
 ):
+    valid_step_timer: ValidStepTimer
+    state_timers: dict[Phase, StateTimer]
+
+    _training_over_flag: bool
+    _last_printed_remaining_time: float
+    _step_kind: StepKind
+    _prng_key: jnp.ndarray
+
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-        self.last_valid_time: float | None = None
-        self.last_valid_step: int | None = None
-        self.first_valid_step_flag = True
+        # Timer for validation steps.
+        self.valid_step_timer = ValidStepTimer(
+            valid_every_n_steps=config.valid_every_n_steps,
+            valid_first_n_steps=config.valid_first_n_steps,
+            valid_every_n_seconds=config.valid_every_n_seconds,
+            valid_first_n_seconds=config.valid_first_n_seconds,
+        )
 
         # Timers for iterations.
-        self.state_timers: dict[Phase, StateTimer] = {phase: StateTimer() for phase in get_args(Phase)}
+        self.state_timers = {phase: StateTimer() for phase in get_args(Phase)}
 
         # This flag can be toggled to end training from anywhere in the task.
-        self.__training_over_flag = False
+        self._training_over_flag = False
 
-        self.__last_printed_remaining_time = 0.0
+        self._last_printed_remaining_time = 0.0
 
         # The kind of step that was specified in the config.
-        self.__step_kind = cast_step_kind(self.config.step_kind)
+        self._step_kind = cast_step_kind(self.config.step_kind)
+
+        # Defines a PRNG key for the task.
+        self._prng_key = jax.random.PRNGKey(self.config.random_seed)
+
+    @property
+    def prng_key(self) -> jnp.ndarray:
+        return self._prng_key
 
     def on_step_end(self, state: State, loss_dict: dict[str, Array]) -> None:
         super().on_step_end(state, loss_dict)
@@ -180,7 +279,10 @@ class TrainMixin(
             case _:
                 raise KeyError(f"Unknown phase: {state.phase}")
 
-    def get_loss(self, batch: Batch, state: State) -> Loss:
+    def __call__(self, *args: Any, **kwargs: Any) -> Output:
+        raise NotImplementedError("Tasks should implement the `__call__` method signature")
+
+    def compute_loss(self, batch: Batch, state: State) -> Loss:
         """Gets the loss for the current batch.
 
         By default, we assume the model's forward function takes the batch as
@@ -199,6 +301,59 @@ class TrainMixin(
         output = self(batch)
         self.log_step(batch, output, state)
         return output
+
+    def get_single_loss(self, loss: Array | dict[str, Array]) -> tuple[Array, list[str]]:
+        if isinstance(loss, Array):
+            if loss.ndim == 0:
+                return loss[None], ["loss"]
+            return loss.sum() / loss.shape[self.config.batch_dim], ["loss"]
+        if isinstance(loss, dict):
+            keys, values = (list(i) for i in zip(*sorted(loss.items())))
+            losses = [v.sum() / v.shape[0] if v.ndim > 0 else v for v in values]
+            single_loss = jnp.stack(losses, axis=0)
+            return single_loss, keys
+        raise NotImplementedError(f"Loss should be a scalar, dictionary, or list, not {type(loss)}")
+
+    def get_single_losses(self, losses: Loss) -> list[tuple[Array, list[str]]]:
+        if isinstance(losses, (Array, dict)):
+            return [self.get_single_loss(losses)]
+        assert isinstance(losses, list), f"Loss should be a scalar, dictionary, or list, not {type(losses)}"
+        single_losses = [self.get_single_loss(loss) for loss in losses]
+        return single_losses
+
+    @eqx.filter_value_and_grad
+    def compute_single_loss(self, batch: Batch, state: State) -> Array:
+        losses = self.compute_loss(batch, state)
+        single_losses = self.get_single_losses(losses)
+
+    @eqx.filter_jit
+    def update(
+        self,
+        model: eqx.Module,
+        opt_states: list[optax.OptState],
+        batch: Batch,
+        state: State,
+    ) -> tuple[Loss, eqx.Module, optax.OptState]:
+        loss, grads = self.compute_loss(batch, state)
+        if len(opt_states) != len(self.optimizers):
+            raise ValueError(
+                f"Number of optimizers ({len(self.optimizers)}) must match "
+                f"number of parameter groups ({len(opt_states)})"
+            )
+        if len(params) != len(self.optimizers):
+            raise ValueError(
+                f"Number of optimizers ({len(self.optimizers)}) must match "
+                f"number of parameter groups ({len(params)})"
+            )
+        new_params: list[Params] = []
+        new_opt_states: list[optax.OptState] = []
+        for p, o in zip(params, opt_states, self.optimizers):
+            updates, o = self.optimizer.update(grads, o)
+            new_params.append(p)
+            new_opt_states.append(o)
+        updates, opt_state = self.optimizers[0].update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+        return loss, params, opt_state
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -227,18 +382,18 @@ class TrainMixin(
         return None
 
     def set_training_over(self) -> None:
-        self.__training_over_flag = True
+        self._training_over_flag = True
 
     def maybe_log_termination_time(self, remaining_percent: float, state: State) -> None:
-        if self.__last_printed_remaining_time + PRINT_FINISH_TIME_EVERY_N_SECONDS > state.elapsed_time_s:
+        if self._last_printed_remaining_time + PRINT_FINISH_TIME_EVERY_N_SECONDS > state.elapsed_time_s:
             return
-        self.__last_printed_remaining_time = state.elapsed_time_s
+        self._last_printed_remaining_time = state.elapsed_time_s
         remaining_seconds = remaining_percent * state.elapsed_time_s / (1 - remaining_percent)
         termination_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + remaining_seconds))
         logger.info("Estimated finish time: %s", termination_time)
 
     def is_training_over(self, state: State) -> bool:
-        if self.__training_over_flag:
+        if self._training_over_flag:
             return True
         remaining_percent = self.get_remaining_percent(state)
         if remaining_percent is None:
@@ -248,7 +403,7 @@ class TrainMixin(
         return remaining_percent <= 0.0
 
     def get_step(self, state: State) -> int:
-        match self.__step_kind:
+        match self._step_kind:
             case "step":
                 return state.num_steps
             case "epoch":
@@ -258,29 +413,12 @@ class TrainMixin(
             case "second":
                 return int(state.elapsed_time_s)
             case _:
-                raise ValueError(f"Invalid step kind {self.__step_kind}")
+                raise ValueError(f"Invalid step kind {self._step_kind}")
 
     def get_remaining_percent(self, state: State) -> float | None:
         if self.config.max_steps is None:
             return None
         return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
-
-    def get_single_loss(self, loss: Array | dict[str, Array]) -> tuple[Array, list[str]]:
-        if isinstance(loss, Array):
-            return loss.sum() / loss.shape[self.config.batch_dim], ["loss"]
-        if isinstance(loss, dict):
-            keys, values = (list(i) for i in zip(*sorted(loss.items())))
-            losses = [v.sum() / v.shape[0] if v.ndim > 0 else v for v in values]
-            single_loss = jnp.stack(losses, axis=0)
-            return single_loss, keys
-        raise NotImplementedError(f"Loss should be a scalar, dictionary, or list, not {type(loss)}")
-
-    def get_single_losses(self, losses: Loss) -> list[tuple[Array, list[str]]]:
-        if isinstance(losses, (Array, dict)):
-            return [self.get_single_loss(losses)]
-        assert isinstance(losses, list), f"Loss should be a scalar, dictionary, or list, not {type(losses)}"
-        single_losses = [self.get_single_loss(loss) for loss in losses]
-        return single_losses
 
     def log_loss_dict(self, loss: Mapping[str, int | float | Array], state: State) -> None:
         for k, v in loss.items():
@@ -291,33 +429,19 @@ class TrainMixin(
             for k, v in d.items():
                 self.log_scalar(k, v, namespace=ns)
 
-    def is_valid_step(self, state: State) -> bool:
-        if self.last_valid_time is None or self.last_valid_step is None:
-            self.last_valid_time = state.elapsed_time_s
-            self.last_valid_step = state.num_steps
-            return True
+    def get_batches_per_step(self, state: State) -> int:
+        if (schedule := batches_per_step_schedule(self.config.batches_per_step_schedule)) is None:
+            return self.config.batches_per_step
+        step = self.get_step(state)
+        i = bisect.bisect_left(schedule, step)
+        return self.config.batches_per_step * i
 
-        # Step-based validation.
-        valid_every_n_steps = self.config.valid_every_n_steps
-        if valid_every_n_steps is not None and state.num_steps > valid_every_n_steps + self.last_valid_step:
-            self.last_valid_step = state.num_steps
-            return True
-
-        # Time-based validation.
-        valid_every_n_seconds = self.config.valid_every_n_seconds
-        if valid_every_n_seconds is not None and state.elapsed_time_s - self.last_valid_time >= valid_every_n_seconds:
-            self.last_valid_time = state.elapsed_time_s
-            return True
-
-        # Time-based validation for first validation step.
-        if self.first_valid_step_flag:
-            valid_first_n_seconds = self.config.valid_first_n_seconds
-            if valid_first_n_seconds is not None and state.elapsed_time_s >= valid_first_n_seconds:
-                self.last_valid_time = state.elapsed_time_s
-                self.first_valid_step_flag = False
-                return True
-
-        return False
+    def get_batch_chunks(self, state: State) -> int:
+        if (schedule := batch_chunks_schedule(self.config.batch_chunks_per_step_schedule)) is None:
+            return 1
+        step = self.get_step(state)
+        i = bisect.bisect_left(schedule, step + 1)
+        return len(schedule) - i + 1
 
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
@@ -343,19 +467,8 @@ class TrainMixin(
         """
         self.set_loggers()
 
-        breakpoint()
-
-        with self.step_context("model_to_device"):
-            self.device.module_to(self)
-
-        with self.step_context("create_optimizers"):
-            self.set_optimizers()
-
         if is_master():
             Thread(target=self.log_state, daemon=True).start()
-
-        with self.step_context("load_checkpoint"):
-            state = self.load_initial_state()
 
         # Gets the datasets.
         with self.step_context("get_dataset"):
@@ -369,24 +482,18 @@ class TrainMixin(
 
         # Gets the prefetchers.
         with self.step_context("get_prefetcher"):
-            train_pf = self.device.get_prefetcher(train_dl)
-            valid_pf = self.device.get_prefetcher(valid_dl)
-            valid_pf_iter = iter(valid_pf.infinite())
+            train_pf = self.get_prefetcher(train_dl)
+            valid_pf = self.get_prefetcher(valid_dl)
+
+        state = State.init_state()
 
         self.on_training_start(state)
-
-        def on_exit() -> None:
-            self.save_checkpoint(state)
-
-        # Handle user-defined interrupts during the training loop.
-        self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
 
         try:
             with contextlib.ExitStack() as ctx:
                 ctx.enter_context(self)
-
-                if (profile := self.get_profile()) is not None:
-                    ctx.enter_context(profile)
+                ctx.enter_context(train_pf)
+                ctx.enter_context(valid_pf)
 
                 while True:
                     with self.step_context("on_epoch_start"):
@@ -415,8 +522,8 @@ class TrainMixin(
                         if self.is_training_over(state):
                             raise TrainingFinishedError
 
-                        if self.is_valid_step(state):
-                            self.val_step(next(valid_pf_iter), state)
+                        if self.valid_step_timer.is_valid_step(state):
+                            self.val_step(next(valid_pf), state)
 
                         with self.step_context("on_step_start"):
                             self.on_step_start(state)
@@ -427,13 +534,6 @@ class TrainMixin(
                         except EpochDoneError:
                             break
 
-                        if self.should_checkpoint(state):
-                            with self.step_context("save_checkpoint"):
-                                self.save_checkpoint(state)
-
-                        if profile is not None:
-                            profile.step()
-
                         with self.step_context("on_step_end"):
                             self.on_step_end(state, loss_dict)
 
@@ -441,8 +541,6 @@ class TrainMixin(
                         self.on_epoch_end(state)
 
         except TrainingFinishedError:
-            with self.step_context("save_checkpoint"):
-                self.save_checkpoint(state)
             if is_master():
                 show_info(
                     f"Finished training after {state.num_epochs} epochs, "
