@@ -1,5 +1,6 @@
 # requirements.txt
 
+dpshdl
 equinox
 gitpython
 jax
