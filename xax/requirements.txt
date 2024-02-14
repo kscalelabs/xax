@@ -1,5 +1,18 @@
 # requirements.txt
 
+dpshdl
+equinox
+gitpython
 jax
 jaxtyping
 omegaconf
+optax
+pillow
+psutil
+requests
+tensorboard
+
+# Types.
+types-pillow
+types-psutil
+types-requests
