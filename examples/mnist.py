@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
+from dpshdl.dataset import Dataset
 from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, Float, Int
 
@@ -68,26 +70,26 @@ class Config(xax.Config):
     in_dim: int = xax.field(1, help="Number of input dimensions")
 
 
-class MnistClassification(xax.Task[Config]):
+class MnistClassification(xax.Task[Config, Model, Batch, Yhatb]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-    def get_model(self) -> eqx.Module:
+    def get_model(self) -> Model:
         return Model(self.prng_key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(1e-3)
 
-    def get_output(self, model: eqx.Module, batch: Batch, state: xax.State) -> Yhatb:
+    def get_output(self, model: Model, batch: Batch, state: xax.State) -> Yhatb:
         x, _ = batch
         y_hat = model(x[:, None])
         return y_hat
 
-    def compute_loss(self, model: eqx.Module, batch: Batch, output: Yhatb, state: xax.State) -> Array:
+    def compute_loss(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> Array:
         (_, y), y_hat = batch, output
         return cross_entropy(y, y_hat)
 
-    def get_dataset(self, phase: xax.Phase) -> MNIST:
+    def get_dataset(self, phase: xax.Phase) -> Dataset[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
         return MNIST(
             train=phase == "train",
             root_dir=xax.get_data_dir() / "mnist",
@@ -95,14 +97,8 @@ class MnistClassification(xax.Task[Config]):
         )
 
 
-def test_dataloader_adhoc() -> None:
-    task = MnistClassification.get_task(Config(batch_size=16, num_dataloader_workers=0))
-    pf = task.get_prefetcher(task.get_dataloader(task.get_dataset("train"), "train"))
-    pf.test(max_samples=1000)
-
-
 if __name__ == "__main__":
     # python -m examples.mnist
     config = Config(batch_size=16)
-    config.train_dl.num_workers = 0
+    config.train_dl.num_workers = 1
     MnistClassification.launch(config)

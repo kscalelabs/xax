@@ -11,7 +11,7 @@ import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, is_dataclass
 from threading import Thread
-from typing import Any, Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
+from typing import Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
 import equinox as eqx
 import jax
@@ -40,13 +40,9 @@ from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
 
-Model = eqx.Module
-Optimizer = optax.GradientTransformation
-OptState = optax.OptState
-
-Batch = Any
-Output = Any
-Input = Any
+Model = TypeVar("Model", bound=eqx.Module)
+Batch = TypeVar("Batch")
+Output = TypeVar("Output")
 
 StepKind = Literal["step", "sample", "second"]
 
@@ -154,7 +150,7 @@ class TrainMixin(
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
-    Generic[Config],
+    Generic[Config, Model, Batch, Output],
     ABC,
 ):
     valid_step_timer: ValidStepTimer
@@ -256,16 +252,17 @@ class TrainMixin(
         """
 
     @abstractmethod
-    def get_optimizer(self) -> Optimizer:
+    def get_optimizer(self) -> optax.GradientTransformation:
         """Gets the optimizer for the model.
 
         Returns:
             The optimizer to use to train the model.
         """
 
-    def get_initial_opt_state(self, model: Model, optimizer: Optimizer) -> OptState:
+    def get_initial_opt_state(self, model: Model, optimizer: optax.GradientTransformation) -> optax.OptState:
         return optimizer.init(eqx.filter(model, eqx.is_array))
 
+    @abstractmethod
     def get_output(self, model: Model, batch: Batch, state: State) -> Output:
         """Gets the output from the model.
 
@@ -299,7 +296,7 @@ class TrainMixin(
             raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
 
-    def get_output_and_loss(self, model: Model, batch: Batch, state: State) -> tuple[Output, Array]:
+    def get_output_and_loss(self, model: Model, batch: Batch, state: State) -> tuple[Array, Output]:
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
         return loss, output
@@ -308,7 +305,7 @@ class TrainMixin(
     def update(
         self,
         model: Model,
-        optimizer: Optimizer,
+        optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
@@ -391,8 +388,8 @@ class TrainMixin(
     def train_step(
         self,
         model: Model,
-        optimizer: Optimizer,
-        opt_state: OptState,
+        optimizer: optax.GradientTransformation,
+        opt_state: optax.OptState,
         batch: Batch,
         state: State,
     ) -> tuple[Model, optax.OptState, State]:

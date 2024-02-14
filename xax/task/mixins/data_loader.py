@@ -1,6 +1,7 @@
 """Defines a mixin for instantiating dataloaders."""
 
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -61,7 +62,7 @@ class DataloadersConfig(ProcessConfig, BaseConfig):
 Config = TypeVar("Config", bound=DataloadersConfig)
 
 
-class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
+class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], ABC):
     def __init__(self, config: Config) -> None:
         if is_missing(config, "batch_size") and (
             is_missing(config.train_dl, "batch_size") or is_missing(config.valid_dl, "batch_size")
@@ -85,16 +86,16 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
-    def get_dataset(self, phase: Phase) -> Dataset[T, Tc_co]:
+    @abstractmethod
+    def get_dataset(self, phase: Phase) -> Dataset:
         """Returns the dataset for the given phase.
 
         Args:
             phase: The phase for the dataset to return.
 
-        Raises:
-            NotImplementedError: If this method is not overridden
+        Returns:
+            The dataset for the given phase.
         """
-        raise NotImplementedError("The task should implement `get_dataset`")
 
     def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:
         debugging = self.config.debug_dataloader
@@ -129,11 +130,11 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
             raise_errs=self.config.raise_dataloader_errors,
         )
 
-    def get_prefetcher(self, dataloader: Dataloader[T, Tc_co]) -> Prefetcher[T, Tc_co]:
+    def get_prefetcher(self, dataloader: Dataloader[T, Tc_co]) -> Prefetcher[Tc_co, Tc_co]:
         return Prefetcher(to_device_func=self.to_device_fn, dataloader=dataloader)
 
     @classmethod
-    def to_device_fn(cls, sample: T) -> Tc_co:
+    def to_device_fn(cls, sample: T) -> T:
         return recursive_apply(sample, jax.device_put)
 
     @classmethod
@@ -147,5 +148,5 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
         set_random_seed(offset=-1)
 
     @classmethod
-    def dataloader_item_callback(cls, item: CollatedDataloaderItem[Tc_co]) -> None:
+    def dataloader_item_callback(cls, item: CollatedDataloaderItem) -> None:
         pass

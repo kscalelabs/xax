@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Self, TypeVar
 
 from xax.core.conf import field, get_run_dir
 from xax.core.state import State
@@ -42,6 +42,10 @@ class ArtifactsMixin(BaseTask[Config]):
             task_file = inspect.getfile(self.__class__)
             run_dir = Path(task_file).resolve().parent
         return run_dir / self.task_name
+
+    def set_exp_dir(self, exp_dir: Path) -> Self:
+        self._exp_dir = exp_dir
+        return self
 
     def add_lock_file(self, lock_type: str, *, exists_ok: bool = False) -> None:
         if (lock_file := self.exp_dir / f".lock_{lock_type}").exists():
@@ -91,11 +95,13 @@ class ArtifactsMixin(BaseTask[Config]):
             return None
         return stage_dir
 
-    def on_training_end(self, state: State) -> None:
-        super().on_training_end(state)
+    def on_training_end(self, state: State) -> State:
+        state = super().on_training_end(state)
 
         if is_master():
             if self._exp_dir is None:
                 show_info("Exiting training job", important=True)
             else:
                 show_info(f"Exiting training job for {self.exp_dir}", important=True)
+
+        return state

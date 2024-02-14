@@ -612,7 +612,7 @@ class BaseFileDownloader(ABC):
         try:
             logger.info("Downloading %s to %s", url, self.filepath)
             self._urlretrieve(url, self.filepath)
-        except (urllib.error.URLError, OSError) as e:  # type: ignore[attr-defined]
+        except (urllib.error.URLError, OSError) as e:
             if url[:5] == "https":
                 url = url.replace("https:", "http:")
                 logger.warning("Download failed. Trying HTTP instead of HTTPS: %s to %s", url, self.filepath)

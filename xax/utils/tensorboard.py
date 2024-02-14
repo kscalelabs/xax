@@ -45,13 +45,23 @@ class TensorboardProtobufWriter:
             filename_suffix=self.filename_suffix,
         )
 
-    def add_event(self, event: Event, step: int | None = None, walltime: float | None = None) -> None:
+    def add_event(
+        self,
+        event: Event,
+        step: int | None = None,
+        walltime: float | None = None,
+    ) -> None:
         event.wall_time = time.time() if walltime is None else walltime
         if step is not None:
             event.step = int(step)
         self.event_writer.add_event(event)
 
-    def add_summary(self, summary: Summary, global_step: int | None = None, walltime: float | None = None) -> None:
+    def add_summary(
+        self,
+        summary: Summary,
+        global_step: int | None = None,
+        walltime: float | None = None,
+    ) -> None:
         event = Event(summary=summary)
         self.add_event(event, step=global_step, walltime=walltime)
 
