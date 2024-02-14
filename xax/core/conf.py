@@ -62,19 +62,6 @@ def is_missing(cfg: Any, key: str) -> bool:  # noqa: ANN401
 
 
 @dataclass
-class ErrorHandling:
-    enabled: bool = field(True, help="Is error handling enabled?")
-    maximum_exceptions: int = field(10, help="Maximum number of errors to encounter")
-    backoff_after: int = field(5, help="Start to do a sleeping backoff after this many exceptions")
-    sleep_backoff: float = field(0.1, help="Sleep backoff amount")
-    sleep_backoff_power: float = field(2.0, help="How much to multiply backoff for each successive exception")
-    log_full_exception: bool = field(False, help="Log the full exception message for each exception")
-    flush_exception_summary_every: int = field(500, help="How often to flush exception summary")
-    report_top_n_exception_types: int = field(5, help="Number of exceptions to summarize")
-    exception_location_traceback_depth: int = field(3, help="Traceback length for the exception location")
-
-
-@dataclass
 class Logging:
     hide_third_party_logs: bool = field(True, help="If set, hide third-party logs")
     log_level: str = field("INFO", help="The logging level to use")
@@ -133,7 +120,6 @@ class Slurm:
 
 @dataclass
 class UserConfig:
-    error_handling: ErrorHandling = field(ErrorHandling)
     logging: Logging = field(Logging)
     device: Device = field(Device)
     triton: Triton = field(Triton)
