@@ -15,8 +15,6 @@ from pathlib import Path
 from types import TracebackType
 from typing import Generic, Self, TypeVar, cast
 
-import equinox as eqx
-from jaxtyping import Array
 from omegaconf import Container, DictConfig, OmegaConf
 
 from xax.core.state import State

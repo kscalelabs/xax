@@ -27,7 +27,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-WRITE_PROC_TEXT_EVERY_N_SECONDS: int = 60 * 2
 DEFAULT_TENSORBOARD_PORT = 9249
 
 

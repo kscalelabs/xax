@@ -148,7 +148,7 @@ class StdoutLogger(LoggerImpl):
             self.write_fp.write(f"\n{colored('Exception summary', 'grey', bold=True)}")
             self.write_fp.write(f" {colored(timestamp_string, 'grey')}")
             self.write_fp.write(f"\n{summary}")
- 
+
     def write(self, line: LogLine) -> None:
         self.write_separator()
         self.write_state_window(line)

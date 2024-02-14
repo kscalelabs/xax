@@ -230,6 +230,15 @@ class TrainMixin(
 
     def log_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
         phase = state.phase
+
+        # Log the state timers.
+        timer = self.state_timers[phase]
+        timer.step(state)
+        for ns, d in timer.log_dict().items():
+            for k, v in d.items():
+                self.log_scalar(k, v, namespace=ns)
+
+        # Delegate to the appropriate logging function based on the phase.
         match phase:
             case "train":
                 self.log_train_step(model, batch, output, state)
@@ -257,8 +266,8 @@ class TrainMixin(
     def get_initial_opt_state(self, model: Model, optimizer: Optimizer) -> OptState:
         return optimizer.init(eqx.filter(model, eqx.is_array))
 
-    def compute_loss(self, model: Model, batch: Batch, state: State) -> Array:
-        """Gets the loss for the current batch.
+    def get_output(self, model: Model, batch: Batch, state: State) -> Output:
+        """Gets the output from the model.
 
         By default, we assume the model is a function that takes the batch as
         input and returns the loss. This function can be patched to do more
@@ -268,13 +277,32 @@ class TrainMixin(
             model: The current model.
             batch: The current minibatch of samples.
             state: The current training state.
+        """
+
+    def compute_loss(self, model: Model, batch: Batch, output: Output, state: State) -> Array:
+        """Gets the loss for the current batch.
+
+        By default, we assume the model is a function that takes the batch as
+        input and returns the loss. This function can be patched to do more
+        complex operations instead.
+
+        Args:
+            model: The current model.
+            batch: The current minibatch of samples.
+            output: The output from the model.
+            state: The current training state.
 
         Returns:
             The computed loss, as a tensor.
         """
-        output = model(batch)
-        self.log_step(model, batch, output, state)
+        if not isinstance(output, Array):
+            raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
+
+    def get_output_and_loss(self, model: Model, batch: Batch, state: State) -> tuple[Output, Array]:
+        output = self.get_output(model, batch, state)
+        loss = self.compute_loss(model, batch, output, state)
+        return loss, output
 
     @eqx.filter_jit
     def update(
@@ -284,11 +312,11 @@ class TrainMixin(
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, Model, optax.OptState]:
-        loss, grads = eqx.filter_value_and_grad(self.compute_loss)(model, batch, state)
+    ) -> tuple[Array, Model, optax.OptState, Output]:
+        (loss, output), grads = eqx.filter_value_and_grad(self.get_output_and_loss, has_aux=True)(model, batch, state)
         updates, opt_state = optimizer.update(grads, opt_state)
         model = eqx.apply_updates(model, updates)
-        return loss, model, opt_state
+        return loss, model, opt_state, output
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -353,15 +381,6 @@ class TrainMixin(
             return None
         return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
 
-    def log_loss_dict(self, loss: Mapping[str, int | float | Array], state: State) -> None:
-        for k, v in loss.items():
-            self.log_scalar(k, v, namespace="loss")
-        timer = self.state_timers[state.phase]
-        timer.step(state)
-        for ns, d in timer.log_dict().items():
-            for k, v in d.items():
-                self.log_scalar(k, v, namespace=ns)
-
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
@@ -376,24 +395,30 @@ class TrainMixin(
         opt_state: OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[optax.OptState, State]:
+    ) -> tuple[Model, optax.OptState, State]:
         state = state.with_phase("train")
-        loss, model, opt_state = self.update(model, optimizer, opt_state, batch, state)
-        self.log_loss_dict({"loss": loss}, state)
+        loss, model, opt_state, output = self.update(model, optimizer, opt_state, batch, state)
+        self.log_scalar("loss", loss, namespace="loss")
+        self.log_step(model, batch, output, state)
         self.write_logs(state)
-        return opt_state, state.replace(
-            {
-                "num_steps": state.num_steps + 1,
-                "num_samples": state.num_samples + (self.get_size_of_batch(batch) or 0),
-            },
+        return (
+            model,
+            opt_state,
+            state.replace(
+                {
+                    "num_steps": state.num_steps + 1,
+                    "num_samples": state.num_samples + (self.get_size_of_batch(batch) or 0),
+                },
+            ),
         )
 
-    def val_step(self, model: Model, batch: Batch, state: State) -> State:
+    def val_step(self, model: Model, batch: Batch, state: State) -> tuple[Model, State]:
         state = state.with_phase("valid")
-        loss = eqx.filter_jit(self.compute_loss)(model, batch, state)
-        self.log_loss_dict({"loss": loss}, state)
+        loss, output = eqx.filter_jit(self.get_output_and_loss)(model, batch, state)
+        self.log_scalar("loss", loss, namespace="loss")
+        self.log_step(model, batch, output, state)
         self.write_logs(state)
-        return state.replace(
+        return model, state.replace(
             {
                 "num_valid_steps": state.num_valid_steps + 1,
                 "num_valid_samples": state.num_valid_samples + (self.get_size_of_batch(batch) or 0),
@@ -462,12 +487,12 @@ class TrainMixin(
                             raise TrainingFinishedError
 
                         if self.valid_step_timer.is_valid_step(state):
-                            state = self.val_step(model, next(valid_pf), state)
+                            model, state = self.val_step(model, next(valid_pf), state)
 
                         with self.step_context("on_step_start"):
                             state = self.on_step_start(state)
 
-                        opt_state, state = self.train_step(model, optimizer, opt_state, next(train_pf), state)
+                        model, opt_state, state = self.train_step(model, optimizer, opt_state, next(train_pf), state)
 
                         with self.step_context("on_step_end"):
                             state = self.on_step_end(state)

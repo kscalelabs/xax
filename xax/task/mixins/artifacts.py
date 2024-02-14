@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self, TypeVar
+from typing import TypeVar
 
 from xax.core.conf import field, get_run_dir
 from xax.core.state import State

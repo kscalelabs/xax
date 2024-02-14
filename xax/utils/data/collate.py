@@ -5,7 +5,6 @@ from typing import Any, Callable, Literal
 
 import numpy as np
 from PIL.Image import Image as PILImage
-from jaxtyping import ArrayLike
 
 CollateMode = Literal["stack", "concat"]
 

@@ -78,15 +78,14 @@ class MnistClassification(xax.Task[Config]):
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(1e-3)
 
-    def compute_loss(self, model: eqx.Module, batch: Batch, state: xax.State) -> Loss:
-        x, y = batch
+    def get_output(self, model: eqx.Module, batch: Batch, state: xax.State) -> Yhatb:
+        x, _ = batch
         y_hat = model(x[:, None])
-        self.log_step(model, batch, y_hat, state)
-        return cross_entropy(y, y_hat)
+        return y_hat
 
-    # def log_valid_step(self, model: eqx.Module, batch: Any, output: Any, state: xax.State) -> None:
-    #     breakpoint()
-    #     adsf
+    def compute_loss(self, model: eqx.Module, batch: Batch, output: Yhatb, state: xax.State) -> Array:
+        (_, y), y_hat = batch, output
+        return cross_entropy(y, y_hat)
 
     def get_dataset(self, phase: xax.Phase) -> MNIST:
         return MNIST(
@@ -106,5 +105,4 @@ if __name__ == "__main__":
     # python -m examples.mnist
     config = Config(batch_size=16)
     config.train_dl.num_workers = 0
-    config.train_dl.error.flush_every_n_seconds = 5.0
     MnistClassification.launch(config)
