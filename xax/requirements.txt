@@ -9,6 +9,7 @@ optax
 pillow
 psutil
 requests
+tensorboard
 
 # Types.
 types-pillow

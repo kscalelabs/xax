@@ -218,17 +218,11 @@ class TensorboardWriters:
     def valid_writer(self) -> TensorboardWriter:
         return TensorboardWriter(**self.kwargs)
 
-    @functools.cached_property
-    def test_writer(self) -> TensorboardWriter:
-        return TensorboardWriter(**self.kwargs)
-
     def writer(self, phase: Phase) -> TensorboardWriter:
         match phase:
             case "train":
                 return self.train_writer
             case "valid":
                 return self.valid_writer
-            case "test":
-                return self.test_writer
             case _:
                 raise NotImplementedError(f"Unexpected phase: {phase}")

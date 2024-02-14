@@ -101,27 +101,18 @@ class StateTimer:
     """Defines a timer for all state information."""
 
     def __init__(self) -> None:
-        self.epoch_timer = CumulativeTimer()
         self.step_timer = CumulativeTimer()
         self.sample_timer = CumulativeTimer()
         self.iter_timer = IterationTimer()
 
     def step(self, state: State) -> None:
         cur_time = time.time()
-        self.epoch_timer.step(state.num_epochs, cur_time)
         self.step_timer.step(state.num_steps, cur_time)
         self.sample_timer.step(state.num_samples, cur_time)
         self.iter_timer.step(cur_time)
 
     def log_dict(self) -> dict[str, dict[str, int | float]]:
         logs: dict[str, dict[str, int | float]] = {}
-
-        # Logs epoch statistics (only if at least one epoch seen).
-        if self.epoch_timer.steps > 0:
-            logs["⏰ epoch"] = {
-                "total": self.epoch_timer.steps,
-                "hours-per": self.epoch_timer.hours_per_step,
-            }
 
         # Logs step statistics.
         logs["⏰ steps"] = {
@@ -190,10 +181,6 @@ OmegaConf.register_new_resolver("xax.get_random_port", get_random_port, replace=
 
 class NaNError(Exception):
     """Raised when NaNs are detected in the model parameters."""
-
-
-class EpochDoneError(Exception):
-    """Raised when an epoch is done."""
 
 
 class TrainingFinishedError(Exception):

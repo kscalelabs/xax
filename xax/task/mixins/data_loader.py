@@ -2,20 +2,20 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 import jax
 from dpshdl.dataloader import CollatedDataloaderItem, Dataloader
 from dpshdl.dataset import Dataset, ErrorHandlingDataset
 from dpshdl.prefetcher import Prefetcher
-from jaxtyping import Array
 from omegaconf import II, MISSING
 
 from xax.core.conf import field, is_missing
 from xax.core.state import Phase
+from xax.nn.functions import recursive_apply, set_random_seed
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
-from xax.utils.data.collate import CollateMode, collate
+from xax.utils.logging import LOG_ERROR_SUMMARY, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -24,44 +24,47 @@ Tc_co = TypeVar("Tc_co", covariant=True)
 
 
 @dataclass
-class DataLoaderConfig:
-    batch_size: int = field(MISSING, help="Size of each batch")
-    batch_size_multiplier: float = field(MISSING, help="Batch size multiplier")
-    num_workers: int | None = field(MISSING, help="Number of workers for loading samples")
-    prefetch_factor: int = field(2, help="Number of items to pre-fetch on each worker")
+class DataloaderErrorConfig:
+    sleep_backoff: float = field(0.1, help="The initial sleep time after an exception")
+    sleep_backoff_power: float = field(2.0, help="Power to raise the sleep time by after each consecutive exception")
+    maximum_exceptions: int = field(10, help="The maximum number of consecutive exceptions before raising an error")
+    backoff_after: int = field(5, help="The number of consecutive exceptions before starting to backoff")
+    traceback_depth: int = field(5, help="The depth of the traceback to print when an exception occurs")
+    flush_every_n_steps: int | None = field(None, help="Flush the error summary after this many steps")
+    flush_every_n_seconds: float | None = field(10.0, help="Flush the error summary after this many seconds")
+    log_exceptions_all_workers: bool = field(False, help="If set, log exceptions from all workers")
 
 
 @dataclass
-class DataLoadersConfig(ProcessConfig, BaseConfig):
+class DataloaderConfig:
+    batch_size: int = field(MISSING, help="Size of each batch")
+    num_workers: int | None = field(MISSING, help="Number of workers for loading samples")
+    prefetch_factor: int = field(2, help="Number of items to pre-fetch on each worker")
+    error: DataloaderErrorConfig = field(DataloaderErrorConfig(), help="Dataloader error configuration")
+
+
+@dataclass
+class DataloadersConfig(ProcessConfig, BaseConfig):
     batch_size: int = field(MISSING, help="Size of each batch")
     raise_dataloader_errors: bool = field(False, help="If set, raise dataloader errors inside the worker processes")
-    num_dataloader_workers: int | None = field(None, help="Default number of dataloader workers")
-    train_dl: DataLoaderConfig = field(
-        DataLoaderConfig(
-            batch_size=II("batch_size"),
-            batch_size_multiplier=1.0,
-            num_workers=II("num_dataloader_workers"),
-        ),
+    train_dl: DataloaderConfig = field(
+        DataloaderConfig(batch_size=II("batch_size")),
         help="Train dataloader config",
     )
-    test_dl: DataLoaderConfig = field(
-        DataLoaderConfig(
-            batch_size=II("batch_size"),
-            batch_size_multiplier=II("train_dl.batch_size_multiplier"),
-            num_workers=1,
-        ),
+    valid_dl: DataloaderConfig = field(
+        DataloaderConfig(batch_size=II("batch_size"), num_workers=1),
         help="Valid dataloader config",
     )
     debug_dataloader: bool = field(False, help="Debug dataloaders")
 
 
-Config = TypeVar("Config", bound=DataLoadersConfig)
+Config = TypeVar("Config", bound=DataloadersConfig)
 
 
-class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
+class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
     def __init__(self, config: Config) -> None:
         if is_missing(config, "batch_size") and (
-            is_missing(config.train_dl, "batch_size") or is_missing(config.test_dl, "batch_size")
+            is_missing(config.train_dl, "batch_size") or is_missing(config.valid_dl, "batch_size")
         ):
             config.batch_size = self.get_batch_size()
 
@@ -73,14 +76,12 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
             "method to return the desired training batch size."
         )
 
-    def dataloader_config(self, phase: Phase) -> DataLoaderConfig:
+    def dataloader_config(self, phase: Phase) -> DataloaderConfig:
         match phase:
             case "train":
                 return self.config.train_dl
             case "valid":
-                return self.config.test_dl
-            case "test":
-                return self.config.test_dl
+                return self.config.valid_dl
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
@@ -103,11 +104,22 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
         cfg = self.dataloader_config(phase)
 
         # Wraps the dataset to handle errors.
-        dataset = ErrorHandlingDataset(dataset)
+        dataset = ErrorHandlingDataset(
+            dataset=dataset,
+            sleep_backoff=cfg.error.sleep_backoff,
+            sleep_backoff_power=cfg.error.sleep_backoff_power,
+            maximum_exceptions=cfg.error.maximum_exceptions,
+            backoff_after=cfg.error.backoff_after,
+            traceback_depth=cfg.error.traceback_depth,
+            flush_every_n_steps=cfg.error.flush_every_n_steps,
+            flush_every_n_seconds=cfg.error.flush_every_n_seconds,
+            log_exceptions_all_workers=cfg.error.log_exceptions_all_workers,
+            log_level=LOG_ERROR_SUMMARY,
+        )
 
         return Dataloader(
             dataset=dataset,
-            batch_size=round(cfg.batch_size * cfg.batch_size_multiplier),
+            batch_size=cfg.batch_size,
             num_workers=0 if debugging else cfg.num_workers,
             prefetch_factor=cfg.prefetch_factor,
             ctx=self.multiprocessing_context,
@@ -118,21 +130,22 @@ class DataLoadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config]):
         )
 
     def get_prefetcher(self, dataloader: Dataloader[T, Tc_co]) -> Prefetcher[T, Tc_co]:
-        return Prefetcher(dataloader=dataloader, to_device_fn=self.to_device_fn)
+        return Prefetcher(to_device_func=self.to_device_fn, dataloader=dataloader)
 
     @classmethod
-    def to_device_fn(cls, arr: Array) -> Array:
-        return jax.device_put(arr)
+    def to_device_fn(cls, sample: T) -> Tc_co:
+        return recursive_apply(sample, jax.device_put)
 
     @classmethod
-    def collate_fn(cls, items: list[Any], *, mode: CollateMode = "stack") -> Any | None:  # noqa: ANN401
-        return collate(items, mode=mode)
+    def dataloader_worker_init_fn(cls, worker_id: int, num_workers: int) -> None:
+        configure_logging(prefix=f"{worker_id}")
+        set_random_seed(offset=worker_id + 1)
 
-    def dataloader_worker_init_fn(self, worker_id: int, num_workers: int) -> None:
-        pass
+    @classmethod
+    def collate_worker_init_fn(cls) -> None:
+        configure_logging(prefix="collate")
+        set_random_seed(offset=-1)
 
-    def collate_worker_init_fn(self) -> None:
-        pass
-
-    def dataloader_item_callback(self, item: CollatedDataloaderItem[Tc_co]) -> None:
+    @classmethod
+    def dataloader_item_callback(cls, item: CollatedDataloaderItem[Tc_co]) -> None:
         pass

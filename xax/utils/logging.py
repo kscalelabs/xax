@@ -18,6 +18,9 @@ LOG_PING: int = logging.INFO + 2
 # Show as a persistent status message.
 LOG_STATUS: int = logging.INFO + 3
 
+# Reserved for error summary.
+LOG_ERROR_SUMMARY: int = logging.INFO + 4
+
 
 class RankFilter(logging.Filter):
     def __init__(self, *, rank: int | None = None) -> None:
@@ -35,6 +38,7 @@ class RankFilter(logging.Filter):
         logging.addLevelName(LOG_DEBUG_ALL, "DEBUGALL")
         logging.addLevelName(LOG_PING, "PING")
         logging.addLevelName(LOG_STATUS, "STATUS")
+        logging.addLevelName(LOG_ERROR_SUMMARY, "ERROR_SUMMARY")
 
         self.log_all_ranks = {
             logging.getLevelName(level)
@@ -48,7 +52,11 @@ class RankFilter(logging.Filter):
             )
         }
 
+        self.log_no_ranks = {logging.getLevelName(level) for level in (LOG_ERROR_SUMMARY,)}
+
     def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelname in self.log_no_ranks:
+            return False
         if self.rank is None or self.rank == 0:
             return True
         if record.levelname in self.log_all_ranks:
@@ -85,13 +93,30 @@ class ColoredFormatter(logging.Formatter):
         use_color: bool = True,
     ) -> None:
         asc_start, asc_end = color_parts("grey")
-        message = "{levelname:^19s} " + asc_start + "{asctime}" + asc_end + " [{name}] {message}"
+        name_start, name_end = color_parts("blue", bold=True)
+
+        message_pre = [
+            "{levelname:^19s}",
+            asc_start,
+            "{asctime}",
+            asc_end,
+            " [",
+            name_start,
+            "{name}",
+            name_end,
+            "]",
+        ]
+        message_post = [" {message}"]
+
         if prefix is not None:
-            message = colored(prefix, "white") + " " + message
+            message_pre += [" ", colored(prefix, "magenta", bold=True)]
+
         if rank is not None or world_size is not None:
             assert rank is not None and world_size is not None
             digits = int(math.log10(world_size) + 1)
-            message = "[" + colored(f"{rank:>{digits}}", "blue", bold=True) + "] " + message
+            message_pre += [f" [{rank:0{digits}d}/{world_size}]"]
+        message = "".join(message_pre + message_post)
+
         super().__init__(message, style="{", datefmt="%Y-%m-%d %H:%M:%S")
 
         self.rank = rank
@@ -113,7 +138,7 @@ class ColoredFormatter(logging.Formatter):
         return logging.Formatter.format(self, record)
 
 
-def configure_logging(*, rank: int | None = None, world_size: int | None = None) -> None:
+def configure_logging(prefix: str | None = None, *, rank: int | None = None, world_size: int | None = None) -> None:
     """Instantiates logging.
 
     This captures logs and reroutes them to the Toasts module, which is
@@ -134,11 +159,13 @@ def configure_logging(*, rank: int | None = None, world_size: int | None = None)
     # Captures warnings from the warnings module.
     logging.captureWarnings(True)
 
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(ColoredFormatter(rank=rank, world_size=world_size))
-    stream_handler.addFilter(RankFilter(rank=rank))
+    filter = RankFilter(rank=rank)
 
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(ColoredFormatter(prefix=prefix, rank=rank, world_size=world_size))
+    stream_handler.addFilter(filter)
     root_logger.addHandler(stream_handler)
+
     root_logger.setLevel(logging._nameToLevel[config.log_level])
 
     # Avoid junk logs from other libraries.

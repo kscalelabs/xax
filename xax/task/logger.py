@@ -24,6 +24,7 @@ from omegaconf import DictConfig
 
 from xax.core.state import Phase, State
 from xax.utils.experiments import IntervalTicker
+from xax.utils.logging import LOG_ERROR_SUMMARY, LOG_PING, LOG_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,11 @@ class LogLine:
 
 
 @dataclass
+class LogErrorSummary:
+    message: str
+
+
+@dataclass
 class LogError:
     message: str
     location: str | None = None
@@ -151,6 +157,13 @@ class LoggerImpl(ABC):
 
         Args:
             line: The line to write.
+        """
+
+    def write_error_summary(self, error_summary: LogErrorSummary) -> None:
+        """Handles writing an error summary.
+
+        Args:
+            error_summary: The error summary to write.
         """
 
     def write_error(self, error: LogError) -> None:
@@ -215,15 +228,30 @@ class ToastHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            match record.levelno:
-                case "PING":
-                    self.logger.write_ping(record.getMessage(), record.filename, record.lineno)
-                case "STATUS":
-                    self.logger.write_status(record.getMessage(), record.filename, record.lineno)
+            if record.levelno == LOG_ERROR_SUMMARY:
+                self.logger.write_error_summary(record.getMessage())
+            elif record.levelno == LOG_STATUS:
+                self.logger.write_status(record.getMessage(), record.filename, record.lineno)
+            elif record.levelno in (LOG_PING, logging.WARNING):
+                self.logger.write_ping(record.getMessage(), record.filename, record.lineno)
+            elif record.levelno in (logging.ERROR, logging.CRITICAL, logging.WARNING):
+                self.logger.write_error(record.getMessage(), f"{record.filename}:{record.lineno}")
         except RecursionError:
             raise
         except Exception:
             self.handleError(record)
+
+    def add_for_logger(self, logger: logging.Logger) -> None:
+        # Removes existing ToastHandler.
+        handlers_to_remove = []
+        for handler in logger.handlers:
+            if isinstance(handler, ToastHandler):
+                handlers_to_remove.append(handler)
+        for handler in handlers_to_remove:
+            logger.removeHandler(handler)
+
+        # Adds the new ToastHandler.
+        logger.addHandler(self)
 
 
 class Logger:
@@ -241,6 +269,8 @@ class Logger:
         self.loggers: list[LoggerImpl] = []
 
         # Registers a logging handler to route log messages to the logger.
+        root_logger = logging.getLogger()
+        ToastHandler(self).add_for_logger(root_logger)
 
     def add_logger(self, *logger: LoggerImpl) -> None:
         """Add the logger, so that it gets called when `write` is called.
@@ -284,6 +314,10 @@ class Logger:
         self.clear()
         for logger in (logger for logger, should_log in zip(self.loggers, should_log) if should_log):
             logger.write(line)
+
+    def write_error_summary(self, error_summary: str) -> None:
+        for logger in self.loggers:
+            logger.write_error_summary(LogErrorSummary(error_summary))
 
     def write_error(self, message: str, location: str | None = None) -> None:
         for logger in self.loggers:

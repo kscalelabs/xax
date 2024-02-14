@@ -37,7 +37,7 @@ __all__ = [
     "StdoutLogger",
     "TensorboardLogger",
     "CPUStatsOptions",
-    "DataLoaderConfig",
+    "DataloaderConfig",
     "GPUStatsOptions",
     "Script",
     "ScriptConfig",
@@ -180,7 +180,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.loggers.stdout import StdoutLogger
     from xax.task.loggers.tensorboard import TensorboardLogger
     from xax.task.mixins.cpu_stats import CPUStatsOptions
-    from xax.task.mixins.data_loader import DataLoaderConfig
+    from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task

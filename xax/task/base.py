@@ -58,7 +58,7 @@ def get_config(cfg: RawConfigType, task_path: Path) -> DictConfig:
     return cast(DictConfig, cfg)
 
 
-class BaseTask(eqx.Module, Generic[Config]):
+class BaseTask(Generic[Config]):
     config: Config
 
     def __init__(self, config: Config) -> None:
@@ -69,32 +69,17 @@ class BaseTask(eqx.Module, Generic[Config]):
         if isinstance(self.config, Container):
             OmegaConf.resolve(self.config)
 
-    def on_before_forward_step(self, state: State) -> None:
-        pass
+    def on_step_start(self, state: State) -> State:
+        return state
 
-    def on_after_forward_step(self, state: State) -> None:
-        pass
+    def on_step_end(self, state: State) -> State:
+        return state
 
-    def on_after_compute_loss(self, state: State) -> None:
-        pass
+    def on_training_start(self, state: State) -> State:
+        return state
 
-    def on_step_start(self, state: State) -> None:
-        pass
-
-    def on_step_end(self, state: State, loss_dict: dict[str, Array]) -> None:
-        pass
-
-    def on_epoch_start(self, state: State) -> None:
-        pass
-
-    def on_epoch_end(self, state: State) -> None:
-        pass
-
-    def on_training_start(self, state: State) -> None:
-        pass
-
-    def on_training_end(self, state: State) -> None:
-        pass
+    def on_training_end(self, state: State) -> State:
+        return state
 
     def on_before_save_checkpoint(self, ckpt_path: Path) -> None:
         pass

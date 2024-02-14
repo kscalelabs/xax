@@ -67,10 +67,7 @@ class TensorboardLogger(LoggerImpl):
         self.training_code: str | None = None
         self.config: DictConfig | None = None
 
-        self.writers = TensorboardWriters(
-            log_directory=self.log_directory,
-            flush_seconds=flush_seconds,
-        )
+        self.writers = TensorboardWriters(log_directory=self.log_directory, flush_seconds=flush_seconds)
         self._started = False
 
     def _start(self) -> None:
@@ -103,7 +100,9 @@ class TensorboardLogger(LoggerImpl):
             return f"Tensorboard: {m.group(1)}"
 
         command: list[str] = [
-            "tensorboard",
+            "python",
+            "-m",
+            "tensorboard.main",
             "serve",
             "--logdir",
             str(self.log_directory),

@@ -1,6 +1,5 @@
 """Defines a mixin for running the training loop."""
 
-import bisect
 import contextlib
 import functools
 import itertools
@@ -9,9 +8,10 @@ import sys
 import textwrap
 import time
 import traceback
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, is_dataclass
 from threading import Thread
-from typing import Any, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, cast, get_args
+from typing import Any, Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
 import equinox as eqx
 import jax
@@ -23,16 +23,13 @@ from omegaconf import DictConfig
 
 from xax.core.conf import field
 from xax.core.state import Phase, State
-from xax.nn.functions import recursive_chunk
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from xax.task.mixins.data_loader import DataLoadersConfig, DataLoadersMixin
+from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
-from xax.task.mixins.optimizer import OptimizerConfig, OptimizerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
-    EpochDoneError,
     StateTimer,
     TrainingFinishedError,
     get_git_state,
@@ -43,19 +40,15 @@ from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
 
-Params = Any
-
-# Batch = TypeVar("Batch")
-# Output = TypeVar("Output")
-# Input = TypeVar("Input")
+Model = eqx.Module
+Optimizer = optax.GradientTransformation
+OptState = optax.OptState
 
 Batch = Any
 Output = Any
 Input = Any
 
-Loss = Array | dict[str, Array] | list[Array] | list[dict[str, Array]]
-
-StepKind = Literal["step", "epoch", "sample", "second"]
+StepKind = Literal["step", "sample", "second"]
 
 PRINT_FINISH_TIME_EVERY_N_SECONDS = 60 * 2
 
@@ -97,6 +90,7 @@ class ValidStepTimer:
         self.valid_first_n_steps = valid_first_n_steps
         self.valid_every_n_seconds = valid_every_n_seconds
         self.valid_first_n_seconds = valid_first_n_seconds
+        self.first_valid_step_flag = True
 
         self.last_valid_time: float | None = None
         self.last_valid_step: int | None = None
@@ -135,8 +129,7 @@ class ValidStepTimer:
 
 @dataclass
 class TrainConfig(
-    OptimizerConfig,
-    DataLoadersConfig,
+    DataloadersConfig,
     LoggerConfig,
     StepContextConfig,
     ArtifactsConfig,
@@ -146,23 +139,6 @@ class TrainConfig(
     valid_first_n_steps: int = field(0, help="Treat the first N steps as validation steps")
     valid_every_n_seconds: float | None = field(60.0 * 10.0, help="Run validation every N seconds")
     valid_first_n_seconds: float | None = field(60.0, help="Run first validation after N seconds")
-    batches_per_step: int = field(1, help="Batches to accumulate per training step, to simulate larger batch sizes")
-    batches_per_step_schedule: list[int] | None = field(
-        None,
-        help=(
-            "A schedule for increasing the effective batch size. The first segment will have batch size "
-            "`batches_per_step`, the second will have `2 * batches_per_step`, the third will have "
-            "`3 * batches_per_step`, and so on."
-        ),
-    )
-    batch_chunks_per_step_schedule: list[int] | None = field(
-        None,
-        help=(
-            "A schedule for splitting batches into chunks. The batches in the first segment will have "
-            "`batch_size / (N + 1)` elements, the second will have `batch_size / N` elements, until "
-            "the last segment has `batch_size` elements."
-        ),
-    )
     batch_dim: int = field(0, help="The batch dimension, for splitting batches into chunks")
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
@@ -173,13 +149,13 @@ Config = TypeVar("Config", bound=TrainConfig)
 
 
 class TrainMixin(
-    OptimizerMixin[Config],
-    DataLoadersMixin[Config],
+    DataloadersMixin[Config],
     LoggerMixin[Config],
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
     Generic[Config],
+    ABC,
 ):
     valid_step_timer: ValidStepTimer
     state_timers: dict[Phase, StateTimer]
@@ -218,142 +194,101 @@ class TrainMixin(
     def prng_key(self) -> jnp.ndarray:
         return self._prng_key
 
-    def on_step_end(self, state: State, loss_dict: dict[str, Array]) -> None:
-        super().on_step_end(state, loss_dict)
-        state.elapsed_time_s = time.time() - state.start_time_s
+    def on_step_end(self, state: State) -> State:
+        state = super().on_step_end(state)
+        return state.replace(
+            {
+                "elapsed_time_s": time.time() - state.start_time_s,
+            },
+        )
 
-    def on_epoch_start(self, state: State) -> None:
-        super().on_epoch_start(state)
-        state.num_epoch_steps = 0
-        state.num_epoch_samples = 0
-
-    def on_epoch_end(self, state: State) -> None:
-        super().on_epoch_end(state)
-        state.num_epochs += 1
-
-    def log_train_step(self, batch: Batch, output: Output, state: State) -> None:
+    def log_train_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
         """Override this function to do logging during the training phase.
 
         This function is called after the model forward pass and before the
         backward pass. It is called in the training phase.
 
         Args:
+            model: The current model.
             batch: The batch from the dataloader.
             output: The model output.
             state: The current training state.
         """
 
-    def log_valid_step(self, batch: Batch, output: Output, state: State) -> None:
+    def log_valid_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
         """Override this function to do logging during the validation phase.
 
         This function is called after the model forward pass. It is called in
         the validation phase.
 
         Args:
+            model: The current model.
             batch: The batch from the dataloader.
             output: The model output.
             state: The current training state.
         """
 
-    def log_test_step(self, batch: Batch, output: Output, state: State) -> None:
-        """Override this function to do logging during the test phase.
-
-        This function is called after the model forward pass. It is called in
-        the validation phase.
-
-        Args:
-            batch: The batch from the dataloader.
-            output: The model output.
-            state: The current training state.
-        """
-        return self.log_valid_step(batch, output, state)
-
-    def log_step(self, batch: Batch, output: Output, state: State) -> None:
-        match state.phase:
+    def log_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
+        phase = state.phase
+        match phase:
             case "train":
-                self.log_train_step(batch, output, state)
+                self.log_train_step(model, batch, output, state)
             case "valid":
-                self.log_valid_step(batch, output, state)
-            case "test":
-                self.log_test_step(batch, output, state)
+                self.log_valid_step(model, batch, output, state)
             case _:
-                raise KeyError(f"Unknown phase: {state.phase}")
+                raise KeyError(f"Unknown phase: {phase}")
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Output:
-        raise NotImplementedError("Tasks should implement the `__call__` method signature")
+    @abstractmethod
+    def get_model(self) -> Model:
+        """Returns the Equinox model to train.
 
-    def compute_loss(self, batch: Batch, state: State) -> Loss:
+        Returns:
+            The model to train.
+        """
+
+    @abstractmethod
+    def get_optimizer(self) -> Optimizer:
+        """Gets the optimizer for the model.
+
+        Returns:
+            The optimizer to use to train the model.
+        """
+
+    def get_initial_opt_state(self, model: Model, optimizer: Optimizer) -> OptState:
+        return optimizer.init(eqx.filter(model, eqx.is_array))
+
+    def compute_loss(self, model: Model, batch: Batch, state: State) -> Array:
         """Gets the loss for the current batch.
 
-        By default, we assume the model's forward function takes the batch as
-        input and returns the loss. We do some logging with the output, and
-        return it as the loss. This function can be patched to do more complex
-        operations instead.
+        By default, we assume the model is a function that takes the batch as
+        input and returns the loss. This function can be patched to do more
+        complex operations instead.
 
         Args:
+            model: The current model.
             batch: The current minibatch of samples.
             state: The current training state.
 
         Returns:
-            The computed loss or losses, either a tensor or dictionary of
-            tensors. The dictionary keys are used when logging the losses.
+            The computed loss, as a tensor.
         """
-        output = self(batch)
-        self.log_step(batch, output, state)
+        output = model(batch)
+        self.log_step(model, batch, output, state)
         return output
-
-    def get_single_loss(self, loss: Array | dict[str, Array]) -> tuple[Array, list[str]]:
-        if isinstance(loss, Array):
-            if loss.ndim == 0:
-                return loss[None], ["loss"]
-            return loss.sum() / loss.shape[self.config.batch_dim], ["loss"]
-        if isinstance(loss, dict):
-            keys, values = (list(i) for i in zip(*sorted(loss.items())))
-            losses = [v.sum() / v.shape[0] if v.ndim > 0 else v for v in values]
-            single_loss = jnp.stack(losses, axis=0)
-            return single_loss, keys
-        raise NotImplementedError(f"Loss should be a scalar, dictionary, or list, not {type(loss)}")
-
-    def get_single_losses(self, losses: Loss) -> list[tuple[Array, list[str]]]:
-        if isinstance(losses, (Array, dict)):
-            return [self.get_single_loss(losses)]
-        assert isinstance(losses, list), f"Loss should be a scalar, dictionary, or list, not {type(losses)}"
-        single_losses = [self.get_single_loss(loss) for loss in losses]
-        return single_losses
-
-    @eqx.filter_value_and_grad
-    def compute_single_loss(self, batch: Batch, state: State) -> Array:
-        losses = self.compute_loss(batch, state)
-        single_losses = self.get_single_losses(losses)
 
     @eqx.filter_jit
     def update(
         self,
-        model: eqx.Module,
-        opt_states: list[optax.OptState],
+        model: Model,
+        optimizer: Optimizer,
+        opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[Loss, eqx.Module, optax.OptState]:
-        loss, grads = self.compute_loss(batch, state)
-        if len(opt_states) != len(self.optimizers):
-            raise ValueError(
-                f"Number of optimizers ({len(self.optimizers)}) must match "
-                f"number of parameter groups ({len(opt_states)})"
-            )
-        if len(params) != len(self.optimizers):
-            raise ValueError(
-                f"Number of optimizers ({len(self.optimizers)}) must match "
-                f"number of parameter groups ({len(params)})"
-            )
-        new_params: list[Params] = []
-        new_opt_states: list[optax.OptState] = []
-        for p, o in zip(params, opt_states, self.optimizers):
-            updates, o = self.optimizer.update(grads, o)
-            new_params.append(p)
-            new_opt_states.append(o)
-        updates, opt_state = self.optimizers[0].update(grads, opt_state)
-        params = optax.apply_updates(params, updates)
-        return loss, params, opt_state
+    ) -> tuple[Array, Model, optax.OptState]:
+        loss, grads = eqx.filter_value_and_grad(self.compute_loss)(model, batch, state)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        model = eqx.apply_updates(model, updates)
+        return loss, model, opt_state
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -406,8 +341,6 @@ class TrainMixin(
         match self._step_kind:
             case "step":
                 return state.num_steps
-            case "epoch":
-                return state.num_epochs
             case "sample":
                 return state.num_samples
             case "second":
@@ -429,26 +362,43 @@ class TrainMixin(
             for k, v in d.items():
                 self.log_scalar(k, v, namespace=ns)
 
-    def get_batches_per_step(self, state: State) -> int:
-        if (schedule := batches_per_step_schedule(self.config.batches_per_step_schedule)) is None:
-            return self.config.batches_per_step
-        step = self.get_step(state)
-        i = bisect.bisect_left(schedule, step)
-        return self.config.batches_per_step * i
-
-    def get_batch_chunks(self, state: State) -> int:
-        if (schedule := batch_chunks_schedule(self.config.batch_chunks_per_step_schedule)) is None:
-            return 1
-        step = self.get_step(state)
-        i = bisect.bisect_left(schedule, step + 1)
-        return len(schedule) - i + 1
-
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
         self.logger.log_git_state(get_git_state(self))
         self.logger.log_training_code(get_training_code(self))
         self.logger.log_config(cast(DictConfig, self.config))
+
+    def train_step(
+        self,
+        model: Model,
+        optimizer: Optimizer,
+        opt_state: OptState,
+        batch: Batch,
+        state: State,
+    ) -> tuple[optax.OptState, State]:
+        state = state.with_phase("train")
+        loss, model, opt_state = self.update(model, optimizer, opt_state, batch, state)
+        self.log_loss_dict({"loss": loss}, state)
+        self.write_logs(state)
+        return opt_state, state.replace(
+            {
+                "num_steps": state.num_steps + 1,
+                "num_samples": state.num_samples + (self.get_size_of_batch(batch) or 0),
+            },
+        )
+
+    def val_step(self, model: Model, batch: Batch, state: State) -> State:
+        state = state.with_phase("valid")
+        loss = eqx.filter_jit(self.compute_loss)(model, batch, state)
+        self.log_loss_dict({"loss": loss}, state)
+        self.write_logs(state)
+        return state.replace(
+            {
+                "num_valid_steps": state.num_valid_steps + 1,
+                "num_valid_samples": state.num_valid_samples + (self.get_size_of_batch(batch) or 0),
+            },
+        )
 
     def run(self) -> None:
         self.run_training_loop()
@@ -465,93 +415,74 @@ class TrainMixin(
         Raises:
             ValueError: If the task is not a supervised learning task
         """
-        self.set_loggers()
+        with contextlib.ExitStack() as ctx:
+            self.set_loggers()
 
-        if is_master():
-            Thread(target=self.log_state, daemon=True).start()
+            if is_master():
+                Thread(target=self.log_state, daemon=True).start()
 
-        # Gets the datasets.
-        with self.step_context("get_dataset"):
-            train_ds = self.get_dataset("train")
-            valid_ds = self.get_dataset("valid")
+            # Gets the datasets.
+            with self.step_context("get_dataset"):
+                train_ds = self.get_dataset("train")
+                valid_ds = self.get_dataset("valid")
 
-        # Gets the dataloaders.
-        with self.step_context("get_dataloader"):
-            train_dl = self.get_dataloader(train_ds, "train")
-            valid_dl = self.get_dataloader(valid_ds, "valid")
+            # Gets the dataloaders.
+            with self.step_context("get_dataloader"):
+                train_dl = self.get_dataloader(train_ds, "train")
+                valid_dl = self.get_dataloader(valid_ds, "valid")
 
-        # Gets the prefetchers.
-        with self.step_context("get_prefetcher"):
-            train_pf = self.get_prefetcher(train_dl)
-            valid_pf = self.get_prefetcher(valid_dl)
+            # Gets the prefetchers.
+            with self.step_context("get_prefetcher"):
+                train_pf = self.get_prefetcher(train_dl)
+                valid_pf = self.get_prefetcher(valid_dl)
 
-        state = State.init_state()
+            ctx.enter_context(self)
+            ctx.enter_context(train_pf)
+            ctx.enter_context(valid_pf)
 
-        self.on_training_start(state)
+            # Gets the model.
+            with self.step_context("get_model"):
+                model = self.get_model()
 
-        try:
-            with contextlib.ExitStack() as ctx:
-                ctx.enter_context(self)
-                ctx.enter_context(train_pf)
-                ctx.enter_context(valid_pf)
+            # Gets the optimizer.
+            with self.step_context("get_optimizer"):
+                optimizer = self.get_optimizer()
 
+            # Gets the initial optimizer state.
+            with self.step_context("get_initial_opt_state"):
+                opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+
+            state = State.init_state()
+            state = self.on_training_start(state)
+
+            try:
                 while True:
-                    with self.step_context("on_epoch_start"):
-                        self.on_epoch_start(state)
-
-                    def batch_splitter() -> Iterator[Batch]:
-                        for batch in train_pf:
-                            num_chunks = self.get_batch_chunks(state)
-                            yield from recursive_chunk(batch, num_chunks, dim=self.config.batch_dim)
-
-                    train_pf_iter: Iterator = batch_splitter()
-
-                    def batch_iterator() -> Iterator[Batch]:
-                        try:
-                            yield next(train_pf_iter)
-                        except StopIteration:
-                            raise EpochDoneError
-
-                        for _ in range(self.get_batches_per_step(state) - 1):
-                            try:
-                                yield next(train_pf_iter)
-                            except StopIteration:
-                                pass
-
                     while True:
                         if self.is_training_over(state):
                             raise TrainingFinishedError
 
                         if self.valid_step_timer.is_valid_step(state):
-                            self.val_step(next(valid_pf), state)
+                            state = self.val_step(model, next(valid_pf), state)
 
                         with self.step_context("on_step_start"):
-                            self.on_step_start(state)
+                            state = self.on_step_start(state)
 
-                        try:
-                            loss_dict = self.train_step(batch_iterator(), state)
-
-                        except EpochDoneError:
-                            break
+                        opt_state, state = self.train_step(model, optimizer, opt_state, next(train_pf), state)
 
                         with self.step_context("on_step_end"):
-                            self.on_step_end(state, loss_dict)
+                            state = self.on_step_end(state)
 
-                    with self.step_context("on_epoch_end"):
-                        self.on_epoch_end(state)
+            except TrainingFinishedError:
+                if is_master():
+                    show_info(
+                        f"Finished training after {state.num_steps} steps, {state.num_samples} samples",
+                        important=True,
+                    )
 
-        except TrainingFinishedError:
-            if is_master():
-                show_info(
-                    f"Finished training after {state.num_epochs} epochs, "
-                    f"{state.num_steps} steps, {state.num_samples} samples",
-                    important=True,
-                )
+            except BaseException:
+                exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
+                sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
+                sys.stdout.flush()
 
-        except BaseException:
-            exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
-            sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
-            sys.stdout.flush()
-
-        finally:
-            self.on_training_end(state)
+            finally:
+                state = self.on_training_end(state)

@@ -8,7 +8,7 @@ from typing import Any, Deque, TextIO
 
 from jaxtyping import Array
 
-from xax.task.logger import LogError, LoggerImpl, LogLine, LogPing, LogStatus
+from xax.task.logger import LogError, LogErrorSummary, LoggerImpl, LogLine, LogPing, LogStatus
 from xax.utils.text import Color, colored, format_timedelta
 
 
@@ -67,6 +67,7 @@ class StdoutLogger(LoggerImpl):
         self.statuses: Deque[tuple[str, datetime.datetime]] = deque()
         self.pings: Deque[tuple[str, datetime.datetime]] = deque()
         self.errors: Deque[tuple[str, datetime.datetime]] = deque()
+        self.error_summary: tuple[str, datetime.datetime] | None = None
 
     def start(self) -> None:
         return super().start()
@@ -85,8 +86,6 @@ class StdoutLogger(LoggerImpl):
             "Samples": f"{line.state.num_samples}",
             "Elapsed Time": f"{elapsed_time}",
         }
-        if line.state.num_epochs > 0:
-            state_info["Epochs"] = f"{line.state.num_epochs}"
 
         colored_prefix = colored("Phase: ", "grey", bold=True)
         colored_phase = colored(line.state.phase, "green" if line.state.phase == "train" else "yellow", bold=True)
@@ -142,12 +141,24 @@ class StdoutLogger(LoggerImpl):
         self.write_queue("Pings", self.pings, True, "cyan")
         self.write_queue("Errors", self.errors, False, "red")
 
+    def write_error_summary_to_screen(self) -> None:
+        if self.error_summary is not None:
+            summary, timestamp = self.error_summary
+            timestamp_string = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            self.write_fp.write(f"\n{colored('Exception summary', 'grey', bold=True)}")
+            self.write_fp.write(f" {colored(timestamp_string, 'grey')}")
+            self.write_fp.write(f"\n{summary}")
+ 
     def write(self, line: LogLine) -> None:
         self.write_separator()
         self.write_state_window(line)
         self.write_log_window(line)
         self.write_queues()
+        self.write_error_summary_to_screen()
         sys.stdout.flush()
+
+    def write_error_summary(self, error_summary: LogErrorSummary) -> None:
+        self.error_summary = error_summary.message, datetime.datetime.now()
 
     def write_error(self, error: LogError) -> None:
         self.errors.append((error.message_with_location, datetime.datetime.now()))

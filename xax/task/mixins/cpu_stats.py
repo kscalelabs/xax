@@ -218,18 +218,20 @@ class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
             manager=self._mp_manager,
         )
 
-    def on_training_start(self, state: State) -> None:
-        super().on_training_start(state)
+    def on_training_start(self, state: State) -> State:
+        state = super().on_training_start(state)
 
         self._cpu_stats_monitor.start()
+        return state
 
-    def on_training_end(self, state: State) -> None:
-        super().on_training_end(state)
+    def on_training_end(self, state: State) -> State:
+        state = super().on_training_end(state)
 
         self._cpu_stats_monitor.stop()
+        return state
 
-    def on_step_start(self, state: State) -> None:
-        super().on_step_start(state)
+    def on_step_start(self, state: State) -> State:
+        state = super().on_step_start(state)
 
         monitor = self._cpu_stats_monitor
         stats = monitor.get_if_set() if self.config.cpu_stats.only_log_once else monitor.get()
@@ -245,3 +247,5 @@ class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
             self.log_scalar("rss/total", stats.mem_rss_total, namespace="🔧 mem")
             self.log_scalar("vms/cur", stats.mem_vms, namespace="🔧 mem")
             self.log_scalar("vms/total", stats.mem_vms_total, namespace="🔧 mem")
+
+        return state

@@ -228,23 +228,23 @@ class GPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
         if shutil.which("nvidia-smi") is not None:
             self._gpu_stats_monitor = GPUStatsMonitor(config.gpu_stats.ping_interval, self._mp_manager)
 
-    def on_training_start(self, state: State) -> None:
-        super().on_training_start(state)
-
+    def on_training_start(self, state: State) -> State:
+        state = super().on_training_start(state)
         if self._gpu_stats_monitor is not None:
             self._gpu_stats_monitor.start()
+        return state
 
-    def on_training_end(self, state: State) -> None:
-        super().on_training_end(state)
-
+    def on_training_end(self, state: State) -> State:
+        state = super().on_training_end(state)
         if self._gpu_stats_monitor is not None:
             self._gpu_stats_monitor.stop()
+        return state
 
-    def on_step_start(self, state: State) -> None:
-        super().on_step_start(state)
+    def on_step_start(self, state: State) -> State:
+        state = super().on_step_start(state)
 
         if (monitor := self._gpu_stats_monitor) is None:
-            return
+            return state
         stats = monitor.get_if_set() if self.config.gpu_stats.only_log_once else monitor.get()
 
         for gpu_stat in stats.values():
@@ -253,3 +253,5 @@ class GPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
             self.log_scalar(f"mem/{gpu_stat.index}", gpu_stat.memory_used, namespace="🔧 gpu")
             self.log_scalar(f"temp/{gpu_stat.index}", gpu_stat.temperature, namespace="🔧 gpu")
             self.log_scalar(f"util/{gpu_stat.index}", gpu_stat.utilization, namespace="🔧 gpu")
+
+        return state

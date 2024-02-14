@@ -14,28 +14,27 @@ from jaxtyping import Array, Float, Int
 
 import xax
 
-Batch = tuple[Float[Array, "1 28 28"], Int[Array, "10"]]
-Output = Float[Array, "10"]
+Xb = Float[Array, "batch 1 28 28"]
+X = Float[Array, "1 28 28"]
+
+Yb = Int[Array, "batch"]
+Y = Int[Array, ""]
+
+Yhatb = Float[Array, "batch 10"]
+Yhat = Float[Array, "10"]
+
+Batch = tuple[Xb, Yb]
+Loss = Float[Array, ""]
 
 
-def cross_entropy(y: Int[Array, " batch"], pred_y: Float[Array, "batch 10"]) -> Float[Array, ""]:
-    pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)
-    return -jnp.mean(pred_y)
-
-
-@dataclass
-class Config(xax.Config):
-    in_dim: int = xax.field(1, help="Number of input dimensions")
-
-
-class MnistClassification(xax.Task[Config]):
+class Model(eqx.Module):
     layers: list
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
+    def __init__(self, rng_key: Array) -> None:
+        super().__init__()
 
         # Split the PRNG key into four keys for the four layers.
-        key1, key2, key3, key4 = jax.random.split(self.prng_key, 4)
+        key1, key2, key3, key4 = jax.random.split(rng_key, 4)
 
         self.layers = [
             eqx.nn.Conv2d(1, 3, kernel_size=4, key=key1),
@@ -50,18 +49,44 @@ class MnistClassification(xax.Task[Config]):
             jax.nn.log_softmax,
         ]
 
-    def get_optimizer(self) -> optax.GradientTransformation:
-        return optax.adam(1e-3)
-
-    def forward(self, x: Float[Array, "1 28 28"]) -> Output:
+    def forward(self, x: X) -> Y:
         for layer in self.layers:
             x = layer(x)
         return x
 
-    def __call__(self, batch: Batch) -> Output:
+    def __call__(self, x: Xb) -> Yb:
+        return jax.vmap(self.forward)(x)
+
+
+def cross_entropy(y: Yb, pred_y: Yhatb) -> Loss:
+    pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)
+    return -jnp.mean(pred_y)
+
+
+@dataclass
+class Config(xax.Config):
+    in_dim: int = xax.field(1, help="Number of input dimensions")
+
+
+class MnistClassification(xax.Task[Config]):
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+
+    def get_model(self) -> eqx.Module:
+        return Model(self.prng_key)
+
+    def get_optimizer(self) -> optax.GradientTransformation:
+        return optax.adam(1e-3)
+
+    def compute_loss(self, model: eqx.Module, batch: Batch, state: xax.State) -> Loss:
         x, y = batch
-        pred_y = jax.vmap(self.forward)(x[:, None])
-        return cross_entropy(y, pred_y)
+        y_hat = model(x[:, None])
+        self.log_step(model, batch, y_hat, state)
+        return cross_entropy(y, y_hat)
+
+    # def log_valid_step(self, model: eqx.Module, batch: Any, output: Any, state: xax.State) -> None:
+    #     breakpoint()
+    #     adsf
 
     def get_dataset(self, phase: xax.Phase) -> MNIST:
         return MNIST(
@@ -71,6 +96,15 @@ class MnistClassification(xax.Task[Config]):
         )
 
 
+def test_dataloader_adhoc() -> None:
+    task = MnistClassification.get_task(Config(batch_size=16, num_dataloader_workers=0))
+    pf = task.get_prefetcher(task.get_dataloader(task.get_dataset("train"), "train"))
+    pf.test(max_samples=1000)
+
+
 if __name__ == "__main__":
     # python -m examples.mnist
-    MnistClassification.launch(Config(batch_size=16, num_dataloader_workers=0))
+    config = Config(batch_size=16)
+    config.train_dl.num_workers = 0
+    config.train_dl.error.flush_every_n_seconds = 5.0
+    MnistClassification.launch(config)

@@ -9,8 +9,8 @@ from xax.task.mixins import (
     ArtifactsMixin,
     CPUStatsConfig,
     CPUStatsMixin,
-    DataLoadersConfig,
-    DataLoadersMixin,
+    DataloadersConfig,
+    DataloadersMixin,
     GPUStatsConfig,
     GPUStatsMixin,
     LoggerConfig,
@@ -29,7 +29,7 @@ from xax.task.mixins import (
 @dataclass
 class Config(
     TrainConfig,
-    DataLoadersConfig,
+    DataloadersConfig,
     CPUStatsConfig,
     GPUStatsConfig,
     ProcessConfig,
@@ -47,7 +47,7 @@ ConfigT = TypeVar("ConfigT", bound=Config)
 
 class Task(
     TrainMixin[ConfigT],
-    DataLoadersMixin[ConfigT],
+    DataloadersMixin[ConfigT],
     CPUStatsMixin[ConfigT],
     GPUStatsMixin[ConfigT],
     ProcessMixin[ConfigT],

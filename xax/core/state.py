@@ -2,13 +2,13 @@
 
 import time
 from dataclasses import dataclass
-from typing import Literal, cast, get_args
+from typing import Literal, TypedDict, cast, get_args
 
 from omegaconf import MISSING
 
 from xax.core.conf import field
 
-Phase = Literal["train", "valid", "test"]
+Phase = Literal["train", "valid"]
 
 
 def cast_phase(raw_phase: str) -> Phase:
@@ -17,15 +17,22 @@ def cast_phase(raw_phase: str) -> Phase:
     return cast(Phase, raw_phase)
 
 
-@dataclass
+class StateDict(TypedDict, total=False):
+    num_steps: int
+    num_samples: int
+    num_valid_steps: int
+    num_valid_samples: int
+    start_time_s: float
+    elapsed_time_s: float
+    raw_phase: str
+
+
+@dataclass(frozen=True)
 class State:
-    num_epochs: int = field(MISSING, help="Number of epochs so far")
     num_steps: int = field(MISSING, help="Number of steps so far")
-    num_epoch_steps: int = field(MISSING, help="Number of steps in the current epoch")
     num_samples: int = field(MISSING, help="Number of sample so far")
-    num_epoch_samples: int = field(MISSING, help="Number of samples in the current epoch")
     num_valid_steps: int = field(MISSING, help="Number of validation steps so far")
-    num_test_steps: int = field(MISSING, help="Number of test steps so far")
+    num_valid_samples: int = field(MISSING, help="Number of validation samples so far")
     start_time_s: float = field(MISSING, help="Start time of training")
     elapsed_time_s: float = field(MISSING, help="Total elapsed time so far")
     raw_phase: str = field(MISSING, help="Current training phase")
@@ -34,20 +41,13 @@ class State:
     def phase(self) -> Phase:
         return cast_phase(self.raw_phase)
 
-    @phase.setter
-    def phase(self, new_phase: Phase) -> None:
-        self.raw_phase = new_phase
-
     @classmethod
     def init_state(cls) -> "State":
         return cls(
-            num_epochs=0,
             num_steps=0,
-            num_epoch_steps=0,
             num_samples=0,
-            num_epoch_samples=0,
             num_valid_steps=0,
-            num_test_steps=0,
+            num_valid_samples=0,
             start_time_s=time.time(),
             elapsed_time_s=0.0,
             raw_phase="train",
@@ -63,5 +63,19 @@ class State:
                 return self.num_steps
             case "valid":
                 return self.num_valid_steps
-            case "test":
-                return self.num_test_steps
+            case _:
+                raise ValueError(f"Invalid phase: {phase}")
+
+    def replace(self, values: StateDict) -> "State":
+        return State(
+            num_steps=values.get("num_steps", self.num_steps),
+            num_samples=values.get("num_samples", self.num_samples),
+            num_valid_steps=values.get("num_valid_steps", self.num_valid_steps),
+            num_valid_samples=values.get("num_valid_samples", self.num_valid_samples),
+            start_time_s=values.get("start_time_s", self.start_time_s),
+            elapsed_time_s=values.get("elapsed_time_s", self.elapsed_time_s),
+            raw_phase=values.get("raw_phase", self.raw_phase),
+        )
+
+    def with_phase(self, phase: Phase) -> "State":
+        return self.replace({"raw_phase": phase})
