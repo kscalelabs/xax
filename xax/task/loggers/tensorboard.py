@@ -12,8 +12,6 @@ import time
 from pathlib import Path
 from typing import TypeVar
 
-import jax
-import PIL.Image
 from omegaconf import DictConfig, OmegaConf
 
 from xax.core.state import Phase
@@ -205,10 +203,9 @@ class TensorboardLogger(LoggerImpl):
 
         for namespace, images in line.images.items():
             for image_key, image_value in images.items():
-                image = PIL.Image.fromarray(jax.device_get(image_value.pixels))
                 writer.add_image(
                     f"{namespace}/{image_key}",
-                    image,
+                    image_value.image,
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )

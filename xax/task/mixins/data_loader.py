@@ -135,7 +135,7 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
 
     @classmethod
     def to_device_fn(cls, sample: T) -> T:
-        return recursive_apply(sample, jax.device_put)
+        return recursive_apply(sample, jax.device_put, include_numpy=True)
 
     @classmethod
     def dataloader_worker_init_fn(cls, worker_id: int, num_workers: int) -> None:

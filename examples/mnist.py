@@ -10,9 +10,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from dpshdl.dataset import Dataset
 from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, Float, Int
+from PIL import Image
 
 import xax
 
@@ -70,10 +70,7 @@ class Config(xax.Config):
     in_dim: int = xax.field(1, help="Number of input dimensions")
 
 
-class MnistClassification(xax.Task[Config, Model, Batch, Yhatb]):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-
+class MnistClassification(xax.Task[Config]):
     def get_model(self) -> Model:
         return Model(self.prng_key)
 
@@ -89,7 +86,17 @@ class MnistClassification(xax.Task[Config, Model, Batch, Yhatb]):
         (_, y), y_hat = batch, output
         return cross_entropy(y, y_hat)
 
-    def get_dataset(self, phase: xax.Phase) -> Dataset[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    def log_valid_step(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> None:
+        max_images = 16
+        # (x, y), yhat = batch, output.argmax(axis=1)
+        # labels = [f"pred: {p.item()}, true: {t.item()}" for p, t in zip(yhat[:max_images], y[:max_images])]
+        # self.log_labeled_images("predictions", (x, labels), max_images=max_images, sep=2)
+        x, _ = batch
+        xnp = np.array(jax.device_get(x[:max_images]))
+        images = [Image.fromarray((xnp[i] * 255).astype(jnp.uint8)) for i in range(max_images)]
+        self.log_images("images", images, max_images=max_images, sep=2)
+
+    def get_dataset(self, phase: xax.Phase) -> MNIST:
         return MNIST(
             train=phase == "train",
             root_dir=xax.get_data_dir() / "mnist",
