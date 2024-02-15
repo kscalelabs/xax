@@ -236,7 +236,7 @@ class TrainMixin(
         timer.step(state)
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
-                self.log_scalar(k, v, namespace=ns)
+                self.logger.log_scalar(k, v, namespace=ns)
 
         # Delegate to the appropriate logging function based on the phase.
         match phase:
@@ -362,7 +362,7 @@ class TrainMixin(
         remaining_percent = self.get_remaining_percent(state)
         if remaining_percent is None:
             return False
-        self.log_scalar("percent", remaining_percent, namespace="⏰ remaining")
+        self.logger.log_scalar("percent", remaining_percent, namespace="⏰ remaining")
         self.maybe_log_termination_time(remaining_percent, state)
         return remaining_percent <= 0.0
 
@@ -399,7 +399,7 @@ class TrainMixin(
     ) -> tuple[Model, optax.OptState, State]:
         state = state.with_phase("train")
         loss, model, opt_state, output = self.update(model, optimizer, opt_state, batch, state)
-        self.log_scalar("loss", loss, namespace="loss")
+        self.logger.log_scalar("loss", loss, namespace="loss")
         self.log_step(model, batch, output, state)
         self.write_logs(state)
         return (
@@ -416,7 +416,7 @@ class TrainMixin(
     def val_step(self, model: Model, batch: Batch, state: State) -> tuple[Model, State]:
         state = state.with_phase("valid")
         loss, output = eqx.filter_jit(self.get_output_and_loss)(model, batch, state)
-        self.log_scalar("loss", loss, namespace="loss")
+        self.logger.log_scalar("loss", loss, namespace="loss")
         self.log_step(model, batch, output, state)
         self.write_logs(state)
         return model, state.replace(

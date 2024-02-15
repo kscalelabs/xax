@@ -4,14 +4,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, Generic, Self, TypeVar
-
-from PIL.Image import Image as PILImage
+from typing import Generic, Self, TypeVar
 
 from xax.core.conf import Device as BaseDeviceConfig, field
 from xax.core.state import State
 from xax.task.base import BaseConfig, BaseTask
-from xax.task.logger import Logger, LoggerImpl, Number
+from xax.task.logger import Logger, LoggerImpl
 from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger
@@ -58,42 +56,6 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
 
     def write_logs(self, state: State) -> None:
         self.logger.write(state)
-
-    def log_scalar(self, key: str, value: Callable[[], Number] | Number, *, namespace: str | None = None) -> None:
-        self.logger.log_scalar(key, value, namespace=namespace)
-
-    def log_string(self, key: str, value: Callable[[], str] | str, *, namespace: str | None = None) -> None:
-        self.logger.log_string(key, value, namespace=namespace)
-
-    def log_image(
-        self,
-        key: str,
-        value: Callable[[], PILImage] | PILImage,
-        *,
-        namespace: str | None = None,
-    ) -> None:
-        self.logger.log_image(
-            key,
-            value,
-            namespace=namespace,
-        )
-
-    def log_images(
-        self,
-        key: str,
-        value: Callable[[], list[PILImage]] | list[PILImage],
-        *,
-        namespace: str | None = None,
-        max_images: int | None = None,
-        sep: int = 0,
-    ) -> None:
-        self.logger.log_images(
-            key,
-            value,
-            namespace=namespace,
-            max_images=max_images,
-            sep=sep,
-        )
 
     def __enter__(self) -> Self:
         self.logger.__enter__()
