@@ -26,10 +26,8 @@ __all__ = [
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
-    "LogAudio",
     "LogImage",
     "LogLine",
-    "LogVideo",
     "Logger",
     "LoggerImpl",
     "JsonLogger",
@@ -74,6 +72,9 @@ __all__ = [
 __all__ += [
     "CollateMode",
     "Phase",
+    "Batch",
+    "Model",
+    "Output",
 ]
 
 import os
@@ -98,10 +99,8 @@ NAME_MAP: dict[str, str] = {
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
     "SingleProcessLauncher": "task.launchers.single_process",
-    "LogAudio": "task.logger",
     "LogImage": "task.logger",
     "LogLine": "task.logger",
-    "LogVideo": "task.logger",
     "Logger": "task.logger",
     "LoggerImpl": "task.logger",
     "JsonLogger": "task.loggers.json",
@@ -109,7 +108,7 @@ NAME_MAP: dict[str, str] = {
     "StdoutLogger": "task.loggers.stdout",
     "TensorboardLogger": "task.loggers.tensorboard",
     "CPUStatsOptions": "task.mixins.cpu_stats",
-    "DataLoaderConfig": "task.mixins.data_loader",
+    "DataloaderConfig": "task.mixins.data_loader",
     "GPUStatsOptions": "task.mixins.gpu_stats",
     "Script": "task.script",
     "ScriptConfig": "task.script",
@@ -146,7 +145,10 @@ NAME_MAP: dict[str, str] = {
 # Need to manually set some values which can't be auto-generated.
 NAME_MAP.update(
     {
+        "Batch": "task.mixins.train",
         "CollateMode": "utils.data.collate",
+        "Model": "task.mixins.model",
+        "Output": "task.mixins.output",
         "Phase": "core.state",
     },
 )
@@ -174,7 +176,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
     from xax.task.launchers.single_process import SingleProcessLauncher
-    from xax.task.logger import LogAudio, Logger, LoggerImpl, LogImage, LogLine, LogVideo
+    from xax.task.logger import Logger, LoggerImpl, LogImage, LogLine
     from xax.task.loggers.json import JsonLogger
     from xax.task.loggers.state import StateLogger
     from xax.task.loggers.stdout import StdoutLogger
@@ -182,6 +184,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.cpu_stats import CPUStatsOptions
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
+    from xax.task.mixins.train import Batch, Model, Output
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null

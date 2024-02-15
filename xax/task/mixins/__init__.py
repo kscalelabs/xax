@@ -8,4 +8,4 @@ from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
-from xax.task.mixins.train import Batch, Model, Output, TrainConfig, TrainMixin
+from xax.task.mixins.train import TrainConfig, TrainMixin

@@ -1,11 +1,11 @@
 """Defines utility functions for interfacing with Tensorboard."""
 
 import functools
+import io
 import time
 from pathlib import Path
 from typing import Literal, TypedDict
 
-import numpy as np
 from PIL.Image import Image as PILImage
 from tensorboard.compat.proto.config_pb2 import RunMetadata
 from tensorboard.compat.proto.event_pb2 import Event, TaggedRunMetadata
@@ -117,29 +117,44 @@ class TensorboardWriter:
         value: float,
         global_step: int | None = None,
         walltime: float | None = None,
+        new_style: bool = True,
         double_precision: bool = False,
     ) -> None:
-        self.pb_writer.add_summary(
-            Summary(
-                value=[
-                    Summary.Value(
-                        tag=tag,
-                        tensor=(
-                            TensorProto(double_val=[value], dtype="DT_DOUBLE")
-                            if double_precision
-                            else TensorProto(float_val=[value], dtype="DT_FLOAT")
-                        ),
-                        metadata=SummaryMetadata(
-                            plugin_data=SummaryMetadata.PluginData(
-                                plugin_name="scalaras",
+        if new_style:
+            self.pb_writer.add_summary(
+                Summary(
+                    value=[
+                        Summary.Value(
+                            tag=tag,
+                            tensor=(
+                                TensorProto(double_val=[value], dtype="DT_DOUBLE")
+                                if double_precision
+                                else TensorProto(float_val=[value], dtype="DT_FLOAT")
                             ),
+                            metadata=SummaryMetadata(
+                                plugin_data=SummaryMetadata.PluginData(
+                                    plugin_name="scalars",
+                                ),
+                            ),
+                        )
+                    ],
+                ),
+                global_step=global_step,
+                walltime=walltime,
+            )
+        else:
+            self.pb_writer.add_summary(
+                Summary(
+                    value=[
+                        Summary.Value(
+                            tag=tag,
+                            simple_value=value,
                         ),
-                    )
-                ],
-            ),
-            global_step=global_step,
-            walltime=walltime,
-        )
+                    ],
+                ),
+                global_step=global_step,
+                walltime=walltime,
+            )
 
     def add_image(
         self,
@@ -148,16 +163,21 @@ class TensorboardWriter:
         global_step: int | None = None,
         walltime: float | None = None,
     ) -> None:
-        image_data = np.asarray(value.convert("RGB")).transpose(2, 0, 1)  # HWC -> CHW
+        output = io.BytesIO()
+        value.convert("RGB").save(output, format="PNG")
+        image_string = output.getvalue()
+        output.close()
+
         self.pb_writer.add_summary(
             Summary(
                 value=[
                     Summary.Value(
                         tag=tag,
-                        tensor=TensorProto(
-                            dtype="DT_FLOAT",
-                            tensor_shape=TensorShapeProto(dim=[TensorShapeProto.Dim(size=s) for s in image_data.shape]),
-                            float_val=image_data.flatten().tolist(),
+                        image=Summary.Image(
+                            height=value.height,
+                            width=value.width,
+                            colorspace=3,  # RGB
+                            encoded_image_string=image_string,
                         ),
                     ),
                 ],
@@ -197,7 +217,6 @@ class TensorboardWriter:
 
 
 class TensorboardWriterKwargs(TypedDict):
-    log_directory: Path
     max_queue_size: int
     flush_seconds: float
     filename_suffix: str
@@ -213,8 +232,9 @@ class TensorboardWriters:
     ) -> None:
         super().__init__()
 
+        self.log_directory = Path(log_directory)
+
         self.kwargs: TensorboardWriterKwargs = {
-            "log_directory": Path(log_directory),
             "max_queue_size": max_queue_size,
             "flush_seconds": flush_seconds,
             "filename_suffix": filename_suffix,
@@ -222,11 +242,11 @@ class TensorboardWriters:
 
     @functools.cached_property
     def train_writer(self) -> TensorboardWriter:
-        return TensorboardWriter(**self.kwargs)
+        return TensorboardWriter(self.log_directory / "train", **self.kwargs)
 
     @functools.cached_property
     def valid_writer(self) -> TensorboardWriter:
-        return TensorboardWriter(**self.kwargs)
+        return TensorboardWriter(self.log_directory / "valid", **self.kwargs)
 
     def writer(self, phase: Phase) -> TensorboardWriter:
         match phase:
