@@ -24,6 +24,12 @@ class DummyLogger(xax.LoggerImpl):
     def write(self, line: xax.LogLine) -> None:
         self._line = line
 
+    def clear(self) -> None:
+        self._line = None
+
+    def should_log(self, state: xax.State) -> bool:
+        return True
+
 
 @pytest.mark.parametrize(
     "image",
@@ -43,11 +49,20 @@ def test_log_image(image: np.ndarray | Array | PILImage) -> None:
     with xax.Logger() as logger:
         dummy_logger = DummyLogger()
         logger.add_logger(dummy_logger)
+
+        # Logs the image.
         logger.log_image("test", image, target_resolution=(32, 32))
         logger.write(xax.State.init_state())
-
         image = dummy_logger.line.images["value"]["test"].image
+        dummy_logger.clear()
         assert image.size == (32, 32)
+
+        # Logs the image with a caption.
+        logger.log_labeled_image("test", (image, "caption\ncaption"), target_resolution=(32, 32))
+        logger.write(xax.State.init_state())
+        image = dummy_logger.line.images["value"]["test"].image
+        dummy_logger.clear()
+        assert image.size > (32, 32)
 
 
 @pytest.mark.parametrize(
@@ -68,8 +83,22 @@ def test_log_images(images: np.ndarray | Array | list[PILImage]) -> None:
     with xax.Logger() as logger:
         dummy_logger = DummyLogger()
         logger.add_logger(dummy_logger)
+
+        # Logs the images.
         logger.log_images("test", images, target_resolution=(32, 32), max_images=6)
         logger.write(xax.State.init_state())
-
         image = dummy_logger.line.images["value"]["test"].image
+        dummy_logger.clear()
         assert np.prod(image.size) == 6 * 32 * 32
+
+        # Logs the images with captions.
+        logger.log_labeled_images(
+            "test",
+            (images, ["caption\ncaption"] * 7),
+            target_resolution=(32, 32),
+            max_images=6,
+        )
+        logger.write(xax.State.init_state())
+        image = dummy_logger.line.images["value"]["test"].image
+        dummy_logger.clear()
+        assert np.prod(image.size) > 6 * 32 * 32
