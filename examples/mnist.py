@@ -8,11 +8,9 @@ from dataclasses import dataclass
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, Float, Int
-from PIL import Image
 
 import xax
 
@@ -88,13 +86,9 @@ class MnistClassification(xax.Task[Config]):
 
     def log_valid_step(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> None:
         max_images = 16
-        # (x, y), yhat = batch, output.argmax(axis=1)
-        # labels = [f"pred: {p.item()}, true: {t.item()}" for p, t in zip(yhat[:max_images], y[:max_images])]
-        # self.log_labeled_images("predictions", (x, labels), max_images=max_images, sep=2)
-        x, _ = batch
-        xnp = np.array(jax.device_get(x[:max_images]))
-        images = [Image.fromarray((xnp[i] * 255).astype(jnp.uint8)) for i in range(max_images)]
-        self.log_images("images", images, max_images=max_images, sep=2)
+        (x, y), yhat = batch, output.argmax(axis=1)
+        labels = [f"pred: {p.item()}\ntrue: {t.item()}" for p, t in zip(yhat[:max_images], y[:max_images])]
+        self.logger.log_labeled_images("predictions", (x, labels), max_images=max_images)
 
     def get_dataset(self, phase: xax.Phase) -> MNIST:
         return MNIST(

@@ -30,6 +30,7 @@ __all__ = [
     "LogLine",
     "Logger",
     "LoggerImpl",
+    "CallbackLogger",
     "JsonLogger",
     "StateLogger",
     "StdoutLogger",
@@ -103,6 +104,7 @@ NAME_MAP: dict[str, str] = {
     "LogLine": "task.logger",
     "Logger": "task.logger",
     "LoggerImpl": "task.logger",
+    "CallbackLogger": "task.loggers.callback",
     "JsonLogger": "task.loggers.json",
     "StateLogger": "task.loggers.state",
     "StdoutLogger": "task.loggers.stdout",
@@ -177,6 +179,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.launchers.cli import CliLauncher
     from xax.task.launchers.single_process import SingleProcessLauncher
     from xax.task.logger import Logger, LoggerImpl, LogImage, LogLine
+    from xax.task.loggers.callback import CallbackLogger
     from xax.task.loggers.json import JsonLogger
     from xax.task.loggers.state import StateLogger
     from xax.task.loggers.stdout import StdoutLogger

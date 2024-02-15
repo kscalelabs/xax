@@ -237,15 +237,15 @@ class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
         stats = monitor.get_if_set() if self.config.cpu_stats.only_log_once else monitor.get()
 
         if stats is not None:
-            self.log_scalar("child_procs", stats.num_child_procs, namespace="🔧 cpu")
-            self.log_scalar("percent", stats.cpu_percent, namespace="🔧 cpu")
-            self.log_scalar("child_percent", stats.child_cpu_percent, namespace="🔧 cpu")
-            self.log_scalar("percent", stats.mem_percent, namespace="🔧 mem")
-            self.log_scalar("shared", stats.mem_shared, namespace="🔧 mem")
-            self.log_scalar("child_percent", stats.child_mem_percent, namespace="🔧 mem")
-            self.log_scalar("rss/cur", stats.mem_rss, namespace="🔧 mem")
-            self.log_scalar("rss/total", stats.mem_rss_total, namespace="🔧 mem")
-            self.log_scalar("vms/cur", stats.mem_vms, namespace="🔧 mem")
-            self.log_scalar("vms/total", stats.mem_vms_total, namespace="🔧 mem")
+            self.logger.log_scalar("child_procs", stats.num_child_procs, namespace="🔧 cpu")
+            self.logger.log_scalar("percent", stats.cpu_percent, namespace="🔧 cpu")
+            self.logger.log_scalar("child_percent", stats.child_cpu_percent, namespace="🔧 cpu")
+            self.logger.log_scalar("percent", stats.mem_percent, namespace="🔧 mem")
+            self.logger.log_scalar("shared", stats.mem_shared, namespace="🔧 mem")
+            self.logger.log_scalar("child_percent", stats.child_mem_percent, namespace="🔧 mem")
+            self.logger.log_scalar("rss/cur", stats.mem_rss, namespace="🔧 mem")
+            self.logger.log_scalar("rss/total", stats.mem_rss_total, namespace="🔧 mem")
+            self.logger.log_scalar("vms/cur", stats.mem_vms, namespace="🔧 mem")
+            self.logger.log_scalar("vms/total", stats.mem_vms_total, namespace="🔧 mem")
 
         return state
