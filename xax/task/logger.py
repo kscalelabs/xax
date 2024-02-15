@@ -262,7 +262,7 @@ def get_image(image: np.ndarray | Array | PILImage, target_resolution: tuple[int
             raise RuntimeError(f"Expected image to have shape HW, HWC, or CHW, got {image.shape}")
 
         # Normalizes the image and converts to integer.
-        if image.dtype == np.float32:
+        if np.issubdtype(image.dtype, np.floating):
             image = (normalize(image) * 255).round().astype(np.uint8)
         elif image.dtype == np.uint8:
             pass
@@ -273,11 +273,11 @@ def get_image(image: np.ndarray | Array | PILImage, target_resolution: tuple[int
         if image.shape[-1] == 1:
             image = Image.fromarray(image[..., 0])
         elif image.shape[-1] == 3:
-            image = Image.fromarray(image.transpose(2, 0, 1))
+            image = Image.fromarray(image)
         elif image.shape[0] == 1:
             image = Image.fromarray(image[0])
         elif image.shape[0] == 3:
-            image = Image.fromarray(image)
+            image = Image.fromarray(image.transpose(1, 2, 0))
         else:
             raise ValueError(f"Unsupported image shape: {image.shape}")
 
@@ -472,6 +472,9 @@ class Logger:
         root_logger = logging.getLogger()
         ToastHandler(self).add_for_logger(root_logger)
 
+        # Flag when the logger is active.
+        self.active = False
+
     def add_logger(self, *logger: LoggerImpl) -> None:
         """Add the logger, so that it gets called when `write` is called.
 
@@ -549,6 +552,8 @@ class Logger:
             value: The scalar value being logged
             namespace: An optional logging namespace
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -565,6 +570,8 @@ class Logger:
             value: The string value being logged
             namespace: An optional logging namespace
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -590,6 +597,8 @@ class Logger:
             target_resolution: The target resolution for each image; if None,
                 don't resample the images
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -624,6 +633,8 @@ class Logger:
             line_spacing: The spacing between adjacent lines
             centered: If set, center the text labels, otherwise align to the left
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -669,6 +680,8 @@ class Logger:
                 don't resample the images
             sep: An optional separation amount between adjacent images
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -721,6 +734,8 @@ class Logger:
             centered: If set, center the text labels, otherwise align to the left
             sep: An optional separation amount between adjacent images
         """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
@@ -757,6 +772,7 @@ class Logger:
             logger.log_config(config)
 
     def __enter__(self) -> Self:
+        self.active = True
         for logger in self.loggers:
             logger.start()
         return self
@@ -764,3 +780,4 @@ class Logger:
     def __exit__(self, _t: type[BaseException] | None, _e: BaseException | None, _tr: TracebackType | None) -> None:
         for logger in self.loggers:
             logger.stop()
+        self.active = False
