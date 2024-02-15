@@ -11,7 +11,7 @@ import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, is_dataclass
 from threading import Thread
-from typing import Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
+from typing import Any, Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
 import equinox as eqx
 import jax
@@ -40,9 +40,13 @@ from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
 
-Model = TypeVar("Model", bound=eqx.Module)
-Batch = TypeVar("Batch")
-Output = TypeVar("Output")
+# Model = TypeVar("Model", bound=eqx.Module)
+# Batch = TypeVar("Batch")
+# Output = TypeVar("Output")
+
+Model = Any
+Batch = Any
+Output = Any
 
 StepKind = Literal["step", "sample", "second"]
 
@@ -150,7 +154,7 @@ class TrainMixin(
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
-    Generic[Config, Model, Batch, Output],
+    Generic[Config],
     ABC,
 ):
     valid_step_timer: ValidStepTimer

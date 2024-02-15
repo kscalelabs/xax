@@ -7,7 +7,6 @@ from xax.task.base import BaseConfig, BaseTask
 from xax.task.mixins import (
     ArtifactsConfig,
     ArtifactsMixin,
-    Batch,
     CPUStatsConfig,
     CPUStatsMixin,
     DataloadersConfig,
@@ -16,8 +15,6 @@ from xax.task.mixins import (
     GPUStatsMixin,
     LoggerConfig,
     LoggerMixin,
-    Model,
-    Output,
     ProcessConfig,
     ProcessMixin,
     RunnableConfig,
@@ -49,7 +46,7 @@ ConfigT = TypeVar("ConfigT", bound=Config)
 
 
 class Task(
-    TrainMixin[ConfigT, Model, Batch, Output],
+    TrainMixin[ConfigT],
     DataloadersMixin[ConfigT],
     CPUStatsMixin[ConfigT],
     GPUStatsMixin[ConfigT],
@@ -59,6 +56,6 @@ class Task(
     ArtifactsMixin[ConfigT],
     RunnableMixin[ConfigT],
     BaseTask[ConfigT],
-    Generic[ConfigT, Model, Batch, Output],
+    Generic[ConfigT],
 ):
     pass
