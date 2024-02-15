@@ -4,14 +4,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, Generic, Self, TypeVar
-
-from PIL.Image import Image as PILImage
+from typing import Generic, Self, TypeVar
 
 from xax.core.conf import Device as BaseDeviceConfig, field
 from xax.core.state import State
 from xax.task.base import BaseConfig, BaseTask
-from xax.task.logger import Logger, LoggerImpl, Number
+from xax.task.logger import Logger, LoggerImpl
 from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger

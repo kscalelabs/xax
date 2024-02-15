@@ -8,11 +8,9 @@ from dataclasses import dataclass
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, Float, Int
-from PIL import Image
 
 import xax
 
