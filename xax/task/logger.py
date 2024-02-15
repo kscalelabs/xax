@@ -96,7 +96,7 @@ def image_with_text(
     image: PILImage,
     text: list[str],
     max_num_lines: int | None = None,
-    line_spacing: int = 4,
+    line_spacing: int = 1,
     centered: bool = True,
 ) -> PILImage:
     """Adds a text label to an image.
@@ -606,7 +606,7 @@ class Logger:
         namespace: str | None = None,
         max_line_length: int | None = None,
         target_resolution: tuple[int, int] | None = (512, 512),
-        line_spacing: int = 4,
+        line_spacing: int = 1,
         centered: bool = True,
     ) -> None:
         """Logs an image with a label.
@@ -695,7 +695,7 @@ class Logger:
         max_images: int | None = None,
         max_line_length: int | None = None,
         target_resolution: tuple[int, int] | None = (256, 256),
-        line_spacing: int = 4,
+        line_spacing: int = 1,
         centered: bool = True,
         sep: int = 0,
     ) -> None:

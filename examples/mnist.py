@@ -89,7 +89,7 @@ class MnistClassification(xax.Task[Config]):
     def log_valid_step(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> None:
         max_images = 16
         (x, y), yhat = batch, output.argmax(axis=1)
-        labels = [f"pred: {p.item()}, true: {t.item()}" for p, t in zip(yhat[:max_images], y[:max_images])]
+        labels = [f"pred: {p.item()}\ntrue: {t.item()}" for p, t in zip(yhat[:max_images], y[:max_images])]
         self.logger.log_labeled_images("predictions", (x, labels), max_images=max_images, centered=False)
 
     def get_dataset(self, phase: xax.Phase) -> MNIST:
