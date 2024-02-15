@@ -95,9 +95,9 @@ def make_human_viewable_resolution(
 def image_with_text(
     image: PILImage,
     text: list[str],
-    max_num_lines: int | None = None,
-    line_spacing: int = 1,
-    centered: bool = True,
+    max_num_lines: int | None,
+    line_spacing: int,
+    centered: bool,
 ) -> PILImage:
     """Adds a text label to an image.
 
@@ -605,8 +605,9 @@ class Logger:
         *,
         namespace: str | None = None,
         max_line_length: int | None = None,
+        max_num_lines: int | None = None,
         target_resolution: tuple[int, int] | None = (512, 512),
-        line_spacing: int = 1,
+        line_spacing: int = 2,
         centered: bool = True,
     ) -> None:
         """Logs an image with a label.
@@ -616,6 +617,8 @@ class Logger:
             value: The image and label being logged
             namespace: An optional logging namespace
             max_line_length: The maximum line length for the label
+            max_num_lines: The number of lines of spacing to add to the bottom
+                of the image
             target_resolution: The target resolution for each image; if None,
                 don't resample the images
             line_spacing: The spacing between adjacent lines
@@ -630,6 +633,7 @@ class Logger:
             return image_with_text(
                 image,
                 standardize_text(label, max_line_length),
+                max_num_lines=max_num_lines,
                 line_spacing=line_spacing,
                 centered=centered,
             )
@@ -640,12 +644,10 @@ class Logger:
         self,
         key: str,
         value: (
-            Callable[[], np.ndarray | Array | Sequence[np.ndarray] | Sequence[Array] | Sequence[PILImage]]
+            Callable[[], Sequence[np.ndarray | Array | PILImage] | np.ndarray | Array]
+            | Sequence[np.ndarray | Array | PILImage]
             | np.ndarray
             | Array
-            | Sequence[np.ndarray]
-            | Sequence[Array]
-            | Sequence[PILImage]
         ),
         *,
         namespace: str | None = None,
@@ -677,7 +679,7 @@ class Logger:
             if isinstance(images, Array):
                 images = as_numpy(images)
             if isinstance(images, Sequence):
-                images = list(images)  # type: ignore[assignment]
+                images = list(images)
             images = [get_image(image, target_resolution) for image in images]
             return tile_images(images, sep)
 
@@ -687,15 +689,16 @@ class Logger:
         self,
         key: str,
         value: (
-            Callable[[], tuple[Sequence[np.ndarray | Array | PILImage], Sequence[str]]]
-            | tuple[Sequence[np.ndarray | Array | PILImage], Sequence[str]]
+            Callable[[], tuple[Sequence[np.ndarray | Array | PILImage] | np.ndarray | Array, Sequence[str]]]
+            | tuple[Sequence[np.ndarray | Array | PILImage] | np.ndarray | Array, Sequence[str]]
         ),
         *,
         namespace: str | None = None,
         max_images: int | None = None,
         max_line_length: int | None = None,
+        max_num_lines: int | None = None,
         target_resolution: tuple[int, int] | None = (256, 256),
-        line_spacing: int = 1,
+        line_spacing: int = 2,
         centered: bool = True,
         sep: int = 0,
     ) -> None:
@@ -710,6 +713,8 @@ class Logger:
             max_images: The maximum number of images to show; extra images
                 are clipped
             max_line_length: The maximum line length for the label
+            max_num_lines: The number of lines of spacing to add to the bottom
+                of the image
             target_resolution: The target resolution for each image; if None,
                 don't resample the images
             line_spacing: The spacing between adjacent lines
@@ -726,7 +731,13 @@ class Logger:
                 labels = labels[:max_images]
             images = [get_image(image, target_resolution) for image in images]
             images = [
-                image_with_text(image, standardize_text(label, max_line_length), line_spacing, centered)
+                image_with_text(
+                    image,
+                    standardize_text(label, max_line_length),
+                    max_num_lines=max_num_lines,
+                    line_spacing=line_spacing,
+                    centered=centered,
+                )
                 for image, label in zip(images, labels)
             ]
             return tile_images(images, sep)
