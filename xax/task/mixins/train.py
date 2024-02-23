@@ -4,6 +4,7 @@ import contextlib
 import functools
 import itertools
 import logging
+import signal
 import sys
 import textwrap
 import time
@@ -25,6 +26,7 @@ from xax.core.conf import field
 from xax.core.state import Phase, State
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
+from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
@@ -129,6 +131,7 @@ class ValidStepTimer:
 
 @dataclass
 class TrainConfig(
+    CheckpointingConfig,
     DataloadersConfig,
     LoggerConfig,
     StepContextConfig,
@@ -149,6 +152,7 @@ Config = TypeVar("Config", bound=TrainConfig)
 
 
 class TrainMixin(
+    CheckpointingMixin[Config],
     DataloadersMixin[Config],
     LoggerMixin[Config],
     StepContextMixin[Config],
@@ -478,8 +482,16 @@ class TrainMixin(
             with self.step_context("get_initial_opt_state"):
                 opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
 
-            state = State.init_state()
+            with self.step_context("load_checkpoint"):
+                state = self.load_initial_state()
+
             state = self.on_training_start(state)
+
+            def on_exit() -> None:
+                self.save_checkpoint(state)
+
+            # Handle user-defined interrupts during the training loop.
+            self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
 
             try:
                 while True:
