@@ -74,7 +74,6 @@ __all__ += [
     "CollateMode",
     "Phase",
     "Batch",
-    "Model",
     "Output",
 ]
 
@@ -149,7 +148,6 @@ NAME_MAP.update(
     {
         "Batch": "task.mixins.train",
         "CollateMode": "utils.data.collate",
-        "Model": "task.mixins.model",
         "Output": "task.mixins.output",
         "Phase": "core.state",
     },
@@ -187,7 +185,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.cpu_stats import CPUStatsOptions
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
-    from xax.task.mixins.train import Batch, Model, Output
+    from xax.task.mixins.train import Batch, Output
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null

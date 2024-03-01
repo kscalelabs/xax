@@ -1,5 +1,6 @@
 # requirements.txt
 
+cloudpickle
 dpshdl
 equinox
 gitpython
