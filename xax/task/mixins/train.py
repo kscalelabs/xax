@@ -278,7 +278,7 @@ class TrainMixin(
             logger.info("Loading checkpoint from %s", init_ckpt_path)
             with self.step_context("load_checkpoint"):
                 model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
-                config_diff = get_diff_string(diff_configs(config, self.config))
+                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
                 if config_diff:
                     logger.warning("Loaded config differs from current config:\n%s", config_diff)
                 return model, optimizer, opt_state, state

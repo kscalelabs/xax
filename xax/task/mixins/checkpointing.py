@@ -6,7 +6,7 @@ import logging
 import tarfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Generic, Literal, TypeVar, overload
+from typing import Any, Callable, Generic, Literal, TypeVar, overload
 
 import cloudpickle
 import optax
@@ -117,19 +117,29 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         with tarfile.open(path, "r:gz") as tar:
 
             def get_model() -> PyTree:
-                return cloudpickle.load(tar.extractfile("model"))
+                if (model := tar.extractfile("model")) is None:
+                    raise ValueError(f"Checkpoint does not contain a model file: {path}")
+                return cloudpickle.load(model)
 
             def get_opt() -> optax.GradientTransformation:
-                return cloudpickle.load(tar.extractfile("opt"))
+                if (opt := tar.extractfile("opt")) is None:
+                    raise ValueError(f"Checkpoint does not contain an opt file: {path}")
+                return cloudpickle.load(opt)
 
             def get_opt_state() -> optax.OptState:
-                return cloudpickle.load(tar.extractfile("opt_state"))
+                if (opt_state := tar.extractfile("opt_state")) is None:
+                    raise ValueError(f"Checkpoint does not contain an opt_state file: {path}")
+                return cloudpickle.load(opt_state)
 
             def get_state() -> State:
-                return State(**json.loads(tar.extractfile("state").read().decode()))
+                if (state := tar.extractfile("state")) is None:
+                    raise ValueError(f"Checkpoint does not contain a state file: {path}")
+                return State(**json.loads(state.read().decode()))
 
             def get_config() -> DictConfig:
-                return OmegaConf.load(tar.extractfile("config"))
+                if (config := tar.extractfile("config")) is None:
+                    raise ValueError(f"Checkpoint does not contain a config file: {path}")
+                return OmegaConf.load(config)
 
             match part:
                 case "model":
@@ -172,7 +182,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         # Combines all temporary files into a single checkpoint TAR file.
         with tarfile.open(ckpt_path, "w:gz") as tar:
 
-            def add_file(name: str, write_fn: Callable[[io.BytesIO], None]) -> None:
+            def add_file(name: str, write_fn: Callable[[io.BytesIO], Any]) -> None:
                 with io.BytesIO() as buf:
                     write_fn(buf)
                     tarinfo = tarfile.TarInfo(name)
