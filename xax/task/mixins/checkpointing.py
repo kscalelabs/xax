@@ -6,7 +6,7 @@ import logging
 import tarfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Literal, TypeVar, overload
+from typing import Any, Callable, Generic, Literal, TypeVar, cast, overload
 
 import cloudpickle
 import optax
@@ -139,7 +139,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             def get_config() -> DictConfig:
                 if (config := tar.extractfile("config")) is None:
                     raise ValueError(f"Checkpoint does not contain a config file: {path}")
-                return OmegaConf.load(config)
+                return cast(DictConfig, OmegaConf.load(config))
 
             match part:
                 case "model":
