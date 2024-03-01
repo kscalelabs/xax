@@ -561,8 +561,7 @@ class BaseFileDownloader(ABC):
         self.max_redirect_hops = max_redirect_hops
 
     @abstractmethod
-    def get_root_directory(self) -> Path:
-        ...
+    def get_root_directory(self) -> Path: ...
 
     @property
     def filepath(self) -> Path:
