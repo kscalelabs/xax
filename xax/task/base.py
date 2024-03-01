@@ -79,12 +79,6 @@ class BaseTask(Generic[Config]):
     def on_training_end(self, state: State) -> State:
         return state
 
-    def on_before_save_checkpoint(self, ckpt_path: Path) -> None:
-        pass
-
-    def on_after_save_checkpoint(self, ckpt_path: Path) -> None:
-        pass
-
     @functools.cached_property
     def task_class_name(self) -> str:
         return self.__class__.__name__

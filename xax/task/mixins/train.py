@@ -1,5 +1,6 @@
 """Defines a mixin for running the training loop."""
 
+import bdb
 import contextlib
 import functools
 import itertools
@@ -19,7 +20,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from jaxtyping import Array
+from jaxtyping import Array, PyTree
 from omegaconf import DictConfig
 
 from xax.core.conf import field
@@ -34,6 +35,8 @@ from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
     StateTimer,
     TrainingFinishedError,
+    diff_configs,
+    get_diff_string,
     get_git_state,
     get_training_code,
 )
@@ -42,11 +45,9 @@ from xax.utils.text import highlight_exception_message, show_info
 
 logger = logging.getLogger(__name__)
 
-# Model = TypeVar("Model", bound=eqx.Module)
 # Batch = TypeVar("Batch")
 # Output = TypeVar("Output")
 
-Model = Any
 Batch = Any
 Output = Any
 
@@ -206,7 +207,7 @@ class TrainMixin(
             },
         )
 
-    def log_train_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
+    def log_train_step(self, model: PyTree, batch: Batch, output: Output, state: State) -> None:
         """Override this function to do logging during the training phase.
 
         This function is called after the model forward pass and before the
@@ -219,7 +220,7 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_valid_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
+    def log_valid_step(self, model: PyTree, batch: Batch, output: Output, state: State) -> None:
         """Override this function to do logging during the validation phase.
 
         This function is called after the model forward pass. It is called in
@@ -232,7 +233,7 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_step(self, model: Model, batch: Batch, output: Output, state: State) -> None:
+    def log_step(self, model: PyTree, batch: Batch, output: Output, state: State) -> None:
         phase = state.phase
 
         # Log the state timers.
@@ -252,7 +253,7 @@ class TrainMixin(
                 raise KeyError(f"Unknown phase: {phase}")
 
     @abstractmethod
-    def get_model(self) -> Model:
+    def get_model(self) -> PyTree:
         """Returns the Equinox model to train.
 
         Returns:
@@ -267,11 +268,34 @@ class TrainMixin(
             The optimizer to use to train the model.
         """
 
-    def get_initial_opt_state(self, model: Model, optimizer: optax.GradientTransformation) -> optax.OptState:
+    def get_initial_opt_state(self, model: PyTree, optimizer: optax.GradientTransformation) -> optax.OptState:
         return optimizer.init(eqx.filter(model, eqx.is_array))
 
+    def load_initial_state(self) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State]:
+        init_ckpt_path = self.get_init_ckpt_path()
+
+        if init_ckpt_path is not None:
+            logger.info("Loading checkpoint from %s", init_ckpt_path)
+            with self.step_context("load_checkpoint"):
+                model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
+                config_diff = get_diff_string(diff_configs(config, self.config))
+                if config_diff:
+                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
+                return model, optimizer, opt_state, state
+
+        with self.step_context("get_model"):
+            model = self.get_model()
+
+        with self.step_context("get_optimizer"):
+            optimizer = self.get_optimizer()
+
+        with self.step_context("get_initial_opt_state"):
+            opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+
+        return model, optimizer, opt_state, State.init_state()
+
     @abstractmethod
-    def get_output(self, model: Model, batch: Batch, state: State) -> Output:
+    def get_output(self, model: PyTree, batch: Batch, state: State) -> Output:
         """Gets the output from the model.
 
         By default, we assume the model is a function that takes the batch as
@@ -284,7 +308,7 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def compute_loss(self, model: Model, batch: Batch, output: Output, state: State) -> Array:
+    def compute_loss(self, model: PyTree, batch: Batch, output: Output, state: State) -> Array:
         """Gets the loss for the current batch.
 
         By default, we assume the model is a function that takes the batch as
@@ -304,7 +328,7 @@ class TrainMixin(
             raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
 
-    def get_output_and_loss(self, model: Model, batch: Batch, state: State) -> tuple[Array, Output]:
+    def get_output_and_loss(self, model: PyTree, batch: Batch, state: State) -> tuple[Array, Output]:
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
         return loss, output
@@ -312,12 +336,12 @@ class TrainMixin(
     @eqx.filter_jit
     def update(
         self,
-        model: Model,
+        model: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, Model, optax.OptState, Output]:
+    ) -> tuple[Array, PyTree, optax.OptState, Output]:
         (loss, output), grads = eqx.filter_value_and_grad(self.get_output_and_loss, has_aux=True)(model, batch, state)
         updates, opt_state = optimizer.update(grads, opt_state)
         model = eqx.apply_updates(model, updates)
@@ -395,12 +419,12 @@ class TrainMixin(
 
     def train_step(
         self,
-        model: Model,
+        model: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[Model, optax.OptState, State]:
+    ) -> tuple[PyTree, optax.OptState, State]:
         state = state.with_phase("train")
         loss, model, opt_state, output = self.update(model, optimizer, opt_state, batch, state)
         self.logger.log_scalar("loss", loss, namespace="loss")
@@ -417,7 +441,7 @@ class TrainMixin(
             ),
         )
 
-    def val_step(self, model: Model, batch: Batch, state: State) -> tuple[Model, State]:
+    def val_step(self, model: PyTree, batch: Batch, state: State) -> tuple[PyTree, State]:
         state = state.with_phase("valid")
         loss, output = eqx.filter_jit(self.get_output_and_loss)(model, batch, state)
         self.logger.log_scalar("loss", loss, namespace="loss")
@@ -470,25 +494,12 @@ class TrainMixin(
             ctx.enter_context(train_pf)
             ctx.enter_context(valid_pf)
 
-            # Gets the model.
-            with self.step_context("get_model"):
-                model = self.get_model()
-
-            # Gets the optimizer.
-            with self.step_context("get_optimizer"):
-                optimizer = self.get_optimizer()
-
-            # Gets the initial optimizer state.
-            with self.step_context("get_initial_opt_state"):
-                opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
-
-            with self.step_context("load_checkpoint"):
-                state = self.load_initial_state()
+            model, optimizer, opt_state, state = self.load_initial_state()
 
             state = self.on_training_start(state)
 
             def on_exit() -> None:
-                self.save_checkpoint(state)
+                self.save_checkpoint(model, optimizer, opt_state, state)
 
             # Handle user-defined interrupts during the training loop.
             self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
@@ -510,17 +521,26 @@ class TrainMixin(
                         with self.step_context("on_step_end"):
                             state = self.on_step_end(state)
 
+                        if self.should_checkpoint(state):
+                            self.save_checkpoint(model, optimizer, opt_state, state)
+
             except TrainingFinishedError:
                 if is_master():
                     show_info(
                         f"Finished training after {state.num_steps} steps, {state.num_samples} samples",
                         important=True,
                     )
+                self.save_checkpoint(model, optimizer, opt_state, state)
+
+            except (KeyboardInterrupt, bdb.BdbQuit):
+                if is_master():
+                    show_info("Interrupted training", important=True)
 
             except BaseException:
                 exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
                 sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
                 sys.stdout.flush()
+                self.save_checkpoint(model, optimizer, opt_state, state)
 
             finally:
                 state = self.on_training_end(state)
