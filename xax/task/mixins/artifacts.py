@@ -47,6 +47,10 @@ class ArtifactsMixin(BaseTask[Config]):
         self._exp_dir = exp_dir
         return self
 
+    @property
+    def exp_dir(self) -> Path:
+        return self.get_exp_dir()
+
     def add_lock_file(self, lock_type: str, *, exists_ok: bool = False) -> None:
         if (lock_file := self.exp_dir / f".lock_{lock_type}").exists():
             if not exists_ok:
@@ -61,13 +65,16 @@ class ArtifactsMixin(BaseTask[Config]):
         elif not missing_ok:
             raise RuntimeError(f"Lock file not found at {lock_file}")
 
-    @functools.cached_property
-    def exp_dir(self) -> Path:
+    def get_exp_dir(self) -> Path:
+        if self._exp_dir is not None:
+            return self._exp_dir
+
         if self.config.exp_dir is not None:
             exp_dir = Path(self.config.exp_dir).expanduser().resolve()
             exp_dir.mkdir(parents=True, exist_ok=True)
-            logger.log(LOG_STATUS, self.exp_dir)
-            return exp_dir
+            self._exp_dir = exp_dir
+            logger.log(LOG_STATUS, self._exp_dir)
+            return self._exp_dir
 
         def get_exp_dir(run_id: int) -> Path:
             return self.run_dir / f"run_{run_id}"
@@ -81,9 +88,9 @@ class ArtifactsMixin(BaseTask[Config]):
         while (exp_dir := get_exp_dir(run_id)).is_dir() and has_lock_file(exp_dir):
             run_id += 1
         exp_dir.mkdir(exist_ok=True, parents=True)
-        exp_dir = exp_dir.expanduser().resolve()
-        logger.log(LOG_STATUS, exp_dir)
-        return exp_dir
+        self._exp_dir = exp_dir.expanduser().resolve()
+        logger.log(LOG_STATUS, self._exp_dir)
+        return self._exp_dir
 
     @functools.lru_cache(maxsize=None)
     def stage_environment(self) -> Path | None:

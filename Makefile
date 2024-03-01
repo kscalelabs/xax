@@ -12,7 +12,7 @@ format:
 
 static-checks:
 	@black --diff --check $(py-files)
-	@ruff $(py-files)
+	@ruff check $(py-files)
 	@mypy --install-types --non-interactive $(py-files)
 .PHONY: static-checks
 
