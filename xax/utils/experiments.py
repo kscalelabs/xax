@@ -13,7 +13,6 @@ import os
 import random
 import re
 import shutil
-import socket
 import sys
 import tempfile
 import textwrap
