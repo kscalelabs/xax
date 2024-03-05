@@ -98,6 +98,7 @@ class Triton:
 @dataclass
 class Experiment:
     default_random_seed: int = field(1337, help="The default random seed to use")
+    max_workers: int = field(32, help="Maximum number of workers to use")
 
 
 @dataclass

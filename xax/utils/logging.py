@@ -5,6 +5,8 @@ import math
 import socket
 import sys
 
+from omegaconf import OmegaConf
+
 from xax.core.conf import load_user_config
 from xax.utils.text import Color, color_parts, colored
 
@@ -173,6 +175,33 @@ def configure_logging(prefix: str | None = None, *, rank: int | None = None, wor
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
         logging.getLogger("PIL").setLevel(logging.WARNING)
         logging.getLogger("torch").setLevel(logging.WARNING)
+
+
+def get_unused_port(default: int | None = None) -> int:
+    """Returns an unused port number on the local machine.
+
+    Args:
+        default: A default port to try before trying other ports.
+
+    Returns:
+        A port number which is currently unused
+    """
+    if default is not None:
+        sock = socket.socket()
+        try:
+            sock.bind(("", default))
+            return default
+        except OSError:
+            pass
+        finally:
+            sock.close()
+
+    sock = socket.socket()
+    sock.bind(("", 0))
+    return sock.getsockname()[1]
+
+
+OmegaConf.register_new_resolver("mlfab.unused_port", get_unused_port, replace=True)
 
 
 def port_is_busy(port: int) -> int:
