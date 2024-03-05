@@ -168,7 +168,6 @@ class TrainMixin(
     _training_over_flag: bool
     _last_printed_remaining_time: float
     _step_kind: StepKind
-    _prng_key: jnp.ndarray
 
     def __init__(self, config: Config) -> None:
         super().__init__(config)
@@ -192,12 +191,8 @@ class TrainMixin(
         # The kind of step that was specified in the config.
         self._step_kind = cast_step_kind(self.config.step_kind)
 
-        # Defines a PRNG key for the task.
-        self._prng_key = jax.random.PRNGKey(self.config.random_seed)
-
-    @property
     def prng_key(self) -> jnp.ndarray:
-        return self._prng_key
+        return jax.random.PRNGKey(self.config.random_seed)
 
     def on_step_end(self, state: State) -> State:
         state = super().on_step_end(state)
