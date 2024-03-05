@@ -70,7 +70,7 @@ class Config(xax.Config):
 
 class MnistClassification(xax.Task[Config]):
     def get_model(self) -> Model:
-        return Model(self.prng_key)
+        return Model(self.prng_key())
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(1e-3)
@@ -100,6 +100,4 @@ class MnistClassification(xax.Task[Config]):
 
 if __name__ == "__main__":
     # python -m examples.mnist
-    config = Config(batch_size=16)
-    config.train_dl.num_workers = 1
-    MnistClassification.launch(config)
+    MnistClassification.launch(Config(batch_size=16))

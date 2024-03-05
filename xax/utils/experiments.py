@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import itertools
 import logging
+import math
 import os
 import random
 import re
@@ -30,7 +31,7 @@ import requests
 from jaxtyping import Array
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
-from xax.core.conf import get_data_dir, get_pretrained_models_dir
+from xax.core.conf import get_data_dir, get_pretrained_models_dir, load_user_config
 from xax.core.state import State
 from xax.utils.text import colored
 
@@ -756,3 +757,45 @@ def get_state_dict_prefix(
     if regexp is not None:
         ckpt = {k: v for k, v in ckpt.items() if regexp.match(k)}
     return ckpt
+
+
+def split_n_items_across_workers(n: int, worker_id: int, num_workers: int) -> tuple[int, int]:
+    """Computes offsets for splitting N items across K workers.
+
+    This returns the start and end indices for the items to be processed by the
+    given worker. The end index is exclusive.
+
+    Args:
+        n: The number of items to process.
+        worker_id: The ID of the current worker.
+        num_workers: The total number of workers.
+
+    Returns:
+        The start and end index for the items in the current worker.
+    """
+    assert n >= num_workers, f"n ({n}) must be >= num_workers ({num_workers})"
+    assert 0 <= worker_id < num_workers, f"worker_id ({worker_id}) must be >= 0 and < num_workers ({num_workers})"
+
+    # The number of items to process per worker.
+    items_per_worker = math.ceil(n / num_workers)
+
+    # The start and end indices for the items to process.
+    start = worker_id * items_per_worker
+    end = min(start + items_per_worker, n)
+
+    return start, end
+
+
+def num_workers(default: int) -> int:
+    max_workers = load_user_config().experiment.max_workers
+    if hasattr(os, "sched_getaffinity"):
+        try:
+            return min(len(os.sched_getaffinity(0)), max_workers)
+        except Exception:
+            pass
+    if (cpu_count := os.cpu_count()) is not None:
+        return min(cpu_count, max_workers)
+    return min(default, max_workers)
+
+
+OmegaConf.register_new_resolver("mlfab.num_workers", num_workers, replace=True)

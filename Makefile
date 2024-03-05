@@ -7,7 +7,7 @@ all: format static-checks test
 
 format:
 	@black $(py-files)
-	@ruff --fix $(py-files)
+	@ruff format $(py-files)
 .PHONY: format
 
 static-checks:

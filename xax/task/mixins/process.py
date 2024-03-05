@@ -38,6 +38,10 @@ class ProcessMixin(BaseTask[Config], Generic[Config]):
     def multiprocessing_context(self) -> BaseContext:
         return self._mp_ctx
 
+    @property
+    def multiprocessing_manager(self) -> SyncManager:
+        return self._mp_manager
+
     def on_training_end(self, state: State) -> State:
         state = super().on_training_end(state)
 

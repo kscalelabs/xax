@@ -38,7 +38,6 @@ class DataloaderErrorConfig:
 
 @dataclass
 class DataloaderConfig:
-    batch_size: int = field(MISSING, help="Size of each batch")
     num_workers: int | None = field(MISSING, help="Number of workers for loading samples")
     prefetch_factor: int = field(2, help="Number of items to pre-fetch on each worker")
     error: DataloaderErrorConfig = field(DataloaderErrorConfig(), help="Dataloader error configuration")
@@ -49,11 +48,11 @@ class DataloadersConfig(ProcessConfig, BaseConfig):
     batch_size: int = field(MISSING, help="Size of each batch")
     raise_dataloader_errors: bool = field(False, help="If set, raise dataloader errors inside the worker processes")
     train_dl: DataloaderConfig = field(
-        DataloaderConfig(batch_size=II("batch_size")),
+        DataloaderConfig(num_workers=II("mlfab.num_workers:-1")),
         help="Train dataloader config",
     )
     valid_dl: DataloaderConfig = field(
-        DataloaderConfig(batch_size=II("batch_size"), num_workers=1),
+        DataloaderConfig(num_workers=1),
         help="Valid dataloader config",
     )
     debug_dataloader: bool = field(False, help="Debug dataloaders")
@@ -64,9 +63,7 @@ Config = TypeVar("Config", bound=DataloadersConfig)
 
 class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], ABC):
     def __init__(self, config: Config) -> None:
-        if is_missing(config, "batch_size") and (
-            is_missing(config.train_dl, "batch_size") or is_missing(config.valid_dl, "batch_size")
-        ):
+        if is_missing(config, "batch_size"):
             config.batch_size = self.get_batch_size()
 
         super().__init__(config)
@@ -120,10 +117,10 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
 
         return Dataloader(
             dataset=dataset,
-            batch_size=cfg.batch_size,
+            batch_size=self.config.batch_size,
             num_workers=0 if debugging else cfg.num_workers,
             prefetch_factor=cfg.prefetch_factor,
-            ctx=self.multiprocessing_context,
+            mp_manager=self.multiprocessing_manager,
             dataloader_worker_init_fn=self.dataloader_worker_init_fn,
             collate_worker_init_fn=self.collate_worker_init_fn,
             item_callback=self.dataloader_item_callback,
