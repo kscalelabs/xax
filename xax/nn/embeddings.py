@@ -74,9 +74,9 @@ class SinusoidalEmbeddings(eqx.Module):
         base: The base for the sinusoidal embeddings.
     """
 
-    embed_dim: int | None = eqx.field(static=True)
-    max_tsz: int | None = eqx.field(static=True)
     base: int = eqx.field(static=True)
+    max_tsz: int | None = eqx.field(static=True)
+    embed_dim: int | None = eqx.field(static=True)
     embeddings_tc: Array | None
 
     def __init__(
@@ -99,14 +99,14 @@ class SinusoidalEmbeddings(eqx.Module):
             self.embeddings_tc = self.get_embeddings(max_tsz, embed_dim)
 
     def __call__(self, x_tc: Array, offset: int = 0, times_t: Array | None = None) -> Array:
-        tsz, _ = x_tc.shape
+        tsz, dims = x_tc.shape
 
         # If the embeddings are learnable, use the property.
         if self.embeddings_tc is None:
             if times_t is None:
-                embeddings_tc = self.get_embeddings(offset + tsz, self.embed_dim, x_tc.dtype)
+                embeddings_tc = self.get_embeddings(offset + tsz, dims, x_tc.dtype)
             else:
-                embeddings_tc = self.get_embeddings(times_t.max().item() + 1, self.embed_dim, x_tc.dtype)
+                embeddings_tc = self.get_embeddings(times_t.max().item() + 1, dims, x_tc.dtype)
         else:
             embeddings_tc = self.embeddings_tc
 
@@ -316,7 +316,7 @@ def get_positional_embeddings(
 
 def fourier_embeddings(t: Array, dim: int, max_period: int = 10000) -> Array:
     half = dim // 2
-    idxs = jnp.arange(start=0, end=half, device=t.device, dtype=jnp.float32)
+    idxs = jnp.arange(start=0, stop=half, dtype=jnp.float32)
     freqs = jnp.exp(-math.log(max_period) * idxs / half)
     args = t[:, None].astype(jnp.float32) * freqs[None]
     embedding = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)

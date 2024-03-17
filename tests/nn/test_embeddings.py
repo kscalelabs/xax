@@ -13,23 +13,30 @@ import xax
 def test_embeddings_api(kind: xax.EmbeddingKind) -> None:
     key = jrandom.PRNGKey(0)
     xkey, pkey = jrandom.split(key)
-    x = jrandom.normal(xkey, (5, 8), dtype=jnp.double)
+    x_tc = jrandom.normal(xkey, (5, 8), dtype=jnp.double)
     times_t = jnp.arange(1, 6)
     emb = xax.get_positional_embeddings(kind, max_tsz=12, embed_dim=8, key=pkey)
-    y1 = emb(x, times_t=times_t)
-    y2 = emb(x, offset=1)
-    assert y1.shape == (5, 8)
-    assert y2.shape == (5, 8)
-    assert jnp.allclose(y1, y2)
+    y1_tc = emb(x_tc, times_t=times_t)
+    y2_tc = emb(x_tc, offset=1)
+    assert y1_tc.shape == (5, 8)
+    assert y2_tc.shape == (5, 8)
+    assert jnp.allclose(y1_tc, y2_tc)
 
 
 @pytest.mark.parametrize("offset", [0, 12])
 def test_rotary_embeddings_inference(offset: int) -> None:
     key = jrandom.PRNGKey(0)
-    x = jrandom.normal(key, (5, 8), dtype=jnp.double)
+    x_tc = jrandom.normal(key, (5, 8), dtype=jnp.double)
     emb = xax.get_positional_embeddings("rotary", max_tsz=8 + offset, embed_dim=8, learnable=False)
-    y1 = emb(x, offset=offset)
-    y2 = xax.rotary_embeddings(x, offset=offset)
-    assert y1.shape == (5, 8)
-    assert y2.shape == (5, 8)
-    assert jnp.allclose(y1, y2)
+    y1_tc = emb(x_tc, offset=offset)
+    y2_tc = xax.rotary_embeddings(x_tc, offset=offset)
+    assert y1_tc.shape == (5, 8)
+    assert y2_tc.shape == (5, 8)
+    assert jnp.allclose(y1_tc, y2_tc)
+
+
+def test_fourier_embeddings() -> None:
+    emb = xax.FourierEmbeddings(8)
+    times_t = jnp.arange(1, 6)
+    y_t = emb(times_t)
+    assert y_t.shape == (5, 8)
