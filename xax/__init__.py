@@ -23,6 +23,17 @@ __all__ = [
     "load_user_config",
     "State",
     "cast_phase",
+    "FourierEmbeddings",
+    "IdentityPositionalEmbeddings",
+    "LearnedPositionalEmbeddings",
+    "RotaryEmbeddings",
+    "SinusoidalEmbeddings",
+    "apply_rotary_embeddings",
+    "cast_embedding_kind",
+    "fourier_embeddings",
+    "get_positional_embeddings",
+    "get_rotary_embeddings",
+    "rotary_embeddings",
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
@@ -71,10 +82,11 @@ __all__ = [
 ]
 
 __all__ += [
-    "CollateMode",
-    "Phase",
     "Batch",
+    "CollateMode",
+    "EmbeddingKind",
     "Output",
+    "Phase",
 ]
 
 import os
@@ -96,6 +108,17 @@ NAME_MAP: dict[str, str] = {
     "load_user_config": "core.conf",
     "State": "core.state",
     "cast_phase": "core.state",
+    "FourierEmbeddings": "nn.embeddings",
+    "IdentityPositionalEmbeddings": "nn.embeddings",
+    "LearnedPositionalEmbeddings": "nn.embeddings",
+    "RotaryEmbeddings": "nn.embeddings",
+    "SinusoidalEmbeddings": "nn.embeddings",
+    "apply_rotary_embeddings": "nn.embeddings",
+    "cast_embedding_kind": "nn.embeddings",
+    "fourier_embeddings": "nn.embeddings",
+    "get_positional_embeddings": "nn.embeddings",
+    "get_rotary_embeddings": "nn.embeddings",
+    "rotary_embeddings": "nn.embeddings",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
     "SingleProcessLauncher": "task.launchers.single_process",
@@ -148,6 +171,7 @@ NAME_MAP.update(
     {
         "Batch": "task.mixins.train",
         "CollateMode": "utils.data.collate",
+        "EmbeddingKind": "nn.embeddings",
         "Output": "task.mixins.output",
         "Phase": "core.state",
     },
@@ -173,6 +197,20 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State, cast_phase
+    from xax.nn.embeddings import (
+        EmbeddingKind,
+        FourierEmbeddings,
+        IdentityPositionalEmbeddings,
+        LearnedPositionalEmbeddings,
+        RotaryEmbeddings,
+        SinusoidalEmbeddings,
+        apply_rotary_embeddings,
+        cast_embedding_kind,
+        fourier_embeddings,
+        get_positional_embeddings,
+        get_rotary_embeddings,
+        rotary_embeddings,
+    )
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
     from xax.task.launchers.single_process import SingleProcessLauncher
