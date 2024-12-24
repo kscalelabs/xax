@@ -82,7 +82,7 @@ class TensorboardLogger(LoggerImpl):
         port = int(os.environ.get("TENSORBOARD_PORT", DEFAULT_TENSORBOARD_PORT))
 
         while port_is_busy(port):
-            logger.warning(f"Port {port} is busy, waiting...")
+            logger.warning("Port %s is busy, waiting...", port)
             time.sleep(10)
 
         def make_localhost(s: str) -> str:
