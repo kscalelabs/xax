@@ -1,7 +1,15 @@
 # requirements-dev.txt
 
+# Linting.
 black
 darglint
 mypy
-pytest
 ruff
+
+# Tests.
+pytest
+
+# Types.
+types-pillow
+types-psutil
+types-requests
