@@ -167,9 +167,9 @@ def collate(
     # Collate dictionaries if they have the same keys.
     if isinstance(item, dict) and all(set(i.keys()) == set(item.keys()) for i in items):
         output_dict = {}
-        item_keys = set(item.keys())
-        for key in item_keys:
-            output_dict[key] = collate([i[key] for i in items], mode=mode, pad=pad)
+        item_keys_set = set(item.keys())
+        for key_in_set in item_keys_set:
+            output_dict[key_in_set] = collate([i[key_in_set] for i in items], mode=mode, pad=pad)
         return output_dict
 
     # Collate lists and tuples if they have the same lengths.
@@ -186,9 +186,9 @@ def collate(
     # Handles dataclasses.
     if is_dataclass(item):
         output_dict = {}
-        item_keys = item.__dict__.keys()
-        for key in item_keys:
-            output_dict[key] = collate([getattr(i, key) for i in items], mode=mode, pad=pad)
+        item_keys_dict = item.__dict__.keys()
+        for key_in_dict in item_keys_dict:
+            output_dict[key_in_dict] = collate([getattr(i, key_in_dict) for i in items], mode=mode, pad=pad)
         return item.__class__(**output_dict)
 
     # By default, don't do anything.

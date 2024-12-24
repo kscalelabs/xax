@@ -666,6 +666,7 @@ class BaseFileDownloader(ABC):
         with requests.Session() as session:
             response = session.get(url, params=params, stream=True)
 
+            token: str | None = None
             for key, value in response.cookies.items():
                 if key.startswith("download_warning"):
                     token = value
