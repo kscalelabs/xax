@@ -24,7 +24,7 @@ T = TypeVar("T")
 Tc_co = TypeVar("Tc_co", covariant=True)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class DataloaderErrorConfig:
     sleep_backoff: float = field(0.1, help="The initial sleep time after an exception")
     sleep_backoff_power: float = field(2.0, help="Power to raise the sleep time by after each consecutive exception")
@@ -36,14 +36,14 @@ class DataloaderErrorConfig:
     log_exceptions_all_workers: bool = field(False, help="If set, log exceptions from all workers")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class DataloaderConfig:
     num_workers: int | None = field(MISSING, help="Number of workers for loading samples")
     prefetch_factor: int = field(2, help="Number of items to pre-fetch on each worker")
     error: DataloaderErrorConfig = field(DataloaderErrorConfig(), help="Dataloader error configuration")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class DataloadersConfig(ProcessConfig, BaseConfig):
     batch_size: int = field(MISSING, help="Size of each batch")
     raise_dataloader_errors: bool = field(False, help="If set, raise dataloader errors inside the worker processes")

@@ -19,7 +19,7 @@ from xax.utils.text import show_info
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ArtifactsConfig(BaseConfig):
     exp_dir: str | None = field(None, help="The fixed experiment directory")
 

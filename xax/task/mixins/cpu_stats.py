@@ -55,7 +55,7 @@ class CPUStats(Structure):
     ]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CPUStatsInfo:
     cpu_percent: float
     mem_percent: float

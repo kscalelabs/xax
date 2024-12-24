@@ -27,7 +27,7 @@ class StateDict(TypedDict, total=False):
     raw_phase: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class State:
     num_steps: int = field(MISSING, help="Number of steps so far")
     num_samples: int = field(MISSING, help="Number of sample so far")

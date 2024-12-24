@@ -23,7 +23,7 @@ from xax.utils.text import camelcase_to_snakecase
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class BaseConfig:
     pass
 

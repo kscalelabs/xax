@@ -63,7 +63,7 @@ def cross_entropy(y: Yb, pred_y: Yhatb) -> Loss:
     return -jnp.mean(pred_y)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Config(xax.Config):
     batch_size: int = xax.field(256, help="The size of a minibatch")
     in_dim: int = xax.field(1, help="Number of input dimensions")
