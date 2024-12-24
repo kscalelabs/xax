@@ -517,7 +517,7 @@ class Logger:
 
     def write_error(self, message: str, location: str | None = None) -> None:
         for logger in self.loggers:
-            logger.write_error(LogError(mesage=message, location=location))
+            logger.write_error(LogError(message=message, location=location))
 
     def write_status(
         self,
