@@ -65,6 +65,7 @@ def cross_entropy(y: Yb, pred_y: Yhatb) -> Loss:
 
 @dataclass
 class Config(xax.Config):
+    batch_size: int = xax.field(256, help="The size of a minibatch")
     in_dim: int = xax.field(1, help="Number of input dimensions")
 
 
@@ -81,8 +82,12 @@ class MnistClassification(xax.Task[Config]):
         return y_hat
 
     def compute_loss(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> Array:
-        (_, y), y_hat = batch, output
-        return cross_entropy(y, y_hat)
+        (_, y), yhat = batch, output
+        return cross_entropy(y, yhat)
+
+    def log_train_step(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> None:
+        (_, y), yhat = batch, output.argmax(axis=1)
+        self.logger.log_scalar("acc", (yhat == y).astype(float).mean())
 
     def log_valid_step(self, model: Model, batch: Batch, output: Yhatb, state: xax.State) -> None:
         max_images = 16
@@ -100,4 +105,4 @@ class MnistClassification(xax.Task[Config]):
 
 if __name__ == "__main__":
     # python -m examples.mnist
-    MnistClassification.launch(Config(batch_size=16))
+    MnistClassification.launch(Config())
