@@ -296,6 +296,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.utils.logging import ColoredFormatter, configure_logging
     from xax.utils.numpy import one_hot, partial_flatten, worker_chunk
     from xax.utils.text import (
+        TextBlock,
         camelcase_to_snakecase,
         colored,
         format_datetime,
@@ -308,7 +309,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         show_info,
         show_warning,
         snakecase_to_camelcase,
-        TextBlock,
         uncolored,
         wrapped,
     )
