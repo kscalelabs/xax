@@ -2,12 +2,15 @@
 
 import functools
 import os
-from dataclasses import dataclass, field as field_base
+from dataclasses import dataclass
+from dataclasses import field as field_base
 from pathlib import Path
 from typing import Any, cast
 
 import jax.numpy as jnp
-from omegaconf import II, MISSING, Container as OmegaConfContainer, OmegaConf
+from omegaconf import II, MISSING
+from omegaconf import Container as OmegaConfContainer
+from omegaconf import OmegaConf
 
 from xax.utils.text import show_error
 
@@ -68,29 +71,6 @@ class Logging:
 
 
 @dataclass(kw_only=True)
-class Device:
-    cpu: bool = field(True, help="Whether to use the CPU")
-    gpu: bool = field(II("oc.env:USE_GPU,1"), help="Whether to use the GPU")
-    metal: bool = field(II("oc.env:USE_METAL,1"), help="Whether to use the Apple Silicon accelerator")
-    use_fp64: bool = field(False, help="Always use the 64-bit floating point type")
-    use_fp32: bool = field(False, help="Always use the 32-bit floating point type")
-    use_bf16: bool = field(False, help="Always use the 16-bit bfloat type")
-    use_fp16: bool = field(False, help="Always use the 16-bit floating point type")
-
-
-def parse_dtype(cfg: Device) -> jnp.dtype | None:
-    if cfg.use_fp64:
-        return jnp.float64
-    if cfg.use_fp32:
-        return jnp.float32
-    if cfg.use_bf16:
-        return jnp.bfloat16
-    if cfg.use_fp16:
-        return jnp.float16
-    return None
-
-
-@dataclass(kw_only=True)
 class Triton:
     use_triton_if_available: bool = field(True, help="Use Triton if available")
 
@@ -122,7 +102,6 @@ class Slurm:
 @dataclass(kw_only=True)
 class UserConfig:
     logging: Logging = field(Logging)
-    device: Device = field(Device)
     triton: Triton = field(Triton)
     experiment: Experiment = field(Experiment)
     directories: Directories = field(Directories)
