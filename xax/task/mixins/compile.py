@@ -54,7 +54,7 @@ class CompileOptions:
         help="Minimum compilation time in seconds for cache entries. 0 means no minimum",
     )
     cache_enable_xla: str = field(
-        value="none",
+        value="all",
         help="Which XLA caches to enable",
     )
 
