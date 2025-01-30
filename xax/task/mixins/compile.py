@@ -8,7 +8,7 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import Generic, TypeVar
 
 import jax
 
@@ -56,20 +56,6 @@ class CompileOptions:
     cache_enable_xla: str = field(
         value="none",
         help="Which XLA caches to enable",
-    )
-
-    # MuJoCo solver options
-    solver: Literal["CG", "Newton", "PGS"] = field(
-        value="CG",
-        help="MuJoCo solver type (Conjugate Gradient, Newton, or Projected Gauss-Seidel)",
-    )
-    solver_iterations: int = field(
-        value=6,
-        help="Number of solver iterations",
-    )
-    line_search_iterations: int = field(
-        value=6,
-        help="Number of line search iterations for CG/Newton solvers",
     )
 
 
