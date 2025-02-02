@@ -5,7 +5,6 @@ behavior during initialization and training.
 """
 
 import logging
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
@@ -42,7 +41,7 @@ class CompileOptions:
 
     # JAX cache options
     cache_dir: str | None = field(
-        value=lambda: str(Path(tempfile.gettempdir()) / "jaxcache"),
+        value=lambda: str((Path.home() / ".cache" / "jax" / "jaxcache").resolve()),
         help="Directory for JAX compilation cache. If None, caching is disabled",
     )
     cache_min_size_bytes: int = field(
