@@ -13,7 +13,7 @@ import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, is_dataclass
 from threading import Thread
-from typing import Any, Generic, Literal, Mapping, Sequence, TypeVar, cast, get_args
+from typing import Any, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, cast, get_args
 
 import equinox as eqx
 import jax
@@ -228,8 +228,10 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_step(self, model: PyTree, batch: Batch, output: Output, state: State) -> None:
+    def log_step(self, model: PyTree, batch: Batch, output: Output, loss: Array, state: State) -> None:
         phase = state.phase
+
+        self.logger.log_scalar("loss", loss, namespace="loss")
 
         # Log the state timers.
         timer = self.state_timers[phase]
@@ -237,6 +239,8 @@ class TrainMixin(
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
                 self.logger.log_scalar(k, v, namespace=ns)
+
+        self.write_logs(state)
 
         # Delegate to the appropriate logging function based on the phase.
         match phase:
@@ -303,6 +307,7 @@ class TrainMixin(
             state: The current training state.
         """
 
+    @eqx.filter_jit
     def compute_loss(self, model: PyTree, batch: Batch, output: Output, state: State) -> Array:
         """Gets the loss for the current batch.
 
@@ -323,6 +328,7 @@ class TrainMixin(
             raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
 
+    @eqx.filter_jit
     def get_output_and_loss(self, model: PyTree, batch: Batch, state: State) -> tuple[Array, Output]:
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
@@ -379,13 +385,13 @@ class TrainMixin(
         termination_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + remaining_seconds))
         logger.info("Estimated finish time: %s", termination_time)
 
+    @eqx.filter_jit
     def is_training_over(self, state: State) -> bool:
         if self._training_over_flag:
             return True
         remaining_percent = self.get_remaining_percent(state)
         if remaining_percent is None:
             return False
-        self.logger.log_scalar("percent", remaining_percent, namespace="⏰ remaining")
         self.maybe_log_termination_time(remaining_percent, state)
         return remaining_percent <= 0.0
 
@@ -412,6 +418,7 @@ class TrainMixin(
         self.logger.log_training_code(get_training_code(self))
         self.logger.log_config(cast(DictConfig, self.config))
 
+    @eqx.filter_jit
     def train_step(
         self,
         model: PyTree,
@@ -419,15 +426,14 @@ class TrainMixin(
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[PyTree, optax.OptState, State]:
+    ) -> tuple[PyTree, optax.OptState, Output, Array, State]:
         state = state.with_phase("train")
         loss, model, opt_state, output = self.update(model, optimizer, opt_state, batch, state)
-        self.logger.log_scalar("loss", loss, namespace="loss")
-        self.log_step(model, batch, output, state)
-        self.write_logs(state)
         return (
             model,
             opt_state,
+            output,
+            loss,
             state.replace(
                 {
                     "num_steps": state.num_steps + 1,
@@ -436,23 +442,55 @@ class TrainMixin(
             ),
         )
 
-    def val_step(self, model: PyTree, batch: Batch, state: State) -> tuple[PyTree, State]:
+    @eqx.filter_jit
+    def val_step(self, model: PyTree, batch: Batch, state: State) -> tuple[PyTree, Output, Array, State]:
         state = state.with_phase("valid")
         loss, output = eqx.filter_jit(self.get_output_and_loss)(model, batch, state)
-        self.logger.log_scalar("loss", loss, namespace="loss")
-        self.log_step(model, batch, output, state)
-        self.write_logs(state)
-        return model, state.replace(
-            {
-                "num_valid_steps": state.num_valid_steps + 1,
-                "num_valid_samples": state.num_valid_samples + (self.get_size_of_batch(batch) or 0),
-            },
+        return (
+            model,
+            output,
+            loss,
+            state.replace(
+                {
+                    "num_valid_steps": state.num_valid_steps + 1,
+                    "num_valid_samples": state.num_valid_samples + (self.get_size_of_batch(batch) or 0),
+                },
+            ),
         )
 
-    def run(self) -> None:
-        self.run_training_loop()
+    @eqx.filter_jit
+    def train_loop(
+        self,
+        model: PyTree,
+        optimizer: optax.GradientTransformation,
+        opt_state: optax.OptState,
+        train_pf: Iterator[Batch],
+        valid_pf: Iterator[Batch],
+        state: State,
+    ) -> None:
+        while True:
+            if self.is_training_over(state):
+                raise TrainingFinishedError
 
-    def run_training_loop(self) -> None:
+            if self.valid_step_timer.is_valid_step(state):
+                valid_batch = next(valid_pf)
+                model, output, loss, state = self.val_step(model, valid_batch, state)
+                jax.debug.callback(self.log_step, model, valid_batch, output, loss, state)
+
+            with self.step_context("on_step_start"):
+                state = self.on_step_start(state)
+
+            train_batch = next(train_pf)
+            model, opt_state, output, loss, state = self.train_step(model, optimizer, opt_state, train_batch, state)
+            jax.debug.callback(self.log_step, model, train_batch, output, loss, state)
+
+            with self.step_context("on_step_end"):
+                state = self.on_step_end(state)
+
+            if self.should_checkpoint(state):
+                self.save_checkpoint(model, optimizer, opt_state, state)
+
+    def run(self) -> None:
         """Runs the training loop.
 
         Args:
@@ -500,24 +538,14 @@ class TrainMixin(
             self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
 
             try:
-                while True:
-                    while True:
-                        if self.is_training_over(state):
-                            raise TrainingFinishedError
-
-                        if self.valid_step_timer.is_valid_step(state):
-                            model, state = self.val_step(model, next(valid_pf), state)
-
-                        with self.step_context("on_step_start"):
-                            state = self.on_step_start(state)
-
-                        model, opt_state, state = self.train_step(model, optimizer, opt_state, next(train_pf), state)
-
-                        with self.step_context("on_step_end"):
-                            state = self.on_step_end(state)
-
-                        if self.should_checkpoint(state):
-                            self.save_checkpoint(model, optimizer, opt_state, state)
+                self.train_loop(
+                    model=model,
+                    optimizer=optimizer,
+                    opt_state=opt_state,
+                    train_pf=train_pf,
+                    valid_pf=valid_pf,
+                    state=state,
+                )
 
             except TrainingFinishedError:
                 if is_master():
