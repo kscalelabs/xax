@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from dpshdl.impl.mnist import MNIST
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 import xax
 
@@ -30,7 +30,7 @@ Loss = Float[Array, ""]
 class Model(eqx.Module):
     layers: list
 
-    def __init__(self, rng_key: Array) -> None:
+    def __init__(self, rng_key: PRNGKeyArray) -> None:
         super().__init__()
 
         # Split the PRNG key into four keys for the four layers.
