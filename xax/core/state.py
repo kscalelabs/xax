@@ -43,6 +43,10 @@ class State:
     def phase(self) -> Phase:
         return cast_phase(self.raw_phase)
 
+    @phase.setter
+    def phase(self, phase: Phase) -> None:
+        self.raw_phase = phase
+
     @classmethod
     def init_state(cls) -> "State":
         return cls(

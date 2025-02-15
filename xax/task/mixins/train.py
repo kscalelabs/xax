@@ -457,18 +457,25 @@ class TrainMixin(
             if self.valid_step_timer.is_valid_step(state):
                 valid_batch = next(valid_pf)
                 model, loss, output = self.val_step(model, valid_batch)
-                self.log_step(model, valid_batch, output, loss, state)
-                state.num_valid_samples += 1
+
+                # Perform logging.
+                with self.step_context("write_logs"):
+                    state.phase = "valid"
+                    self.log_step(model, valid_batch, output, loss, state)
+                    state.num_valid_samples += 1
 
             with self.step_context("on_step_start"):
                 state = self.on_step_start(state)
 
             train_batch = next(train_pf)
             model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
-            self.log_step(model, train_batch, output, loss, state)
 
-            state.num_steps += 1
-            state.num_samples += self.get_size_of_batch(train_batch) or 0
+            # Perform logging.
+            with self.step_context("write_logs"):
+                state.phase = "train"
+                self.log_step(model, train_batch, output, loss, state)
+                state.num_steps += 1
+                state.num_samples += self.get_size_of_batch(train_batch) or 0
 
             with self.step_context("on_step_end"):
                 state = self.on_step_end(state)
