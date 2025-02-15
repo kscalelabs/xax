@@ -97,13 +97,13 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
         """
         raise NotImplementedError(
             "You must implement either the `get_dataset` method to return the dataset for the given phase, "
-            "or `get_iterator` to return an iterator for the given dataset."
+            "or `get_data_iterator` to return an iterator for the given dataset."
         )
 
-    def get_iterator(self, phase: Phase) -> Iterator:
+    def get_data_iterator(self, phase: Phase) -> Iterator:
         raise NotImplementedError(
             "You must implement either the `get_dataset` method to return the dataset for the given phase, "
-            "or `get_iterator` to return an iterator for the given dataset."
+            "or `get_data_iterator` to return an iterator for the given dataset."
         )
 
     def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:

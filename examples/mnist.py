@@ -81,7 +81,7 @@ class MnistClassification(xax.Task[Config]):
         labels = [f"pred: {p}\ntrue: {t}" for p, t in zip(yhat[:max_images], y[:max_images])]
         self.logger.log_labeled_images("predictions", (x, labels), max_images=max_images)
 
-    def get_iterator(self, phase: xax.Phase) -> Iterator[tuple[Array, Array]]:
+    def get_data_iterator(self, phase: xax.Phase) -> Iterator:
         ds = MNIST(train=phase == "train", root_dir=xax.get_data_dir() / "mnist", dtype="float32")
 
         key = jax.random.PRNGKey(0)

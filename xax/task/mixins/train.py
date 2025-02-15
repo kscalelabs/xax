@@ -479,7 +479,7 @@ class TrainMixin(
     @contextlib.contextmanager
     def get_train_iterator(self) -> Generator[Iterator[Batch], None, None]:
         try:
-            train_iterator: Iterator[Batch] = self.get_iterator("train")
+            train_iterator: Iterator[Batch] = self.get_data_iterator("train")
             yield train_iterator
             return
         except NotImplementedError:
@@ -503,7 +503,7 @@ class TrainMixin(
     @contextlib.contextmanager
     def get_valid_iterator(self) -> Generator[Iterator[Batch], None, None]:
         try:
-            valid_iterator: Iterator[Batch] = self.get_iterator("valid")
+            valid_iterator: Iterator[Batch] = self.get_data_iterator("valid")
             yield valid_iterator
             return
         except NotImplementedError:
