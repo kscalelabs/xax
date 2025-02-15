@@ -37,12 +37,10 @@ class Model(eqx.Module):
         key1, key2, key3, key4 = jax.random.split(rng_key, 4)
 
         self.layers = [
-            eqx.nn.Conv2d(1, 3, kernel_size=4, key=key1),
-            eqx.nn.MaxPool2d(kernel_size=2),
+            eqx.nn.Linear(28 * 28, 512, key=key1),
             jax.nn.relu,
-            jnp.ravel,
-            eqx.nn.Linear(1728, 512, key=key2),
-            jax.nn.sigmoid,
+            eqx.nn.Linear(512, 512, key=key2),
+            jax.nn.relu,
             eqx.nn.Linear(512, 64, key=key3),
             jax.nn.relu,
             eqx.nn.Linear(64, 10, key=key4),
@@ -50,7 +48,8 @@ class Model(eqx.Module):
         ]
 
     def __call__(self, x: Array) -> Array:
-        x = x[None]  # Add channel dimension.
+        # x = x[None]  # Add channel dimension.
+        x = x.reshape(28 * 28)
         for layer in self.layers:
             x = layer(x)
         return x
