@@ -6,15 +6,16 @@ leaks in your dataloader, among other issues.
 """
 
 import logging
-import multiprocessing as mp
 import os
 import time
 from ctypes import Structure, c_double, c_uint16, c_uint64
 from dataclasses import dataclass
+from multiprocessing.context import BaseContext, Process
 from multiprocessing.managers import SyncManager, ValueProxy
 from multiprocessing.synchronize import Event
 from typing import Generic, TypeVar
 
+import jax
 import psutil
 
 from xax.core.conf import field
@@ -26,12 +27,14 @@ from xax.task.mixins.process import ProcessConfig, ProcessMixin
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class CPUStatsOptions:
     ping_interval: int = field(1, help="How often to check stats (in seconds)")
     only_log_once: bool = field(False, help="If set, only log read stats one time")
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class CPUStatsConfig(ProcessConfig, LoggerConfig, BaseConfig):
     cpu_stats: CPUStatsOptions = field(CPUStatsOptions(), help="CPU stats configuration")
@@ -55,7 +58,7 @@ class CPUStats(Structure):
     ]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CPUStatsInfo:
     cpu_percent: float
     mem_percent: float
@@ -142,9 +145,16 @@ def worker(
 
 
 class CPUStatsMonitor:
-    def __init__(self, ping_interval: float, manager: SyncManager) -> None:
+    def __init__(
+        self,
+        ping_interval: float,
+        context: BaseContext,
+        manager: SyncManager,
+    ) -> None:
         self._ping_interval = ping_interval
         self._manager = manager
+        self._context = context
+
         self._monitor_event = self._manager.Event()
         self._start_event = self._manager.Event()
         self._cpu_stats_smem = self._manager.Value(
@@ -163,7 +173,7 @@ class CPUStatsMonitor:
             ),
         )
         self._cpu_stats: CPUStatsInfo | None = None
-        self._proc: mp.Process | None = None
+        self._proc: Process | None = None
 
     def get_if_set(self) -> CPUStatsInfo | None:
         if self._monitor_event.is_set():
@@ -184,7 +194,7 @@ class CPUStatsMonitor:
         if self._start_event.is_set():
             self._start_event.clear()
         self._cpu_stats = None
-        self._proc = mp.Process(
+        self._proc = self._context.Process(  # type: ignore[attr-defined]
             target=worker,
             args=(self._ping_interval, self._cpu_stats_smem, self._monitor_event, self._start_event, os.getpid()),
             daemon=True,
@@ -215,6 +225,7 @@ class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
 
         self._cpu_stats_monitor = CPUStatsMonitor(
             ping_interval=self.config.cpu_stats.ping_interval,
+            context=self._mp_ctx,
             manager=self._mp_manager,
         )
 

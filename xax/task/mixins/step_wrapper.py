@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import ContextManager, Literal, TypeVar
 
+import equinox as eqx
+import jax
+
 from xax.task.base import BaseConfig, BaseTask
 
 StepType = Literal[
@@ -47,6 +50,7 @@ class StepContext(ContextManager):
         StepContext.CURRENT_STEP = None
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class StepContextConfig(BaseConfig):
     pass
@@ -59,5 +63,6 @@ class StepContextMixin(BaseTask[Config]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
+    @eqx.filter_jit
     def step_context(self, step: StepType) -> ContextManager:
         return StepContext(step)

@@ -6,10 +6,13 @@ from dataclasses import dataclass
 from types import FrameType
 from typing import Callable, TypeVar
 
+import jax
+
 from xax.task.base import BaseConfig, BaseTask, RawConfigType
 from xax.task.launchers.base import BaseLauncher
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class RunnableConfig(BaseConfig):
     pass

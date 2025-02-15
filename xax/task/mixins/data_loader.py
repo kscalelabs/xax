@@ -1,9 +1,9 @@
 """Defines a mixin for instantiating dataloaders."""
 
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Iterator, TypeVar
 
 import jax
 from dpshdl.dataloader import CollatedDataloaderItem, Dataloader
@@ -13,7 +13,7 @@ from omegaconf import II, MISSING
 
 from xax.core.conf import field, is_missing
 from xax.core.state import Phase
-from xax.nn.functions import recursive_apply, set_random_seed
+from xax.nn.functions import set_random_seed
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
 from xax.utils.logging import LOG_ERROR_SUMMARY, configure_logging
@@ -24,6 +24,7 @@ T = TypeVar("T")
 Tc_co = TypeVar("Tc_co", covariant=True)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class DataloaderErrorConfig:
     sleep_backoff: float = field(0.1, help="The initial sleep time after an exception")
@@ -36,6 +37,7 @@ class DataloaderErrorConfig:
     log_exceptions_all_workers: bool = field(False, help="If set, log exceptions from all workers")
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class DataloaderConfig:
     num_workers: int | None = field(MISSING, help="Number of workers for loading samples")
@@ -43,6 +45,7 @@ class DataloaderConfig:
     error: DataloaderErrorConfig = field(DataloaderErrorConfig(), help="Dataloader error configuration")
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class DataloadersConfig(ProcessConfig, BaseConfig):
     batch_size: int = field(MISSING, help="Size of each batch")
@@ -83,7 +86,6 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
-    @abstractmethod
     def get_dataset(self, phase: Phase) -> Dataset:
         """Returns the dataset for the given phase.
 
@@ -93,6 +95,16 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
         Returns:
             The dataset for the given phase.
         """
+        raise NotImplementedError(
+            "You must implement either the `get_dataset` method to return the dataset for the given phase, "
+            "or `get_data_iterator` to return an iterator for the given dataset."
+        )
+
+    def get_data_iterator(self, phase: Phase) -> Iterator:
+        raise NotImplementedError(
+            "You must implement either the `get_dataset` method to return the dataset for the given phase, "
+            "or `get_data_iterator` to return an iterator for the given dataset."
+        )
 
     def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:
         debugging = self.config.debug_dataloader
@@ -128,11 +140,7 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
         )
 
     def get_prefetcher(self, dataloader: Dataloader[T, Tc_co]) -> Prefetcher[Tc_co, Tc_co]:
-        return Prefetcher(to_device_func=self.to_device_fn, dataloader=dataloader)
-
-    @classmethod
-    def to_device_fn(cls, sample: T) -> T:
-        return recursive_apply(sample, jax.device_put, include_numpy=True)
+        return Prefetcher(to_device_func=jax.device_put, dataloader=dataloader)
 
     @classmethod
     def dataloader_worker_init_fn(cls, worker_id: int, num_workers: int) -> None:

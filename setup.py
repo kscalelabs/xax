@@ -8,14 +8,14 @@ from setuptools import setup
 with open("README.md", "r", encoding="utf-8") as f:
     long_description: str = f.read()
 
-
 with open("xax/requirements.txt", "r", encoding="utf-8") as f:
     requirements: list[str] = f.read().splitlines()
 
+with open("xax/requirements-rl.txt", "r", encoding="utf-8") as f:
+    requirements_rl: list[str] = f.read().splitlines()
 
 with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
-
 
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
     version_re = re.search(r"^__version__ = \"([^\"]*)\"", fh.read(), re.MULTILINE)
@@ -34,7 +34,10 @@ setup(
     python_requires=">=3.11",
     install_requires=requirements,
     tests_require=requirements_dev,
-    extras_require={"dev": requirements_dev},
+    extras_require={
+        "rl": requirements_rl,
+        "dev": requirements_dev,
+    },
     package_data={
         "xax": [
             "py.typed",

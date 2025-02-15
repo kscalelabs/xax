@@ -35,6 +35,7 @@ explicit_package_bases = true
 [[tool.mypy.overrides]]
 
 module = [
+    "brax.*",
     "cloudpickle.*",
     "optax.*",
     "setuptools.*",

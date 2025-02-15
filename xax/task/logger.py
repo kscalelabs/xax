@@ -286,12 +286,12 @@ def get_image(image: np.ndarray | Array | PILImage, target_resolution: tuple[int
     return image
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogImage:
     image: PILImage
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogLine:
     state: State
     scalars: dict[str, dict[str, Number]]
@@ -299,12 +299,12 @@ class LogLine:
     images: dict[str, dict[str, LogImage]]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogErrorSummary:
     message: str
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogError:
     message: str
     location: str | None = None
@@ -317,7 +317,7 @@ class LogError:
         return message
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogStatus:
     message: str
     created: float
@@ -325,7 +325,7 @@ class LogStatus:
     lineno: int | None = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LogPing:
     message: str
     created: float
@@ -488,7 +488,7 @@ class Logger:
             state=state,
             scalars={k: {kk: v() for kk, v in v.items()} for k, v in self.scalars.items()},
             strings={k: {kk: v() for kk, v in v.items()} for k, v in self.strings.items()},
-            images={k: {kk: LogImage(v()) for kk, v in v.items()} for k, v in self.images.items()},
+            images={k: {kk: LogImage(image=v()) for kk, v in v.items()} for k, v in self.images.items()},
         )
 
     def clear(self) -> None:
@@ -513,11 +513,11 @@ class Logger:
 
     def write_error_summary(self, error_summary: str) -> None:
         for logger in self.loggers:
-            logger.write_error_summary(LogErrorSummary(error_summary))
+            logger.write_error_summary(LogErrorSummary(message=error_summary))
 
     def write_error(self, message: str, location: str | None = None) -> None:
         for logger in self.loggers:
-            logger.write_error(LogError(message, location))
+            logger.write_error(LogError(message=message, location=location))
 
     def write_status(
         self,
@@ -526,7 +526,12 @@ class Logger:
         lineno: int | None = None,
         created: float | None = None,
     ) -> None:
-        status = LogStatus(message, time.time() if created is None else created, filename, lineno)
+        status = LogStatus(
+            message=message,
+            created=time.time() if created is None else created,
+            filename=filename,
+            lineno=lineno,
+        )
         for logger in self.loggers:
             logger.write_status(status)
 
@@ -537,7 +542,12 @@ class Logger:
         lineno: int | None = None,
         created: float | None = None,
     ) -> None:
-        ping = LogPing(message, time.time() if created is None else created, filename, lineno)
+        ping = LogPing(
+            message=message,
+            created=time.time() if created is None else created,
+            filename=filename,
+            lineno=lineno,
+        )
         for logger in self.loggers:
             logger.write_ping(ping)
 

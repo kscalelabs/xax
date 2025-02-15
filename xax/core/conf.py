@@ -6,7 +6,6 @@ from dataclasses import dataclass, field as field_base
 from pathlib import Path
 from typing import Any, cast
 
-import jax.numpy as jnp
 from omegaconf import II, MISSING, Container as OmegaConfContainer, OmegaConf
 
 from xax.utils.text import show_error
@@ -61,68 +60,44 @@ def is_missing(cfg: Any, key: str) -> bool:  # noqa: ANN401
     return False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Logging:
     hide_third_party_logs: bool = field(True, help="If set, hide third-party logs")
     log_level: str = field("INFO", help="The logging level to use")
 
 
-@dataclass
-class Device:
-    cpu: bool = field(True, help="Whether to use the CPU")
-    gpu: bool = field(II("oc.env:USE_GPU,1"), help="Whether to use the GPU")
-    metal: bool = field(II("oc.env:USE_METAL,1"), help="Whether to use the Apple Silicon accelerator")
-    use_fp64: bool = field(False, help="Always use the 64-bit floating point type")
-    use_fp32: bool = field(False, help="Always use the 32-bit floating point type")
-    use_bf16: bool = field(False, help="Always use the 16-bit bfloat type")
-    use_fp16: bool = field(False, help="Always use the 16-bit floating point type")
-
-
-def parse_dtype(cfg: Device) -> jnp.dtype | None:
-    if cfg.use_fp64:
-        return jnp.float64
-    if cfg.use_fp32:
-        return jnp.float32
-    if cfg.use_bf16:
-        return jnp.bfloat16
-    if cfg.use_fp16:
-        return jnp.float16
-    return None
-
-
-@dataclass
+@dataclass(kw_only=True)
 class Triton:
     use_triton_if_available: bool = field(True, help="Use Triton if available")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Experiment:
     default_random_seed: int = field(1337, help="The default random seed to use")
     max_workers: int = field(32, help="Maximum number of workers to use")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Directories:
     run: str = field(II("oc.env:RUN_DIR"), help="The run directory")
     data: str = field(II("oc.env:DATA_DIR"), help="The data directory")
     pretrained_models: str = field(II("oc.env:MODEL_DIR"), help="The models directory")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SlurmPartition:
     partition: str = field(MISSING, help="The partition name")
     num_nodes: int = field(1, help="The number of nodes to use")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Slurm:
     launch: dict[str, SlurmPartition] = field({}, help="The available launch configurations")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UserConfig:
     logging: Logging = field(Logging)
-    device: Device = field(Device)
     triton: Triton = field(Triton)
     experiment: Experiment = field(Experiment)
     directories: Directories = field(Directories)
