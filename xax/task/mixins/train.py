@@ -293,7 +293,7 @@ class TrainMixin(
 
         return model, optimizer, opt_state, State.init_state()
 
-    @abstractmethod
+    @eqx.filter_jit
     def get_output(self, model: PyTree, batch: Batch) -> Output:
         """Gets the output from the model.
 
@@ -305,6 +305,7 @@ class TrainMixin(
             model: The current model.
             batch: The current minibatch of samples.
         """
+        raise NotImplementedError("`get_output` must be implemented by the subclass")
 
     @eqx.filter_jit
     def compute_loss(self, model: PyTree, batch: Batch, output: Output) -> Array:
@@ -341,7 +342,7 @@ class TrainMixin(
         batch: Batch,
     ) -> tuple[Array, PyTree, optax.OptState, Output]:
         (loss, output), grads = eqx.filter_value_and_grad(self.get_output_and_loss, has_aux=True)(model, batch)
-        updates, opt_state = optimizer.update(grads, opt_state)
+        updates, opt_state = optimizer.update(grads, opt_state, model)
         model = eqx.apply_updates(model, updates)
         return loss, model, opt_state, output
 

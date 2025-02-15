@@ -21,10 +21,10 @@ def cross_entropy(y: Array, pred_y: Array) -> Array:
     return -jnp.mean(pred_y)
 
 
-@jax.tree_util.register_dataclass
 @dataclass
 class Config(xax.Config):
     batch_size: int = xax.field(256, help="The size of a minibatch")
+    learning_rate: float = xax.field(1e-3, help="The learning rate")
 
 
 class Model(eqx.Module):
@@ -61,12 +61,11 @@ class MnistClassification(xax.Task[Config]):
         return Model(key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
-        return optax.adam(1e-3)
+        return optax.adam(self.config.learning_rate)
 
     def get_output(self, model: Model, batch: tuple[Array, Array]) -> Array:
         x, _ = batch
-        y_hat = jax.vmap(model)(x)
-        return y_hat
+        return jax.vmap(model)(x)
 
     def compute_loss(self, model: Model, batch: tuple[Array, Array], output: Array) -> Array:
         (_, y), yhat = batch, output
