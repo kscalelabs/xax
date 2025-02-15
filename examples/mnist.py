@@ -23,7 +23,7 @@ def cross_entropy(y: Array, pred_y: Array) -> Array:
 
 @dataclass
 class Config(xax.Config):
-    batch_size: int = xax.field(256, help="The size of a minibatch")
+    batch_size: int = xax.field(128, help="The size of a minibatch")
     learning_rate: float = xax.field(1e-3, help="The learning rate")
 
 
