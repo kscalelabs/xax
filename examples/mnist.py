@@ -90,7 +90,7 @@ class MnistClassification(xax.Task[Config]):
         while True:
             key, ind_key = jax.random.split(key)
             indices = jax.random.randint(ind_key, (self.config.batch_size,), 0, images.shape[0])
-            yield (images[indices], labels[indices])
+            yield images[indices], labels[indices]
 
 
 if __name__ == "__main__":

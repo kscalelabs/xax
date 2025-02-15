@@ -6,12 +6,11 @@ leaks in your dataloader, among other issues.
 """
 
 import logging
-import multiprocessing as mp
 import os
 import time
 from ctypes import Structure, c_double, c_uint16, c_uint64
 from dataclasses import dataclass
-from multiprocessing.context import BaseContext
+from multiprocessing.context import BaseContext, Process
 from multiprocessing.managers import SyncManager, ValueProxy
 from multiprocessing.synchronize import Event
 from typing import Generic, TypeVar
@@ -149,12 +148,13 @@ class CPUStatsMonitor:
     def __init__(
         self,
         ping_interval: float,
-        manager: SyncManager,
         context: BaseContext,
+        manager: SyncManager,
     ) -> None:
         self._ping_interval = ping_interval
         self._manager = manager
         self._context = context
+
         self._monitor_event = self._manager.Event()
         self._start_event = self._manager.Event()
         self._cpu_stats_smem = self._manager.Value(
@@ -173,7 +173,7 @@ class CPUStatsMonitor:
             ),
         )
         self._cpu_stats: CPUStatsInfo | None = None
-        self._proc: mp.Process | None = None
+        self._proc: Process | None = None
 
     def get_if_set(self) -> CPUStatsInfo | None:
         if self._monitor_event.is_set():
@@ -194,7 +194,7 @@ class CPUStatsMonitor:
         if self._start_event.is_set():
             self._start_event.clear()
         self._cpu_stats = None
-        self._proc = self._context.Process(
+        self._proc = self._context.Process(  # type: ignore[attr-defined]
             target=worker,
             args=(self._ping_interval, self._cpu_stats_smem, self._monitor_event, self._start_event, os.getpid()),
             daemon=True,
@@ -225,8 +225,8 @@ class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
 
         self._cpu_stats_monitor = CPUStatsMonitor(
             ping_interval=self.config.cpu_stats.ping_interval,
-            manager=self._mp_manager,
             context=self._mp_ctx,
+            manager=self._mp_manager,
         )
 
     def on_training_start(self, state: State) -> State:

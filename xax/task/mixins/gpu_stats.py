@@ -6,14 +6,13 @@ This logs GPU memory and utilization in a background process using
 
 import functools
 import logging
-import multiprocessing as mp
 import os
 import re
 import shutil
 import subprocess
 from ctypes import Structure, c_double, c_uint32
 from dataclasses import dataclass
-from multiprocessing.context import BaseContext
+from multiprocessing.context import BaseContext, Process
 from multiprocessing.managers import SyncManager, ValueProxy
 from multiprocessing.synchronize import Event
 from typing import Generic, Iterable, Pattern, TypeVar
@@ -180,7 +179,7 @@ class GPUStatsMonitor:
             for i in range(num_gpus)
         ]
         self._gpu_stats: dict[int, GPUStatsInfo] = {}
-        self._proc: mp.Process | None = None
+        self._proc: Process | None = None
 
     def get_if_set(self) -> dict[int, GPUStatsInfo]:
         gpu_stats: dict[int, GPUStatsInfo] = {}
@@ -207,7 +206,7 @@ class GPUStatsMonitor:
         if self._start_event.is_set():
             self._start_event.clear()
         self._gpu_stats.clear()
-        self._proc = self._context.Process(
+        self._proc = self._context.Process(  # type: ignore[attr-defined]
             target=worker,
             args=(self._ping_interval, self._smems, self._main_event, self._events, self._start_event),
             daemon=True,

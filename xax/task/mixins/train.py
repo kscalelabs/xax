@@ -13,7 +13,18 @@ import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, is_dataclass
 from threading import Thread
-from typing import Any, Generator, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, cast, get_args
+from typing import (
+    Any,
+    Generator,
+    Generic,
+    Iterator,
+    Literal,
+    Mapping,
+    Sequence,
+    TypeVar,
+    cast,
+    get_args,
+)
 
 import equinox as eqx
 import jax
@@ -468,7 +479,7 @@ class TrainMixin(
     @contextlib.contextmanager
     def get_train_iterator(self) -> Generator[Iterator[Batch], None, None]:
         try:
-            train_iterator = self.get_iterator("train")
+            train_iterator: Iterator[Batch] = self.get_iterator("train")
             yield train_iterator
             return
         except NotImplementedError:
@@ -492,7 +503,7 @@ class TrainMixin(
     @contextlib.contextmanager
     def get_valid_iterator(self) -> Generator[Iterator[Batch], None, None]:
         try:
-            valid_iterator = self.get_iterator("valid")
+            valid_iterator: Iterator[Batch] = self.get_iterator("valid")
             yield valid_iterator
             return
         except NotImplementedError:
