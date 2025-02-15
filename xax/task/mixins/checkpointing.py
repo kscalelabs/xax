@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Generic, Literal, TypeVar, cast, overload
 
 import cloudpickle
+import jax
 import optax
 from jaxtyping import PyTree
 from omegaconf import DictConfig, OmegaConf
@@ -38,6 +39,7 @@ def get_ckpt_path(exp_dir: Path, state: State | None = None) -> Path:
     return exp_dir / "checkpoints" / f"ckpt.{state.num_steps}.bin"
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class CheckpointingConfig(ArtifactsConfig):
     save_every_n_steps: int | None = field(None, help="Save a checkpoint every N steps")

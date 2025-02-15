@@ -1,0 +1,4 @@
+# requirements-rl.txt
+
+# Mujoco simulation libraries.
+brax

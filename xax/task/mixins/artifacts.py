@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self, TypeVar
 
+import jax
+
 from xax.core.conf import field, get_run_dir
 from xax.core.state import State
 from xax.nn.parallel import is_master
@@ -19,6 +21,7 @@ from xax.utils.text import show_info
 logger = logging.getLogger(__name__)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class ArtifactsConfig(BaseConfig):
     exp_dir: str | None = field(None, help="The fixed experiment directory")
