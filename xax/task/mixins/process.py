@@ -7,6 +7,8 @@ from multiprocessing.context import BaseContext
 from multiprocessing.managers import SyncManager
 from typing import Generic, TypeVar
 
+import jax
+
 from xax.core.conf import field
 from xax.core.state import State
 from xax.task.base import BaseConfig, BaseTask
@@ -14,9 +16,10 @@ from xax.task.base import BaseConfig, BaseTask
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class ProcessConfig(BaseConfig):
-    multiprocessing_context: str | None = field(None, help="The multiprocessing context to use")
+    multiprocessing_context: str | None = field("spawn", help="The multiprocessing context to use")
 
 
 Config = TypeVar("Config", bound=ProcessConfig)

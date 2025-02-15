@@ -2,8 +2,9 @@
 
 import time
 from dataclasses import dataclass
-from typing import Literal, TypedDict, cast, get_args
+from typing import Literal, NotRequired, TypedDict, cast, get_args
 
+import jax
 from omegaconf import MISSING
 
 from xax.core.conf import field
@@ -18,16 +19,17 @@ def cast_phase(raw_phase: str) -> Phase:
 
 
 class StateDict(TypedDict, total=False):
-    num_steps: int
-    num_samples: int
-    num_valid_steps: int
-    num_valid_samples: int
-    start_time_s: float
-    elapsed_time_s: float
-    raw_phase: str
+    num_steps: NotRequired[int]
+    num_samples: NotRequired[int]
+    num_valid_steps: NotRequired[int]
+    num_valid_samples: NotRequired[int]
+    start_time_s: NotRequired[float]
+    elapsed_time_s: NotRequired[float]
+    raw_phase: NotRequired[str]
 
 
-@dataclass(frozen=True, kw_only=True)
+@jax.tree_util.register_dataclass
+@dataclass
 class State:
     num_steps: int = field(MISSING, help="Number of steps so far")
     num_samples: int = field(MISSING, help="Number of sample so far")
@@ -65,17 +67,3 @@ class State:
                 return self.num_valid_steps
             case _:
                 raise ValueError(f"Invalid phase: {phase}")
-
-    def replace(self, values: StateDict) -> "State":
-        return State(
-            num_steps=values.get("num_steps", self.num_steps),
-            num_samples=values.get("num_samples", self.num_samples),
-            num_valid_steps=values.get("num_valid_steps", self.num_valid_steps),
-            num_valid_samples=values.get("num_valid_samples", self.num_valid_samples),
-            start_time_s=values.get("start_time_s", self.start_time_s),
-            elapsed_time_s=values.get("elapsed_time_s", self.elapsed_time_s),
-            raw_phase=values.get("raw_phase", self.raw_phase),
-        )
-
-    def with_phase(self, phase: Phase) -> "State":
-        return self.replace({"raw_phase": phase})

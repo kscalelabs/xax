@@ -17,6 +17,7 @@ from xax.task.base import BaseConfig, BaseTask
 logger = logging.getLogger(__name__)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class CompileOptions:
     # JAX compilation options
@@ -58,6 +59,7 @@ class CompileOptions:
     )
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class CompileConfig(BaseConfig):
     compile: CompileOptions = field(CompileOptions(), help="Compilation configuration")

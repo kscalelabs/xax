@@ -13,9 +13,12 @@ import shutil
 import subprocess
 from ctypes import Structure, c_double, c_uint32
 from dataclasses import dataclass
+from multiprocessing.context import BaseContext
 from multiprocessing.managers import SyncManager, ValueProxy
 from multiprocessing.synchronize import Event
 from typing import Generic, Iterable, Pattern, TypeVar
+
+import jax
 
 from xax.core.conf import field
 from xax.core.state import State
@@ -25,12 +28,14 @@ from xax.task.mixins.process import ProcessConfig, ProcessMixin
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class GPUStatsOptions:
     ping_interval: int = field(10, help="How often to check stats (in seconds)")
     only_log_once: bool = field(False, help="If set, only log read stats one time")
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class GPUStatsConfig(ProcessConfig, LoggerConfig):
     gpu_stats: GPUStatsOptions = field(GPUStatsOptions(), help="GPU stats configuration")
@@ -147,8 +152,14 @@ def worker(
 
 
 class GPUStatsMonitor:
-    def __init__(self, ping_interval: float, manager: SyncManager) -> None:
+    def __init__(
+        self,
+        ping_interval: float,
+        context: BaseContext,
+        manager: SyncManager,
+    ) -> None:
         self._ping_interval = ping_interval
+        self._context = context
         self._manager = manager
 
         num_gpus = get_num_gpus()
@@ -196,7 +207,7 @@ class GPUStatsMonitor:
         if self._start_event.is_set():
             self._start_event.clear()
         self._gpu_stats.clear()
-        self._proc = mp.Process(
+        self._proc = self._context.Process(
             target=worker,
             args=(self._ping_interval, self._smems, self._main_event, self._events, self._start_event),
             daemon=True,
@@ -226,7 +237,11 @@ class GPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
 
         self._gpu_stats_monitor = None
         if shutil.which("nvidia-smi") is not None:
-            self._gpu_stats_monitor = GPUStatsMonitor(config.gpu_stats.ping_interval, self._mp_manager)
+            self._gpu_stats_monitor = GPUStatsMonitor(
+                config.gpu_stats.ping_interval,
+                self._mp_ctx,
+                self._mp_manager,
+            )
 
     def on_training_start(self, state: State) -> State:
         state = super().on_training_start(state)

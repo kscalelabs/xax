@@ -15,6 +15,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Generic, Self, TypeVar, cast
 
+import jax
 from omegaconf import Container, DictConfig, OmegaConf
 
 from xax.core.state import State
@@ -23,7 +24,8 @@ from xax.utils.text import camelcase_to_snakecase
 logger = logging.getLogger(__name__)
 
 
-@dataclass(kw_only=True)
+@jax.tree_util.register_dataclass
+@dataclass
 class BaseConfig:
     pass
 

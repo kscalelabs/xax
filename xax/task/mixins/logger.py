@@ -6,7 +6,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Generic, Self, TypeVar
 
-from xax.core.conf import field
+import jax
+
 from xax.core.state import State
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.logger import Logger, LoggerImpl
@@ -18,6 +19,7 @@ from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
 
 
+@jax.tree_util.register_dataclass
 @dataclass
 class LoggerConfig(BaseConfig):
     pass
