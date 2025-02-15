@@ -2,15 +2,11 @@
 
 import functools
 import os
-from dataclasses import dataclass
-from dataclasses import field as field_base
+from dataclasses import dataclass, field as field_base
 from pathlib import Path
 from typing import Any, cast
 
-import jax.numpy as jnp
-from omegaconf import II, MISSING
-from omegaconf import Container as OmegaConfContainer
-from omegaconf import OmegaConf
+from omegaconf import II, MISSING, Container as OmegaConfContainer, OmegaConf
 
 from xax.utils.text import show_error
 
