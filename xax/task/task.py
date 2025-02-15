@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+import jax
+
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.mixins import (
     ArtifactsConfig,
@@ -30,7 +32,8 @@ from xax.task.mixins import (
 )
 
 
-@dataclass(kw_only=True)
+@jax.tree_util.register_dataclass
+@dataclass
 class Config(
     TrainConfig,
     CheckpointingConfig,
