@@ -10,8 +10,6 @@ class StateLogger(LoggerImpl):
     def __init__(
         self,
         run_directory: str | Path,
-        train_code_name: str = "train_code.py",
-        config_name: str = "config.yaml",
         flush_immediately: bool = False,
         open_mode: Literal["w", "a"] = "w",
         line_sep: str = "\n",
@@ -21,8 +19,6 @@ class StateLogger(LoggerImpl):
 
         self.run_directory = Path(run_directory).expanduser().resolve()
 
-        self.train_code_file = Path(run_directory).expanduser().resolve() / train_code_name
-        self.config_file = Path(run_directory).expanduser().resolve() / config_name
         self.flush_immediately = flush_immediately
         self.open_mode = open_mode
         self.line_sep = line_sep

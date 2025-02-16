@@ -426,7 +426,7 @@ class TrainMixin(
         logger.log(LOG_STATUS, self.task_name)
         self.logger.log_file("git_state.txt", get_git_state(self))
         self.logger.log_file("training_code.txt", get_training_code(self))
-        self.logger.log_file("config.yml", OmegaConf.to_yaml(cast(DictConfig, self.config)))
+        self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
 
     @eqx.filter_jit
     def train_step(
