@@ -74,6 +74,12 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             "method to return the desired training batch size."
         )
 
+    @property
+    def batch_size(self) -> int:
+        if is_missing(self.config, "batch_size"):
+            self.config.batch_size = self.get_batch_size()
+        return self.config.batch_size
+
     def dataloader_config(self, phase: Phase) -> DataloaderConfig:
         match phase:
             case "train":
@@ -104,9 +110,6 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
         )
 
     def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:
-        if is_missing(config, "batch_size"):
-            config.batch_size = self.get_batch_size()
-
         debugging = self.config.debug_dataloader
         if debugging:
             logger.warning("Parallel dataloaders disabled in debugging mode")

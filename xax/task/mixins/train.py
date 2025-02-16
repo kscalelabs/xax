@@ -31,7 +31,7 @@ import jax
 import numpy as np
 import optax
 from jaxtyping import Array, PRNGKeyArray, PyTree
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from xax.core.conf import field
 from xax.core.state import Phase, State
@@ -424,9 +424,9 @@ class TrainMixin(
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
-        self.logger.log_git_state(get_git_state(self))
-        self.logger.log_training_code(get_training_code(self))
-        self.logger.log_config(cast(DictConfig, self.config))
+        self.logger.log_file("git_state.txt", get_git_state(self))
+        self.logger.log_file("training_code.txt", get_training_code(self))
+        self.logger.log_file("config.yml", OmegaConf.to_yaml(cast(DictConfig, self.config)))
 
     @eqx.filter_jit
     def train_step(
@@ -532,6 +532,9 @@ class TrainMixin(
             logger.info("Closing valid prefetcher")
 
     def run(self) -> None:
+        self.run_training()
+
+    def run_training(self) -> None:
         """Runs the training loop.
 
         Args:

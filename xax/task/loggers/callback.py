@@ -2,8 +2,6 @@
 
 from typing import Callable
 
-from omegaconf import DictConfig
-
 from xax.task.logger import LogError, LogErrorSummary, LoggerImpl, LogLine, LogPing, LogStatus
 
 
@@ -16,9 +14,7 @@ class CallbackLogger(LoggerImpl):
         error_callback: Callable[[LogError], None] = lambda x: None,
         status_callback: Callable[[LogStatus], None] = lambda x: None,
         ping_callback: Callable[[LogPing], None] = lambda x: None,
-        git_state_callback: Callable[[str], None] = lambda x: None,
-        training_code_callback: Callable[[str], None] = lambda x: None,
-        config_callback: Callable[[DictConfig], None] = lambda x: None,
+        file_callback: Callable[[str, str], None] = lambda x: None,
     ) -> None:
         super().__init__()
 
@@ -27,9 +23,7 @@ class CallbackLogger(LoggerImpl):
         self.error_callback = error_callback
         self.status_callback = status_callback
         self.ping_callback = ping_callback
-        self.git_state_callback = git_state_callback
-        self.training_code_callback = training_code_callback
-        self.config_callback = config_callback
+        self.file_callback = file_callback
 
     def write(self, line: LogLine) -> None:
         self.callback(line)
@@ -46,11 +40,5 @@ class CallbackLogger(LoggerImpl):
     def write_ping(self, ping: LogPing) -> None:
         self.ping_callback(ping)
 
-    def log_git_state(self, git_state: str) -> None:
-        self.git_state_callback(git_state)
-
-    def log_training_code(self, training_code: str) -> None:
-        self.training_code_callback(training_code)
-
-    def log_config(self, config: DictConfig) -> None:
-        self.config_callback(config)
+    def log_file(self, name: str, contents: str) -> None:
+        self.file_callback(name, contents)

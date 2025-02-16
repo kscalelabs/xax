@@ -391,25 +391,12 @@ class LoggerImpl(ABC):
             ping: The ping to write.
         """
 
-    def log_git_state(self, git_state: str) -> None:
-        """Logs Git state for the current run.
+    def log_file(self, name: str, contents: str) -> None:
+        """Logs a large text file.
 
         Args:
-            git_state: The Git state, as text blocks.
-        """
-
-    def log_training_code(self, training_code: str) -> None:
-        """Logs the training script code.
-
-        Args:
-            training_code: The training script code.
-        """
-
-    def log_config(self, config: DictConfig) -> None:
-        """Logs the configuration for the current run.
-
-        Args:
-            config: The configuration, as a DictConfig.
+            name: The name of the file.
+            contents: The contents of the file.
         """
 
     def should_log(self, state: State) -> bool:
@@ -769,17 +756,9 @@ class Logger:
 
         self.images[namespace][key] = images_future
 
-    def log_git_state(self, git_state: str) -> None:
+    def log_file(self, name: str, contents: str) -> None:
         for logger in self.loggers:
-            logger.log_git_state(git_state)
-
-    def log_training_code(self, training_code: str) -> None:
-        for logger in self.loggers:
-            logger.log_training_code(training_code)
-
-    def log_config(self, config: DictConfig) -> None:
-        for logger in self.loggers:
-            logger.log_config(config)
+            logger.log_file(name, contents)
 
     def __enter__(self) -> Self:
         self.active = True
