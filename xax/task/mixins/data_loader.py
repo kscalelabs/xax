@@ -66,9 +66,6 @@ Config = TypeVar("Config", bound=DataloadersConfig)
 
 class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], ABC):
     def __init__(self, config: Config) -> None:
-        if is_missing(config, "batch_size"):
-            config.batch_size = self.get_batch_size()
-
         super().__init__(config)
 
     def get_batch_size(self) -> int:
@@ -107,6 +104,9 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
         )
 
     def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:
+        if is_missing(config, "batch_size"):
+            config.batch_size = self.get_batch_size()
+
         debugging = self.config.debug_dataloader
         if debugging:
             logger.warning("Parallel dataloaders disabled in debugging mode")
