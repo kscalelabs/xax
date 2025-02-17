@@ -396,7 +396,11 @@ class TrainMixin(
         # logger.info("Estimated finish time: %s", termination_time)
         jax.debug.print("Estimated finish time: {}", termination_time)
 
-    @eqx.filter_jit
+    def get_remaining_percent(self, state: State) -> float | None:
+        if self.config.max_steps is None:
+            return None
+        return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
+
     def is_training_over(self, state: State) -> bool:
         if self._training_over_flag:
             return True
@@ -416,11 +420,6 @@ class TrainMixin(
                 return int(state.elapsed_time_s)
             case _:
                 raise ValueError(f"Invalid step kind {self._step_kind}")
-
-    def get_remaining_percent(self, state: State) -> float | None:
-        if self.config.max_steps is None:
-            return None
-        return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
 
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
