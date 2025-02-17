@@ -12,8 +12,6 @@ import time
 from pathlib import Path
 from typing import TypeVar
 
-from omegaconf import DictConfig, OmegaConf
-
 from xax.core.state import Phase
 from xax.nn.parallel import is_master
 from xax.task.logger import LoggerImpl, LogLine
@@ -195,6 +193,14 @@ class TensorboardLogger(LoggerImpl):
                     image_value.image,
                     global_step=line.state.num_steps,
                     walltime=walltime,
+                )
+
+        for namespace, videos in line.videos.items():
+            for video_key, video_value in videos.items():
+                writer.add_video(
+                    f"{namespace}/{video_key}",
+                    video_value.video,
+                    global_step=line.state.num_steps,
                 )
 
         for name, contents in self.files.items():

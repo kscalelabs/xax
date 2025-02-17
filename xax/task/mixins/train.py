@@ -31,7 +31,7 @@ import jax
 import numpy as np
 import optax
 from jaxtyping import Array, PRNGKeyArray, PyTree
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from xax.core.conf import field
 from xax.core.state import Phase, State
@@ -236,19 +236,18 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_step(self, model: PyTree, batch: Batch, output: Output, loss: Array, state: State) -> None:
-        phase = state.phase
-
-        self.logger.log_scalar("loss", loss, namespace="loss")
-
-        # Log the state timers.
-        timer = self.state_timers[phase]
+    def log_state_timers(self, state: State) -> None:
+        timer = self.state_timers[state.phase]
         timer.step(state)
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
                 self.logger.log_scalar(k, v, namespace=ns)
 
-        self.write_logs(state)
+    def log_step(self, model: PyTree, batch: Batch, output: Output, loss: Array, state: State) -> None:
+        phase = state.phase
+
+        self.logger.log_scalar("loss", loss, namespace="loss")
+        self.log_state_timers(state)
 
         # Delegate to the appropriate logging function based on the phase.
         match phase:
@@ -258,6 +257,8 @@ class TrainMixin(
                 self.log_valid_step(model, batch, output, state)
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
+
+        self.write_logs(state)
 
     @abstractmethod
     def get_model(self, key: PRNGKeyArray) -> PyTree:
@@ -467,8 +468,9 @@ class TrainMixin(
             with self.step_context("on_step_start"):
                 state = self.on_step_start(state)
 
-            train_batch = next(train_pf)
-            model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
+            with self.step_context("update_state"):
+                train_batch = next(train_pf)
+                model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
 
             # Perform logging.
             with self.step_context("write_logs"):

@@ -24,7 +24,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array
-from omegaconf import DictConfig
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as PILImage
 
@@ -90,50 +89,6 @@ def make_human_viewable_resolution(
     factor = math.sqrt((trg_height * trg_width) / (height * width))
     new_height, new_width = int(height * factor), int(width * factor)
     return image.resize((new_width, new_height), interpolation)
-
-
-def image_with_text(
-    image: PILImage,
-    text: list[str],
-    max_num_lines: int | None,
-    line_spacing: int,
-    centered: bool,
-) -> PILImage:
-    """Adds a text label to an image.
-
-    Args:
-        image: The image to label, with shape (C, H, W)
-        text: The text label for the image
-        max_num_lines: The number of lines of spacing to add to the bottom
-            of the image
-        line_spacing: The spacing between adjacent lines
-        centered: If set, center the text labels, otherwise align to the left
-
-    Returns:
-        The image with a text label
-    """
-    if not text:
-        return image
-    if max_num_lines is None:
-        max_num_lines = len(text)
-    else:
-        text = text[:max_num_lines]
-    width, height = image.size
-    font: ImageFont.ImageFont = ImageFont.load_default()
-    _, _, _, line_height = font.getbbox(text[0])
-    new_width, new_height = width, height + line_spacing + max_num_lines * (line_height + line_spacing)
-    padded_image = Image.new(image.mode, (new_width, new_height), 255)
-    padded_image.paste(image, (0, 0))
-    drawer = ImageDraw.Draw(padded_image)
-    for i, text_line in enumerate(text):
-        text_line_top = height + line_spacing + i * (line_height + line_spacing)
-        if centered:
-            _, _, line_width, _ = font.getbbox(text_line)
-            text_line_left = (width - line_width) / 2
-            drawer.text((text_line_left, text_line_top), text_line, font=font, fill=0)
-        else:
-            drawer.text((line_spacing, text_line_top), text_line, font=font, fill=0)
-    return padded_image
 
 
 class namespace_context:  # noqa: N801
@@ -250,45 +205,22 @@ def as_numpy(array: Array) -> np.ndarray:
     return np.array(array)
 
 
-def get_image(image: np.ndarray | Array | PILImage, target_resolution: tuple[int, int] | None = None) -> PILImage:
-    if not isinstance(image, (np.ndarray, Array, PILImage)):
-        raise ValueError(f"Unsupported image type: {type(image)}")
-    if isinstance(image, Array):
-        image = as_numpy(image)
-    if isinstance(image, np.ndarray):
-        if image.ndim == 2:
-            image = np.expand_dims(image, axis=-1)
-        if image.ndim != 3:
-            raise RuntimeError(f"Expected image to have shape HW, HWC, or CHW, got {image.shape}")
-
-        # Normalizes the image and converts to integer.
-        if np.issubdtype(image.dtype, np.floating):
-            image = (normalize(image) * 255).round().astype(np.uint8)
-        elif image.dtype == np.uint8:
-            pass
-        else:
-            raise ValueError(f"Unsupported image dtype: {image.dtype}")
-
-        # Converts to a PIL image.
-        if image.shape[-1] == 1:
-            image = Image.fromarray(image[..., 0])
-        elif image.shape[-1] == 3:
-            image = Image.fromarray(image)
-        elif image.shape[0] == 1:
-            image = Image.fromarray(image[0])
-        elif image.shape[0] == 3:
-            image = Image.fromarray(image.transpose(1, 2, 0))
-        else:
-            raise ValueError(f"Unsupported image shape: {image.shape}")
-
-    if target_resolution is not None:
-        image = make_human_viewable_resolution(image, trg_res=target_resolution)
-    return image
-
-
 @dataclass(kw_only=True)
 class LogImage:
     image: PILImage
+
+
+@dataclass(kw_only=True)
+class LogVideo:
+    """Container for video data and metadata.
+
+    Attributes:
+        frames: Video frames as a numpy array of shape (T,H,W,C)
+        fps: Frames per second
+    """
+
+    frames: np.ndarray
+    fps: float
 
 
 @dataclass(kw_only=True)
@@ -297,6 +229,7 @@ class LogLine:
     scalars: dict[str, dict[str, Number]]
     strings: dict[str, dict[str, str]]
     images: dict[str, dict[str, LogImage]]
+    videos: dict[str, dict[str, LogVideo]]
 
 
 @dataclass(kw_only=True)
@@ -331,6 +264,120 @@ class LogPing:
     created: float
     filename: str | None = None
     lineno: int | None = None
+
+
+def get_image(image: np.ndarray | Array | PILImage, target_resolution: tuple[int, int] | None = None) -> LogImage:
+    if not isinstance(image, (np.ndarray, Array, PILImage)):
+        raise ValueError(f"Unsupported image type: {type(image)}")
+    if isinstance(image, Array):
+        image = as_numpy(image)
+    if isinstance(image, np.ndarray):
+        if image.ndim == 2:
+            image = np.expand_dims(image, axis=-1)
+        if image.ndim != 3:
+            raise RuntimeError(f"Expected image to have shape HW, HWC, or CHW, got {image.shape}")
+
+        # Normalizes the image and converts to integer.
+        if np.issubdtype(image.dtype, np.floating):
+            image = (normalize(image) * 255).round().astype(np.uint8)
+        elif image.dtype == np.uint8:
+            pass
+        else:
+            raise ValueError(f"Unsupported image dtype: {image.dtype}")
+
+        # Converts to a PIL image.
+        if image.shape[-1] == 1:
+            image = Image.fromarray(image[..., 0])
+        elif image.shape[-1] == 3:
+            image = Image.fromarray(image)
+        elif image.shape[0] == 1:
+            image = Image.fromarray(image[0])
+        elif image.shape[0] == 3:
+            image = Image.fromarray(image.transpose(1, 2, 0))
+        else:
+            raise ValueError(f"Unsupported image shape: {image.shape}")
+
+    if target_resolution is not None:
+        image = make_human_viewable_resolution(image, trg_res=target_resolution)
+    return LogImage(image=image)
+
+
+def image_with_text(
+    image: PILImage,
+    text: list[str],
+    max_num_lines: int | None,
+    line_spacing: int,
+    centered: bool,
+) -> LogImage:
+    """Adds a text label to an image.
+
+    Args:
+        image: The image to label, with shape (C, H, W)
+        text: The text label for the image
+        max_num_lines: The number of lines of spacing to add to the bottom
+            of the image
+        line_spacing: The spacing between adjacent lines
+        centered: If set, center the text labels, otherwise align to the left
+
+    Returns:
+        The image with a text label
+    """
+    if not text:
+        return LogImage(image=image)
+    if max_num_lines is None:
+        max_num_lines = len(text)
+    else:
+        text = text[:max_num_lines]
+    width, height = image.size
+    font: ImageFont.ImageFont = ImageFont.load_default()
+    _, _, _, line_height = font.getbbox(text[0])
+    new_width, new_height = width, height + line_spacing + max_num_lines * (line_height + line_spacing)
+    padded_image = Image.new(image.mode, (new_width, new_height), 255)
+    padded_image.paste(image, (0, 0))
+    drawer = ImageDraw.Draw(padded_image)
+    for i, text_line in enumerate(text):
+        text_line_top = height + line_spacing + i * (line_height + line_spacing)
+        if centered:
+            _, _, line_width, _ = font.getbbox(text_line)
+            text_line_left = (width - line_width) / 2
+            drawer.text((text_line_left, text_line_top), text_line, font=font, fill=0)
+        else:
+            drawer.text((line_spacing, text_line_top), text_line, font=font, fill=0)
+    return LogImage(image=padded_image)
+
+
+def get_video(video: np.ndarray | Array, fps: float = 30.0) -> LogVideo:
+    """Converts video data to standard format.
+
+    Args:
+        video: The video frames. Can be:
+            - A numpy array of shape (T, H, W, C) or (T, C, H, W)
+            - A JAX array of shape (T, H, W, C) or (T, C, H, W)
+        fps: Frames per second
+
+    Returns:
+        LogVideo containing standardized video frames
+    """
+    if isinstance(video, Array):
+        video = as_numpy(video)
+
+    if not isinstance(video, np.ndarray):
+        raise ValueError(f"Unsupported video type: {type(video)}")
+
+    # Handle different dimension orderings
+    if video.ndim != 4:
+        raise ValueError(f"Expected video array of shape (T, H, W, C) or (T, C, H, W), got shape {video.shape}")
+
+    if video.shape[1] == 3:  # (T,C,H,W) format
+        video = video.transpose(0, 2, 3, 1)
+
+    # Normalize and convert to uint8 if needed
+    if np.issubdtype(video.dtype, np.floating):
+        video = (normalize(video) * 255).round().astype(np.uint8)
+    elif video.dtype != np.uint8:
+        raise ValueError(f"Unsupported video dtype: {video.dtype}")
+
+    return LogVideo(frames=video, fps=fps)
 
 
 class LoggerImpl(ABC):
@@ -451,7 +498,8 @@ class Logger:
     def __init__(self, default_namespace: str = DEFAULT_NAMESPACE) -> None:
         self.scalars: dict[str, dict[str, Callable[[], Number]]] = defaultdict(dict)
         self.strings: dict[str, dict[str, Callable[[], str]]] = defaultdict(dict)
-        self.images: dict[str, dict[str, Callable[[], PILImage]]] = defaultdict(dict)
+        self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
+        self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
         self.default_namespace = default_namespace
         self.loggers: list[LoggerImpl] = []
 
@@ -475,13 +523,15 @@ class Logger:
             state=state,
             scalars={k: {kk: v() for kk, v in v.items()} for k, v in self.scalars.items()},
             strings={k: {kk: v() for kk, v in v.items()} for k, v in self.strings.items()},
-            images={k: {kk: LogImage(image=v()) for kk, v in v.items()} for k, v in self.images.items()},
+            images={k: {kk: v() for kk, v in v.items()} for k, v in self.images.items()},
+            videos={k: {kk: v() for kk, v in v.items()} for k, v in self.videos.items()},
         )
 
     def clear(self) -> None:
         self.scalars.clear()
         self.strings.clear()
         self.images.clear()
+        self.videos.clear()
 
     def write(self, state: State) -> None:
         """Writes the current step's logging information.
@@ -599,7 +649,7 @@ class Logger:
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def image_future() -> PILImage:
+        def image_future() -> LogImage:
             return get_image(value() if callable(value) else value, target_resolution)
 
         self.images[namespace][key] = image_future
@@ -635,11 +685,11 @@ class Logger:
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def image_future() -> PILImage:
+        def image_future() -> LogImage:
             image, label = value() if callable(value) else value
             image = get_image(image, target_resolution)
             return image_with_text(
-                image,
+                image.image,
                 standardize_text(label, max_line_length),
                 max_num_lines=max_num_lines,
                 line_spacing=line_spacing,
@@ -759,6 +809,34 @@ class Logger:
     def log_file(self, name: str, contents: str) -> None:
         for logger in self.loggers:
             logger.log_file(name, contents)
+
+    def log_video(
+        self,
+        key: str,
+        value: Callable[[], np.ndarray | Array] | np.ndarray | Array,
+        *,
+        fps: float = 30.0,
+        namespace: str | None = None,
+    ) -> None:
+        """Logs a video.
+
+        Args:
+            key: The key being logged
+            value: The video frames. Can be:
+                - A numpy array of shape (T,H,W,C) or (T,C,H,W)
+                - A JAX array of shape (T,H,W,C) or (T,C,H,W)
+            fps: Frames per second
+            namespace: An optional logging namespace
+        """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def video_future() -> LogVideo:
+            return get_video(value() if callable(value) else value, fps=fps)
+
+        self.videos[namespace][key] = video_future
 
     def __enter__(self) -> Self:
         self.active = True
