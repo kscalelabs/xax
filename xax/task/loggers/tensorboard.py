@@ -199,7 +199,8 @@ class TensorboardLogger(LoggerImpl):
             for video_key, video_value in videos.items():
                 writer.add_video(
                     f"{namespace}/{video_key}",
-                    video_value.video,
+                    video_value.frames,
+                    fps=video_value.fps,
                     global_step=line.state.num_steps,
                 )
 

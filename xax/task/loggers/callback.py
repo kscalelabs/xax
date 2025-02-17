@@ -14,7 +14,7 @@ class CallbackLogger(LoggerImpl):
         error_callback: Callable[[LogError], None] = lambda x: None,
         status_callback: Callable[[LogStatus], None] = lambda x: None,
         ping_callback: Callable[[LogPing], None] = lambda x: None,
-        file_callback: Callable[[str, str], None] = lambda x: None,
+        file_callback: Callable[[str, str], None] = lambda x, y: None,
     ) -> None:
         super().__init__()
 

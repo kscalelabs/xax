@@ -220,7 +220,7 @@ class LogVideo:
     """
 
     frames: np.ndarray
-    fps: float
+    fps: int
 
 
 @dataclass(kw_only=True)
@@ -346,7 +346,7 @@ def image_with_text(
     return LogImage(image=padded_image)
 
 
-def get_video(video: np.ndarray | Array, fps: float = 30.0) -> LogVideo:
+def get_video(video: np.ndarray | Array, fps: int = 30) -> LogVideo:
     """Converts video data to standard format.
 
     Args:
@@ -732,7 +732,7 @@ class Logger:
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def images_future() -> PILImage:
+        def images_future() -> LogImage:
             images = value() if callable(value) else value
             if max_images is not None:
                 images = images[:max_images]
@@ -741,7 +741,8 @@ class Logger:
             if isinstance(images, Sequence):
                 images = list(images)
             images = [get_image(image, target_resolution) for image in images]
-            return tile_images(images, sep)
+            tiled = tile_images([img.image for img in images], sep)
+            return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
 
@@ -786,23 +787,24 @@ class Logger:
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def images_future() -> PILImage:
+        def images_future() -> LogImage:
             images, labels = value() if callable(value) else value
             if max_images is not None:
                 images = images[:max_images]
                 labels = labels[:max_images]
             images = [get_image(image, target_resolution) for image in images]
-            images = [
+            labeled = [
                 image_with_text(
-                    image,
+                    img.image,
                     standardize_text(label, max_line_length),
                     max_num_lines=max_num_lines,
                     line_spacing=line_spacing,
                     centered=centered,
                 )
-                for image, label in zip(images, labels)
+                for img, label in zip(images, labels)
             ]
-            return tile_images(images, sep)
+            tiled = tile_images([img.image for img in labeled], sep)
+            return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
 
@@ -815,7 +817,7 @@ class Logger:
         key: str,
         value: Callable[[], np.ndarray | Array] | np.ndarray | Array,
         *,
-        fps: float = 30.0,
+        fps: int = 30,
         namespace: str | None = None,
     ) -> None:
         """Logs a video.
