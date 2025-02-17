@@ -603,6 +603,9 @@ class Logger:
             raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
+        if isinstance(value, jnp.ndarray):
+            assert value.ndim == 0, f"Scalar must be a 0D array, got shape {value.shape}"
+
         @functools.lru_cache(maxsize=None)
         def scalar_future() -> Number:
             return value() if callable(value) else value
