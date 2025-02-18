@@ -484,6 +484,9 @@ class TrainMixin(
             if self.should_checkpoint(state):
                 self.save_checkpoint(model, optimizer, opt_state, state)
 
+        # After finishing training, save the final checkpoint.
+        self.save_checkpoint(model, optimizer, opt_state, state)
+
     @contextlib.contextmanager
     def get_train_iterator(self) -> Generator[Iterator[Batch], None, None]:
         try:
