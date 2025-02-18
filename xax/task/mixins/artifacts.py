@@ -46,13 +46,13 @@ class ArtifactsMixin(BaseTask[Config]):
             run_dir = Path(task_file).resolve().parent
         return run_dir / self.task_name
 
-    def set_exp_dir(self, exp_dir: Path) -> Self:
-        self._exp_dir = exp_dir
-        return self
-
     @property
     def exp_dir(self) -> Path:
         return self.get_exp_dir()
+
+    def set_exp_dir(self, exp_dir: str | Path) -> Self:
+        self._exp_dir = Path(exp_dir).expanduser().resolve()
+        return self
 
     def add_lock_file(self, lock_type: str, *, exists_ok: bool = False) -> None:
         if (lock_file := self.exp_dir / f".lock_{lock_type}").exists():

@@ -12,8 +12,6 @@ import time
 from pathlib import Path
 from typing import TypeVar
 
-from omegaconf import DictConfig, OmegaConf
-
 from xax.core.state import Phase
 from xax.nn.parallel import is_master
 from xax.task.logger import LoggerImpl, LogLine
@@ -60,10 +58,7 @@ class TensorboardLogger(LoggerImpl):
 
         self.proc: subprocess.Popen | None = None
 
-        self.git_state: str | None = None
-        self.training_code: str | None = None
-        self.config: DictConfig | None = None
-
+        self.files: dict[str, str] = {}
         self.writers = TensorboardWriters(log_directory=self.log_directory, flush_seconds=flush_seconds)
         self._started = False
 
@@ -158,20 +153,10 @@ class TensorboardLogger(LoggerImpl):
         self._start()
         return self.writers.writer(phase)
 
-    def log_git_state(self, git_state: str) -> None:
+    def log_file(self, name: str, contents: str) -> None:
         if not is_master():
             return
-        self.git_state = f"```\n{git_state}\n```"
-
-    def log_training_code(self, training_code: str) -> None:
-        if not is_master():
-            return
-        self.training_code = f"```python\n{training_code}\n```"
-
-    def log_config(self, config: DictConfig) -> None:
-        if not is_master():
-            return
-        self.config = config
+        self.files[name] = f"```\n{contents}\n```"
 
     def write(self, line: LogLine) -> None:
         if not is_master():
@@ -210,14 +195,15 @@ class TensorboardLogger(LoggerImpl):
                     walltime=walltime,
                 )
 
-        if self.config is not None:
-            writer.add_text("config", f"```\n{OmegaConf.to_yaml(self.config)}\n```")
-            self.config = None
+        for namespace, videos in line.videos.items():
+            for video_key, video_value in videos.items():
+                writer.add_video(
+                    f"{namespace}/{video_key}",
+                    video_value.frames,
+                    fps=video_value.fps,
+                    global_step=line.state.num_steps,
+                )
 
-        if self.git_state is not None:
-            writer.add_text("git", self.git_state)
-            self.git_state = None
-
-        if self.training_code is not None:
-            writer.add_text("code", self.training_code)
-            self.training_code = None
+        for name, contents in self.files.items():
+            writer.add_text(name, contents)
+        self.files.clear()

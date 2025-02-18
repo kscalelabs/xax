@@ -66,9 +66,6 @@ Config = TypeVar("Config", bound=DataloadersConfig)
 
 class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], ABC):
     def __init__(self, config: Config) -> None:
-        if is_missing(config, "batch_size"):
-            config.batch_size = self.get_batch_size()
-
         super().__init__(config)
 
     def get_batch_size(self) -> int:
@@ -76,6 +73,12 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             "When `batch_size` is not specified in your training config, you should override the `get_batch_size` "
             "method to return the desired training batch size."
         )
+
+    @property
+    def batch_size(self) -> int:
+        if is_missing(self.config, "batch_size"):
+            self.config.batch_size = self.get_batch_size()
+        return self.config.batch_size
 
     def dataloader_config(self, phase: Phase) -> DataloaderConfig:
         match phase:

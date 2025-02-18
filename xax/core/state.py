@@ -4,7 +4,6 @@ import time
 from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast, get_args
 
-import jax
 from omegaconf import MISSING
 
 from xax.core.conf import field
@@ -28,7 +27,6 @@ class StateDict(TypedDict, total=False):
     raw_phase: NotRequired[str]
 
 
-@jax.tree_util.register_dataclass
 @dataclass
 class State:
     num_steps: int = field(MISSING, help="Number of steps so far")
@@ -42,6 +40,10 @@ class State:
     @property
     def phase(self) -> Phase:
         return cast_phase(self.raw_phase)
+
+    @phase.setter
+    def phase(self, phase: Phase) -> None:
+        self.raw_phase = phase
 
     @classmethod
     def init_state(cls) -> "State":

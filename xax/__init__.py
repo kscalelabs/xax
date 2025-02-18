@@ -104,6 +104,9 @@ __all__ += [
     "Batch",
     "CollateMode",
     "EmbeddingKind",
+    "LOG_ERROR_SUMMARY",
+    "LOG_PING",
+    "LOG_STATUS",
     "Output",
     "Phase",
     "RawConfigType",
@@ -211,6 +214,9 @@ NAME_MAP.update(
         "Batch": "task.mixins.train",
         "CollateMode": "utils.data.collate",
         "EmbeddingKind": "nn.embeddings",
+        "LOG_ERROR_SUMMARY": "utils.logging",
+        "LOG_PING": "utils.logging",
+        "LOG_STATUS": "utils.logging",
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
@@ -293,7 +299,13 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.logging import ColoredFormatter, configure_logging
+    from xax.utils.logging import (
+        LOG_ERROR_SUMMARY,
+        LOG_PING,
+        LOG_STATUS,
+        ColoredFormatter,
+        configure_logging,
+    )
     from xax.utils.numpy import one_hot, partial_flatten, worker_chunk
     from xax.utils.text import (
         TextBlock,

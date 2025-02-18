@@ -63,7 +63,7 @@ def is_missing(cfg: Any, key: str) -> bool:  # noqa: ANN401
 @dataclass(kw_only=True)
 class Logging:
     hide_third_party_logs: bool = field(True, help="If set, hide third-party logs")
-    log_level: str = field("INFO", help="The logging level to use")
+    log_level: str = field(II("oc.env:XAX_LOG_LEVEL,INFO"), help="The logging level to use")
 
 
 @dataclass(kw_only=True)

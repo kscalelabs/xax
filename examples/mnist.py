@@ -25,30 +25,39 @@ def cross_entropy(y: Array, pred_y: Array) -> Array:
 class Config(xax.Config):
     batch_size: int = xax.field(128, help="The size of a minibatch")
     learning_rate: float = xax.field(1e-3, help="The learning rate")
+    hidden_dim: int = xax.field(512, help="Hidden layer dimension")
+    num_hidden_layers: int = xax.field(2, help="Number of hidden layers")
 
 
 class Model(eqx.Module):
+    config: Config
     layers: list
 
-    def __init__(self, rng_key: PRNGKeyArray) -> None:
+    def __init__(self, config: Config, *, key: PRNGKeyArray) -> None:
         super().__init__()
 
-        # Split the PRNG key into four keys for the four layers.
-        key1, key2, key3, key4 = jax.random.split(rng_key, 4)
+        self.config = config
 
-        self.layers = [
-            eqx.nn.Linear(28 * 28, 512, key=key1),
-            jax.nn.relu,
-            eqx.nn.Linear(512, 512, key=key2),
-            jax.nn.relu,
-            eqx.nn.Linear(512, 64, key=key3),
-            jax.nn.relu,
-            eqx.nn.Linear(64, 10, key=key4),
-            jax.nn.log_softmax,
-        ]
+        # Input and output dimensions
+        input_dim = 28 * 28
+        output_dim = 10
+
+        # Split the PRNG key for all layers
+        keys = jax.random.split(key, self.config.num_hidden_layers + 1)
+
+        # Build layers list
+        self.layers = []
+        current_dim = input_dim
+
+        # Add hidden layers
+        for i in range(self.config.num_hidden_layers):
+            self.layers.extend([eqx.nn.Linear(current_dim, self.config.hidden_dim, key=keys[i]), jax.nn.relu])
+            current_dim = self.config.hidden_dim
+
+        # Add output layer
+        self.layers.extend([eqx.nn.Linear(current_dim, output_dim, key=keys[-1]), jax.nn.log_softmax])
 
     def __call__(self, x: Array) -> Array:
-        # x = x[None]  # Add channel dimension.
         x = x.reshape(28 * 28)
         for layer in self.layers:
             x = layer(x)
@@ -57,7 +66,7 @@ class Model(eqx.Module):
 
 class MnistClassification(xax.Task[Config]):
     def get_model(self, key: PRNGKeyArray) -> Model:
-        return Model(key)
+        return Model(self.config, key=key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)

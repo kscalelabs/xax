@@ -6,6 +6,7 @@ jaxtyping
 equinox
 optax
 dpshdl
+chex
 
 # Data processing and serialization
 cloudpickle
