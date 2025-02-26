@@ -88,7 +88,7 @@ class ArtifactsMixin(BaseTask[Config]):
             return any(exp_dir.glob(".lock_*"))
 
         run_id = 0
-        while (exp_dir := get_exp_dir(run_id)).is_dir() and has_lock_file(exp_dir):
+        while (exp_dir := get_exp_dir(run_id)).is_dir() or has_lock_file(exp_dir):
             run_id += 1
         exp_dir.mkdir(exist_ok=True, parents=True)
         self._exp_dir = exp_dir.expanduser().resolve()
