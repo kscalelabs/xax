@@ -11,9 +11,6 @@ with open("README.md", "r", encoding="utf-8") as f:
 with open("xax/requirements.txt", "r", encoding="utf-8") as f:
     requirements: list[str] = f.read().splitlines()
 
-with open("xax/requirements-rl.txt", "r", encoding="utf-8") as f:
-    requirements_rl: list[str] = f.read().splitlines()
-
 with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
@@ -35,7 +32,6 @@ setup(
     install_requires=requirements,
     tests_require=requirements_dev,
     extras_require={
-        "rl": requirements_rl,
         "dev": requirements_dev,
     },
     package_data={

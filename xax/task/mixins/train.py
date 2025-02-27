@@ -236,19 +236,18 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_step(self, model: PyTree, batch: Batch, output: Output, loss: Array, state: State) -> None:
-        phase = state.phase
-
-        self.logger.log_scalar("loss", loss, namespace="loss")
-
-        # Log the state timers.
-        timer = self.state_timers[phase]
+    def log_state_timers(self, state: State) -> None:
+        timer = self.state_timers[state.phase]
         timer.step(state)
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
                 self.logger.log_scalar(k, v, namespace=ns)
 
-        self.write_logs(state)
+    def log_step(self, model: PyTree, batch: Batch, output: Output, loss: Array, state: State) -> None:
+        phase = state.phase
+
+        self.logger.log_scalar("loss", loss, namespace="loss")
+        self.log_state_timers(state)
 
         # Delegate to the appropriate logging function based on the phase.
         match phase:
@@ -258,6 +257,8 @@ class TrainMixin(
                 self.log_valid_step(model, batch, output, state)
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
+
+        self.write_logs(state)
 
     @abstractmethod
     def get_model(self, key: PRNGKeyArray) -> PyTree:
@@ -395,7 +396,11 @@ class TrainMixin(
         # logger.info("Estimated finish time: %s", termination_time)
         jax.debug.print("Estimated finish time: {}", termination_time)
 
-    @eqx.filter_jit
+    def get_remaining_percent(self, state: State) -> float | None:
+        if self.config.max_steps is None:
+            return None
+        return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
+
     def is_training_over(self, state: State) -> bool:
         if self._training_over_flag:
             return True
@@ -416,17 +421,12 @@ class TrainMixin(
             case _:
                 raise ValueError(f"Invalid step kind {self._step_kind}")
 
-    def get_remaining_percent(self, state: State) -> float | None:
-        if self.config.max_steps is None:
-            return None
-        return (self.config.max_steps - self.get_step(state)) / self.config.max_steps
-
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
-        self.logger.log_git_state(get_git_state(self))
-        self.logger.log_training_code(get_training_code(self))
-        self.logger.log_config(cast(DictConfig, self.config))
+        self.logger.log_file("git_state.txt", get_git_state(self))
+        self.logger.log_file("training_code.txt", get_training_code(self))
+        self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
 
     @eqx.filter_jit
     def train_step(
@@ -457,24 +457,35 @@ class TrainMixin(
             if self.valid_step_timer.is_valid_step(state):
                 valid_batch = next(valid_pf)
                 model, loss, output = self.val_step(model, valid_batch)
-                self.log_step(model, valid_batch, output, loss, state)
-                state.num_valid_samples += 1
+
+                # Perform logging.
+                with self.step_context("write_logs"):
+                    state.phase = "valid"
+                    self.log_step(model, valid_batch, output, loss, state)
+                    state.num_valid_samples += 1
 
             with self.step_context("on_step_start"):
                 state = self.on_step_start(state)
 
-            train_batch = next(train_pf)
-            model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
-            self.log_step(model, train_batch, output, loss, state)
+            with self.step_context("update_state"):
+                train_batch = next(train_pf)
+                model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
 
-            state.num_steps += 1
-            state.num_samples += self.get_size_of_batch(train_batch) or 0
+            # Perform logging.
+            with self.step_context("write_logs"):
+                state.phase = "train"
+                self.log_step(model, train_batch, output, loss, state)
+                state.num_steps += 1
+                state.num_samples += self.get_size_of_batch(train_batch) or 0
 
             with self.step_context("on_step_end"):
                 state = self.on_step_end(state)
 
             if self.should_checkpoint(state):
                 self.save_checkpoint(model, optimizer, opt_state, state)
+
+        # After finishing training, save the final checkpoint.
+        self.save_checkpoint(model, optimizer, opt_state, state)
 
     @contextlib.contextmanager
     def get_train_iterator(self) -> Generator[Iterator[Batch], None, None]:
@@ -525,6 +536,9 @@ class TrainMixin(
             logger.info("Closing valid prefetcher")
 
     def run(self) -> None:
+        self.run_training()
+
+    def run_training(self) -> None:
         """Runs the training loop.
 
         Args:

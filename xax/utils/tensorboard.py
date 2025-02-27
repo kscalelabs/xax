@@ -2,10 +2,14 @@
 
 import functools
 import io
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Literal, TypedDict
 
+import numpy as np
+import PIL.Image
 from PIL.Image import Image as PILImage
 from tensorboard.compat.proto.config_pb2 import RunMetadata
 from tensorboard.compat.proto.event_pb2 import Event, TaggedRunMetadata
@@ -178,6 +182,50 @@ class TensorboardWriter:
                             width=value.width,
                             colorspace=3,  # RGB
                             encoded_image_string=image_string,
+                        ),
+                    ),
+                ],
+            ),
+            global_step=global_step,
+            walltime=walltime,
+        )
+
+    def add_video(
+        self,
+        tag: str,
+        value: np.ndarray,
+        global_step: int | None = None,
+        walltime: float | None = None,
+        fps: int = 30,
+    ) -> None:
+        assert value.ndim == 4, "Video must be 4D array (T, H, W, C)"
+        images = [PIL.Image.fromarray(frame) for frame in value]
+
+        # Create temporary file for GIF
+        temp_file = tempfile.NamedTemporaryFile(suffix=".gif", delete=False)
+        try:
+            images[0].save(temp_file.name, save_all=True, append_images=images[1:], duration=int(1000 / fps), loop=0)
+            with open(temp_file.name, "rb") as f:
+                video_string = f.read()
+
+        finally:
+            # Clean up temporary file
+            try:
+                os.remove(temp_file.name)
+            except OSError:
+                pass
+
+        # Add to summary
+        self.pb_writer.add_summary(
+            Summary(
+                value=[
+                    Summary.Value(
+                        tag=tag,
+                        image=Summary.Image(
+                            height=value.shape[1],
+                            width=value.shape[2],
+                            colorspace=value.shape[3],
+                            encoded_image_string=video_string,
                         ),
                     ),
                 ],

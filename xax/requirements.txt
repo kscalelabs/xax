@@ -6,6 +6,8 @@ jaxtyping
 equinox
 optax
 dpshdl
+chex
+importlib-resources
 
 # Data processing and serialization
 cloudpickle
