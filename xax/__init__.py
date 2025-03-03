@@ -11,7 +11,7 @@ This file can be maintained by running the update script:
     python -m scripts.update_api --inplace
 """
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 # This list shouldn't be modified by hand; instead, run the update script.
 __all__ = [
