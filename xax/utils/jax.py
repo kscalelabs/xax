@@ -43,8 +43,8 @@ def get_hash(obj: object) -> int:
 
 
 def jit(
-    in_shardings: Any = sharding_impls.UNSPECIFIED,
-    out_shardings: Any = sharding_impls.UNSPECIFIED,
+    in_shardings: Any = sharding_impls.UNSPECIFIED,  # noqa: ANN401
+    out_shardings: Any = sharding_impls.UNSPECIFIED,  # noqa: ANN401
     static_argnums: int | Sequence[int] | None = None,
     static_argnames: str | Iterable[str] | None = None,
     donate_argnums: int | Sequence[int] | None = None,
@@ -53,7 +53,7 @@ def jit(
     device: xc.Device | None = None,
     backend: str | None = None,
     inline: bool = False,
-    abstracted_axes: Any | None = None,
+    abstracted_axes: Any | None = None,  # noqa: ANN401
     compiler_options: dict[str, Any] | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Wrapper function that provides utility improvements over Jax's JIT.
