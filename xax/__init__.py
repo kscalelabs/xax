@@ -84,6 +84,12 @@ __all__ = [
     "one_hot",
     "partial_flatten",
     "worker_chunk",
+    "profile",
+    "compute_nan_ratio",
+    "flatten_array",
+    "flatten_pytree",
+    "slice_array",
+    "slice_pytree",
     "TextBlock",
     "camelcase_to_snakecase",
     "colored",
@@ -193,6 +199,12 @@ NAME_MAP: dict[str, str] = {
     "one_hot": "utils.numpy",
     "partial_flatten": "utils.numpy",
     "worker_chunk": "utils.numpy",
+    "profile": "utils.profile",
+    "compute_nan_ratio": "utils.pytree",
+    "flatten_array": "utils.pytree",
+    "flatten_pytree": "utils.pytree",
+    "slice_array": "utils.pytree",
+    "slice_pytree": "utils.pytree",
     "TextBlock": "utils.text",
     "camelcase_to_snakecase": "utils.text",
     "colored": "utils.text",
@@ -310,6 +322,14 @@ if IMPORT_ALL or TYPE_CHECKING:
         configure_logging,
     )
     from xax.utils.numpy import one_hot, partial_flatten, worker_chunk
+    from xax.utils.profile import profile
+    from xax.utils.pytree import (
+        compute_nan_ratio,
+        flatten_array,
+        flatten_pytree,
+        slice_array,
+        slice_pytree,
+    )
     from xax.utils.text import (
         TextBlock,
         camelcase_to_snakecase,
