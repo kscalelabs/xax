@@ -34,6 +34,8 @@ __all__ = [
     "get_positional_embeddings",
     "get_rotary_embeddings",
     "rotary_embeddings",
+    "euler_to_quat",
+    "quat_to_euler",
     "is_master",
     "BaseLauncher",
     "CliLauncher",
@@ -78,9 +80,7 @@ __all__ = [
     "save_config",
     "stage_environment",
     "to_markdown_table",
-    "euler_to_quat",
     "jit",
-    "quat_to_euler",
     "ColoredFormatter",
     "configure_logging",
     "one_hot",
@@ -151,6 +151,8 @@ NAME_MAP: dict[str, str] = {
     "get_positional_embeddings": "nn.embeddings",
     "get_rotary_embeddings": "nn.embeddings",
     "rotary_embeddings": "nn.embeddings",
+    "euler_to_quat": "nn.geom",
+    "quat_to_euler": "nn.geom",
     "is_master": "nn.parallel",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
@@ -195,9 +197,7 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
-    "euler_to_quat": "utils.jax",
     "jit": "utils.jax",
-    "quat_to_euler": "utils.jax",
     "ColoredFormatter": "utils.logging",
     "configure_logging": "utils.logging",
     "one_hot": "utils.numpy",
@@ -275,6 +275,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_rotary_embeddings,
         rotary_embeddings,
     )
+    from xax.nn.geom import euler_to_quat, quat_to_euler
     from xax.nn.parallel import is_master
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
@@ -317,7 +318,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.jax import euler_to_quat, jit, quat_to_euler
+    from xax.utils.jax import jit
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,
         LOG_PING,
