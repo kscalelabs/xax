@@ -6,19 +6,19 @@ from jax import numpy as jnp
 import xax
 
 
-def test_quat_to_euler():
+def test_quat_to_euler() -> None:
     quat = jnp.array([1, 0, 0, 0])
     euler = xax.quat_to_euler(quat)
     assert jnp.allclose(euler, jnp.array([0, 0, 0]))
 
 
-def test_euler_to_quat():
+def test_euler_to_quat() -> None:
     euler = jnp.array([0, 0, 0])
     quat = xax.euler_to_quat(euler)
     assert jnp.allclose(quat, jnp.array([1, 0, 0, 0]))
 
 
-def test_rotation_equivalence():
+def test_rotation_equivalence() -> None:
     rng = jax.random.PRNGKey(0)
     euler = jax.random.uniform(rng, (10, 3), minval=-jnp.pi, maxval=jnp.pi)
     quat = xax.euler_to_quat(euler)
