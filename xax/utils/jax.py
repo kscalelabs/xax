@@ -174,3 +174,38 @@ def quat_to_euler(quat_4: jax.Array, eps: float = 1e-6) -> jax.Array:
     yaw = jnp.arctan2(siny_cosp, cosy_cosp)
 
     return jnp.stack([roll, pitch, yaw], axis=-1)
+
+
+def euler_to_quat(euler_3: jax.Array) -> jax.Array:
+    """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
+
+    Args:
+        euler_3: The roll, pitch, yaw angles, shape (*, 3).
+
+    Returns:
+        The quaternion with shape (*, 4).
+    """
+    # Extract roll, pitch, yaw from input
+    roll, pitch, yaw = jnp.split(euler_3, 3, axis=-1)
+
+    # Calculate trigonometric functions for each angle
+    cr = jnp.cos(roll * 0.5)
+    sr = jnp.sin(roll * 0.5)
+    cp = jnp.cos(pitch * 0.5)
+    sp = jnp.sin(pitch * 0.5)
+    cy = jnp.cos(yaw * 0.5)
+    sy = jnp.sin(yaw * 0.5)
+
+    # Calculate quaternion components using the conversion formula
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+
+    # Combine into quaternion [w, x, y, z]
+    quat = jnp.concatenate([w, x, y, z], axis=-1)
+
+    # Normalize the quaternion
+    quat = quat / jnp.linalg.norm(quat, axis=-1, keepdims=True)
+
+    return quat
