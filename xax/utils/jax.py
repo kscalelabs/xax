@@ -138,3 +138,39 @@ def jit(
         return wrapped
 
     return decorator
+
+
+def quat_to_euler(quat_4: jax.Array, eps: float = 1e-6) -> jax.Array:
+    """Normalizes and converts a quaternion (w, x, y, z) to roll, pitch, yaw.
+
+    Args:
+        quat_4: The quaternion to convert, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
+
+    Returns:
+        The roll, pitch, yaw angles with shape (*, 3).
+    """
+    quat_4 = quat_4 / (jnp.linalg.norm(quat_4) + eps)
+    w, x, y, z = jnp.split(quat_4, 4, axis=-1)
+
+    # Roll (x-axis rotation)
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = jnp.arctan2(sinr_cosp, cosr_cosp)
+
+    # Pitch (y-axis rotation)
+    sinp = 2.0 * (w * y - z * x)
+
+    # Handle edge cases where |sinp| >= 1
+    pitch = jnp.where(
+        jnp.abs(sinp) >= 1.0,
+        jnp.sign(sinp) * jnp.pi / 2.0,  # Use 90 degrees if out of range
+        jnp.arcsin(sinp),
+    )
+
+    # Yaw (z-axis rotation)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = jnp.arctan2(siny_cosp, cosy_cosp)
+
+    return jnp.stack([roll, pitch, yaw], axis=-1)
