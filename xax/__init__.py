@@ -78,6 +78,7 @@ __all__ = [
     "save_config",
     "stage_environment",
     "to_markdown_table",
+    "euler_to_quat",
     "jit",
     "quat_to_euler",
     "ColoredFormatter",
@@ -194,6 +195,7 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
+    "euler_to_quat": "utils.jax",
     "jit": "utils.jax",
     "quat_to_euler": "utils.jax",
     "ColoredFormatter": "utils.logging",
@@ -315,7 +317,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.jax import jit, quat_to_euler
+    from xax.utils.jax import euler_to_quat, jit, quat_to_euler
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,
         LOG_PING,
