@@ -37,6 +37,8 @@ __all__ = [
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
+    "cast_norm_type",
+    "get_norm",
     "is_master",
     "BaseLauncher",
     "CliLauncher",
@@ -118,6 +120,7 @@ __all__ += [
     "LOG_ERROR_SUMMARY",
     "LOG_PING",
     "LOG_STATUS",
+    "NormType",
     "Output",
     "Phase",
     "RawConfigType",
@@ -156,6 +159,8 @@ NAME_MAP: dict[str, str] = {
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
+    "cast_norm_type": "nn.norm",
+    "get_norm": "nn.norm",
     "is_master": "nn.parallel",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
@@ -239,6 +244,7 @@ NAME_MAP.update(
         "LOG_ERROR_SUMMARY": "utils.logging",
         "LOG_PING": "utils.logging",
         "LOG_STATUS": "utils.logging",
+        "NormType": "nn.norm",
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
@@ -284,7 +290,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
     )
-    from xax.nn.norm import cast_norm_type, get_norm
+    from xax.nn.norm import NormType, cast_norm_type, get_norm
     from xax.nn.parallel import is_master
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
