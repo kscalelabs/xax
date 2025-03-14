@@ -35,6 +35,7 @@ __all__ = [
     "get_rotary_embeddings",
     "rotary_embeddings",
     "euler_to_quat",
+    "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
     "is_master",
     "BaseLauncher",
@@ -152,6 +153,7 @@ NAME_MAP: dict[str, str] = {
     "get_rotary_embeddings": "nn.embeddings",
     "rotary_embeddings": "nn.embeddings",
     "euler_to_quat": "nn.geom",
+    "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
     "is_master": "nn.parallel",
     "BaseLauncher": "task.launchers.base",
@@ -275,7 +277,11 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_rotary_embeddings,
         rotary_embeddings,
     )
-    from xax.nn.geom import euler_to_quat, quat_to_euler
+    from xax.nn.geom import (
+        euler_to_quat,
+        get_projected_gravity_vector_from_quat,
+        quat_to_euler,
+    )
     from xax.nn.parallel import is_master
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
