@@ -39,6 +39,7 @@ class ActionDistribution(ABC):
     @abstractmethod
     def entropy(self, parameters: Array, rng: Array) -> Array:
         """Return the entropy of the given distribution.
+
         Note that we pass in rng because some distributions may require
         sampling to compute the entropy.
         """
@@ -52,7 +53,7 @@ class GaussianDistribution(ActionDistribution):
     def get_mean_std(self, parameters: Array) -> tuple[Array, Array]:
         """Split the parameters into the mean and standard deviation.
 
-        Following Brax's method of using softplus to ensure positive std.
+        Applies softplus to ensure positive std.
 
         Args:
             parameters: The parameters of the distribution, shape (*, 2 * action_dim).
@@ -122,7 +123,7 @@ class GaussianDistribution(ActionDistribution):
         return jnp.sum(log_probs, axis=-1)
 
     def entropy(self, parameters: Array, rng: Array) -> Array:
-        """Return the entropy of the normal distribution
+        """Return the entropy of the normal distribution.
 
         Args:
             parameters: The parameters of the distribution, shape (*, 2 * action_dim).
@@ -147,7 +148,8 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         Args:
             actions: The actions to compute the log determinant of the
-                Jacobian of the tanh transform, shape (*, action_dim).
+                Jacobian of the tanh transform, shape (*, action_dim). Should be
+                pre-tanh actions when used for change of variables.
 
         Returns:
             The log determinant of the jacobian of the tanh transform, shape (*).
@@ -199,15 +201,13 @@ class TanhGaussianDistribution(GaussianDistribution):
         Returns:
             The log probability of the actions, shape (*).
         """
-
         mean, std = self.get_mean_std(parameters)
 
         # Compute the pre-tanh values from the actions (with clipping for stability)
         pre_tanh = jnp.arctanh(jnp.clip(actions, -1 + eps, 1 - eps))
 
-        # Compute the base log probability from the Gaussian density
-        base_log_prob = -0.5 * jnp.square((pre_tanh - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
-        base_log_prob = jnp.sum(base_log_prob, axis=-1)
+        # Compute the base log probability from the Gaussian density (pre-tanh)
+        base_log_prob = super().log_prob(parameters, pre_tanh)
 
         # Compute the log-determinant of the Jacobian for the tanh transformation
         jacobian_correction = jnp.sum(jnp.log(1 - jnp.square(actions) + eps), axis=-1)
@@ -218,6 +218,10 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         Approximates entropy using sampling since there is no closed-form solution.
 
+        The entropy of the transformed distribution is given by:
+            H(Y) = H(X) + E[log|d tanh(x)/dx|],
+        where H(X) is the Gaussian entropy and the Jacobian term is computed from the pre-tanh sample.
+
         Args:
             parameters: The parameters of the distribution, shape (*, 2 * action_dim).
             rng: A random number generator.
@@ -225,15 +229,18 @@ class TanhGaussianDistribution(GaussianDistribution):
         Returns:
             The entropy of the distribution, shape (*).
         """
-        _, std = self.get_mean_std(parameters)
-        normal_entropies = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
-        # getting log det jac of tanh transformed sample...
-        normal_sample = super().sample(parameters, rng)
-        log_det_jacobian = self._log_det_jacobian(normal_sample)
+        # base gaussian entropy, already summed over action dim
+        normal_entropy = super().entropy(parameters, rng)
 
-        # since we're in log space, can subtract the log det jacobian
-        entropies = normal_entropies - log_det_jacobian
-        return jnp.sum(entropies, axis=-1)
+        # get pre-tanh sample
+        normal_sample = super().sample(parameters, rng)
+
+        # compute log det of the jacobian of tanh transformation...
+        # also summed over action dim
+        log_det_jacobian = jnp.sum(self._log_det_jacobian(normal_sample), axis=-1)
+
+        entropy = normal_entropy + log_det_jacobian
+        return entropy
 
 
 @attrs.define(kw_only=True, frozen=True)
