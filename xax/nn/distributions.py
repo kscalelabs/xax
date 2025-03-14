@@ -70,6 +70,7 @@ class GaussianDistribution(ActionDistribution):
             )
 
         mean, std = jnp.split(parameters, 2, axis=-1)
+        std = jax.nn.softplus(std)
         return mean, std
 
     @property
@@ -210,6 +211,7 @@ class TanhGaussianDistribution(GaussianDistribution):
         base_log_prob = super().log_prob(parameters, pre_tanh)
 
         # Compute the log-determinant of the Jacobian for the tanh transformation
+        # uses post-tanh actions (y vs x)
         jacobian_correction = jnp.sum(jnp.log(1 - jnp.square(actions) + eps), axis=-1)
         return base_log_prob - jacobian_correction
 
