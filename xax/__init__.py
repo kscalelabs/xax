@@ -284,6 +284,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
     )
+    from xax.nn.norm import cast_norm_type, get_norm
     from xax.nn.parallel import is_master
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
