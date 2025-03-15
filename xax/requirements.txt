@@ -1,6 +1,7 @@
 # requirements.txt
 
 # Core ML/JAX dependencies
+attrs
 jax
 jaxtyping
 equinox
