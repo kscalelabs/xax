@@ -53,8 +53,6 @@ class GaussianDistribution(ActionDistribution):
     def get_mean_std(self, parameters: Array) -> tuple[Array, Array]:
         """Split the parameters into the mean and standard deviation.
 
-        Applies softplus to ensure positive std.
-
         Args:
             parameters: The parameters of the distribution, shape (*, 2 * action_dim).
 
@@ -70,7 +68,6 @@ class GaussianDistribution(ActionDistribution):
             )
 
         mean, std = jnp.split(parameters, 2, axis=-1)
-        std = jax.nn.softplus(std)
         return mean, std
 
     @property
@@ -139,7 +136,7 @@ class GaussianDistribution(ActionDistribution):
         """
         _, std = self.get_mean_std(parameters)
         entropies = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
-        
+
         if entropies.shape[-1] != self.action_dim:
             raise ValueError(
                 f"Expected entropies with last dimension {self.action_dim}, but got {entropies.shape[-1]}."

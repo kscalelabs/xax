@@ -38,13 +38,9 @@ def test_gaussian_log_prob_values(mean: jnp.ndarray, std: jnp.ndarray, actions: 
     """Test that Gaussian log_prob returns the expected value for various means and stds."""
     parameters = construct_params(mean, std)
     distribution = GaussianDistribution(action_dim=mean.shape[0])
-    # Use softplus on the raw std values
-    transformed_std = jax.nn.softplus(std)
-    expected = (
-        -0.5 * jnp.square((actions - mean) / transformed_std) - jnp.log(transformed_std) - 0.5 * jnp.log(2 * jnp.pi)
-    )
-    expected_log_prob = jnp.sum(expected)
-    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
+    expected = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
+    expected_log_prob = expected
+    computed_log_prob = distribution.log_prob(parameters, actions)
     assert jnp.allclose(computed_log_prob, expected_log_prob, atol=EPSILON)
 
 
@@ -98,11 +94,9 @@ def test_gaussian_entropy(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that Gaussian entropy returns the expected value for various parameters."""
     parameters = construct_params(mean, std)
     distribution = GaussianDistribution(action_dim=mean.shape[0])
-    # Use softplus on the raw std values for the expected calculation.
-    transformed_std = jax.nn.softplus(std)
-    expected_entropy = jnp.sum(0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(transformed_std))
+    expected_entropy = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
     rng = jax.random.PRNGKey(123)
-    computed_entropy = jnp.sum(distribution.entropy(parameters, rng))
+    computed_entropy = distribution.entropy(parameters, rng)
     assert jnp.allclose(computed_entropy, expected_entropy, atol=EPSILON)
 
 
@@ -116,15 +110,22 @@ def test_gaussian_invalid_parameters() -> None:
 
 
 def test_gaussian_negative_std() -> None:
-    """Test that negative std values in GaussianDistribution are handled via softplus."""
+    """Test that negative std values in GaussianDistribution produce NaN values in computations."""
     distribution = GaussianDistribution(action_dim=2)
-    # Create parameters with negative std values.
-    parameters = construct_params(jnp.array([0.0, 0.0]), jnp.array([-1.0, -0.5]))
+    neg_std = jnp.array([-1.0, -0.5])
+    parameters = construct_params(jnp.array([0.0, 0.0]), neg_std)
     mean, std = distribution.get_mean_std(parameters)
-    expected_std = jax.nn.softplus(jnp.array([-1.0, -0.5]))
-    # Check that the mean is unchanged and std is transformed by softplus.
     assert jnp.allclose(mean, jnp.array([0.0, 0.0]), atol=EPSILON)
-    assert jnp.allclose(std, expected_std, atol=EPSILON)
+    assert jnp.allclose(std, neg_std, atol=EPSILON)
+
+    # Check that computations with negative std produce NaN values
+    actions = jnp.array([0.1, 0.2])
+    log_prob = distribution.log_prob(parameters, actions)
+    assert jnp.any(jnp.isnan(log_prob))
+
+    rng = jax.random.PRNGKey(42)
+    entropy = distribution.entropy(parameters, rng)
+    assert jnp.any(jnp.isnan(entropy))
 
 
 # -------------------------------
@@ -190,17 +191,12 @@ def test_tanh_gaussian_log_prob(mean: jnp.ndarray, std: jnp.ndarray, pre_tanh: j
     # Mimic the clipping performed in the implementation.
     clipped_actions = jnp.clip(actions, -1 + EPSILON, 1 - EPSILON)
     pre_tanh_computed = jnp.arctanh(clipped_actions)
-    # Use softplus on the raw std values.
-    transformed_std = jax.nn.softplus(std)
-    expected_base = (
-        -0.5 * jnp.square((pre_tanh_computed - mean) / transformed_std)
-        - jnp.log(transformed_std)
-        - 0.5 * jnp.log(2 * jnp.pi)
-    )
-    expected_base_log_prob = jnp.sum(expected_base)
-    jacobian_correction = jnp.sum(jnp.log(1 - jnp.square(actions) + EPSILON), axis=-1)
+    # No longer applying softplus to std
+    expected_base = -0.5 * jnp.square((pre_tanh_computed - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
+    expected_base_log_prob = expected_base
+    jacobian_correction = jnp.log(1 - jnp.square(actions) + EPSILON)
     expected_log_prob = expected_base_log_prob - jacobian_correction
-    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
+    computed_log_prob = distribution.log_prob(parameters, actions)
     assert jnp.allclose(computed_log_prob, expected_log_prob, atol=EPSILON)
 
 
@@ -232,17 +228,24 @@ def test_tanh_gaussian_entropy_manual(mean: jnp.ndarray, std: jnp.ndarray) -> No
 
 
 def test_tanh_gaussian_negative_std() -> None:
-    """Test that negative std values in TanhGaussianDistribution are handled via softplus."""
+    """Test that negative std values in TanhGaussianDistribution produce NaN values in computations."""
     distribution = TanhGaussianDistribution(action_dim=2)
-    parameters = construct_params(jnp.array([0.5, -0.5]), jnp.array([-1.0, -0.5]))
+    neg_std = jnp.array([-1.0, -0.5])
+    parameters = construct_params(jnp.array([0.5, -0.5]), neg_std)
     mean, std = distribution.get_mean_std(parameters)
-    expected_std = jax.nn.softplus(jnp.array([-1.0, -0.5]))
+
     assert jnp.allclose(mean, jnp.array([0.5, -0.5]), atol=EPSILON)
-    assert jnp.allclose(std, expected_std, atol=EPSILON)
-    # Also verify that log_prob produces a finite value.
+    assert jnp.allclose(std, neg_std, atol=EPSILON)
+
+    # Check that log_prob produces NaN values with negative std
     actions = jnp.tanh(jnp.array([0.1, -0.1]))
-    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
-    assert jnp.all(jnp.isfinite(computed_log_prob))
+    log_prob = distribution.log_prob(parameters, actions)
+    assert jnp.any(jnp.isnan(log_prob))
+
+    # Check that entropy produces NaN values with negative std
+    rng = jax.random.PRNGKey(42)
+    entropy = distribution.entropy(parameters, rng)
+    assert jnp.any(jnp.isnan(entropy))
 
 
 # -------------------------------
