@@ -117,11 +117,15 @@ class GaussianDistribution(ActionDistribution):
             actions: The actions to compute the log probability of, shape (*, action_dim).
 
         Returns:
-            The log probability of the actions, shape (*).
+            The log probability of the actions, shape (*, action_dim).
         """
         mean, std = self.get_mean_std(parameters)
         log_probs = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
-        return jnp.sum(log_probs, axis=-1)
+        if log_probs.shape != actions.shape:
+            raise ValueError(
+                f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}."
+            )
+        return log_probs
 
     def entropy(self, parameters: Array, rng: Array) -> Array:
         """Return the entropy of the normal distribution.
@@ -131,11 +135,16 @@ class GaussianDistribution(ActionDistribution):
             rng: A random number generator.
 
         Returns:
-            The entropy of the distribution, shape (*).
+            The entropy of the distribution, shape (*, action_dim).
         """
         _, std = self.get_mean_std(parameters)
         entropies = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
-        return jnp.sum(entropies, axis=-1)
+        
+        if entropies.shape[-1] != self.action_dim:
+            raise ValueError(
+                f"Expected entropies with last dimension {self.action_dim}, but got {entropies.shape[-1]}."
+            )
+        return entropies
 
 
 @attrs.define(kw_only=True, frozen=True)
@@ -200,7 +209,7 @@ class TanhGaussianDistribution(GaussianDistribution):
             eps: A small epsilon value to avoid division by zero.
 
         Returns:
-            The log probability of the actions, shape (*).
+            The log probability of the actions, shape (*, action_dim).
         """
         mean, std = self.get_mean_std(parameters)
 
@@ -212,8 +221,14 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         # Compute the log-determinant of the Jacobian for the tanh transformation
         # uses post-tanh actions (y vs x)
-        jacobian_correction = jnp.sum(jnp.log(1 - jnp.square(actions) + eps), axis=-1)
-        return base_log_prob - jacobian_correction
+        jacobian_correction = jnp.log(1 - jnp.square(actions) + eps)
+
+        log_probs = base_log_prob - jacobian_correction
+        if log_probs.shape != actions.shape:
+            raise ValueError(
+                f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}."
+            )
+        return log_probs
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
         """Return the entropy of the normal-tanh distribution.
@@ -229,20 +244,24 @@ class TanhGaussianDistribution(GaussianDistribution):
             rng: A random number generator.
 
         Returns:
-            The entropy of the distribution, shape (*).
+            The entropy of the distribution, shape (*, action_dim).
         """
-        # base gaussian entropy, already summed over action dim
+        # base gaussian entropy
         normal_entropy = super().entropy(parameters, rng)
 
         # get pre-tanh sample
         normal_sample = super().sample(parameters, rng)
 
         # compute log det of the jacobian of tanh transformation...
-        # also summed over action dim
-        log_det_jacobian = jnp.sum(self._log_det_jacobian(normal_sample), axis=-1)
+        log_det_jacobian = self._log_det_jacobian(normal_sample)
 
-        entropy = normal_entropy + log_det_jacobian
-        return entropy
+        entropies = normal_entropy + log_det_jacobian
+
+        if entropies.shape[-1] != self.action_dim:
+            raise ValueError(
+                f"Expected entropies with last dimension {self.action_dim}, but got {entropies.shape[-1]}."
+            )
+        return entropies
 
 
 @attrs.define(kw_only=True, frozen=True)
@@ -300,6 +319,10 @@ class CategoricalDistribution(ActionDistribution):
         flat_action_log_prob = flat_log_probs[jnp.arange(flat_log_probs.shape[0]), flat_actions]
         action_log_prob = flat_action_log_prob.reshape(batch_shape)
 
+        if action_log_prob.shape != batch_shape:
+            raise ValueError(
+                f"Expected action_log_prob with shape {batch_shape}, but got {action_log_prob.shape}."
+            )
         return action_log_prob
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
@@ -310,9 +333,14 @@ class CategoricalDistribution(ActionDistribution):
             rng: A random number generator.
 
         Returns:
-            The entropy of the distribution, shape (*).
+            The entropy of the distribution, shape (*, num_actions).
         """
         logits = parameters
         log_probs = jax.nn.log_softmax(logits, axis=-1)
-        entropies = -jnp.sum(log_probs * jnp.exp(log_probs), axis=-1)
+        entropies = -log_probs * jnp.exp(log_probs)
+
+        if entropies.shape != parameters.shape:
+            raise ValueError(
+                f"Expected entropies with shape {parameters.shape}, but got {entropies.shape}."
+            )
         return entropies

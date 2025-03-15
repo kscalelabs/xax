@@ -44,7 +44,7 @@ def test_gaussian_log_prob_values(mean: jnp.ndarray, std: jnp.ndarray, actions: 
         -0.5 * jnp.square((actions - mean) / transformed_std) - jnp.log(transformed_std) - 0.5 * jnp.log(2 * jnp.pi)
     )
     expected_log_prob = jnp.sum(expected)
-    computed_log_prob = distribution.log_prob(parameters, actions)
+    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
     assert jnp.allclose(computed_log_prob, expected_log_prob, atol=EPSILON)
 
 
@@ -102,7 +102,7 @@ def test_gaussian_entropy(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     transformed_std = jax.nn.softplus(std)
     expected_entropy = jnp.sum(0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(transformed_std))
     rng = jax.random.PRNGKey(123)
-    computed_entropy = distribution.entropy(parameters, rng)
+    computed_entropy = jnp.sum(distribution.entropy(parameters, rng))
     assert jnp.allclose(computed_entropy, expected_entropy, atol=EPSILON)
 
 
@@ -200,7 +200,7 @@ def test_tanh_gaussian_log_prob(mean: jnp.ndarray, std: jnp.ndarray, pre_tanh: j
     expected_base_log_prob = jnp.sum(expected_base)
     jacobian_correction = jnp.sum(jnp.log(1 - jnp.square(actions) + EPSILON), axis=-1)
     expected_log_prob = expected_base_log_prob - jacobian_correction
-    computed_log_prob = distribution.log_prob(parameters, actions)
+    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
     assert jnp.allclose(computed_log_prob, expected_log_prob, atol=EPSILON)
 
 
@@ -220,14 +220,14 @@ def test_tanh_gaussian_entropy_manual(mean: jnp.ndarray, std: jnp.ndarray) -> No
     # Use the underlying Gaussian for a baseline calculation.
     gaussian = GaussianDistribution(action_dim=mean.shape[0])
     rng = jax.random.PRNGKey(456)
-    base_entropy = gaussian.entropy(parameters, rng)
+    base_entropy = jnp.sum(gaussian.entropy(parameters, rng))
     pre_tanh_sample = gaussian.sample(parameters, rng)
     # Manually compute the Jacobian correction used in the tanh transformation:
     jacobian_correction = jnp.sum(
         2.0 * (jnp.log(2.0) - pre_tanh_sample - jax.nn.softplus(-2.0 * pre_tanh_sample)), axis=-1
     )
     expected_entropy = base_entropy + jacobian_correction
-    computed_entropy = distribution.entropy(parameters, rng)
+    computed_entropy = jnp.sum(distribution.entropy(parameters, rng))
     assert jnp.allclose(computed_entropy, expected_entropy, atol=EPSILON)
 
 
@@ -241,7 +241,7 @@ def test_tanh_gaussian_negative_std() -> None:
     assert jnp.allclose(std, expected_std, atol=EPSILON)
     # Also verify that log_prob produces a finite value.
     actions = jnp.tanh(jnp.array([0.1, -0.1]))
-    computed_log_prob = distribution.log_prob(parameters, actions)
+    computed_log_prob = jnp.sum(distribution.log_prob(parameters, actions))
     assert jnp.all(jnp.isfinite(computed_log_prob))
 
 
@@ -284,7 +284,7 @@ def test_categorical_log_prob(logits: jnp.ndarray, action_index: int) -> None:
     actions = jnp.array(action_index)
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     expected_log_prob = log_probs[action_index]
-    computed_log_prob = distribution.log_prob(logits, actions)
+    computed_log_prob = jnp.sum(distribution.log_prob(logits, actions))
     assert jnp.allclose(computed_log_prob, expected_log_prob, atol=EPSILON)
 
 
@@ -322,7 +322,7 @@ def test_categorical_entropy(logits: jnp.ndarray) -> None:
     """Test that Categorical entropy returns the expected value for various logits."""
     distribution = CategoricalDistribution(action_dim=logits.shape[0])
     rng = jax.random.PRNGKey(101112)
-    computed_entropy = distribution.entropy(logits, rng)
+    computed_entropy = jnp.sum(distribution.entropy(logits, rng))
     p = jax.nn.softmax(logits, axis=-1)
     log_p = jax.nn.log_softmax(logits, axis=-1)
     expected_entropy = -jnp.sum(p * log_p)
