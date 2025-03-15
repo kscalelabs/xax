@@ -1,10 +1,12 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
+from typing import Any
+
 import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
-from jaxtyping import PyTree
+from jaxtyping import PRNGKeyArray, PyTree
 
 
 def slice_array(x: Array, start: Array, slice_length: int) -> Array:
@@ -63,3 +65,19 @@ def compute_nan_ratio(pytree: PyTree) -> Array:
     overall_nan_ratio = jnp.array(total_nans / total_elements)
 
     return overall_nan_ratio
+
+
+def reshuffle_pytree(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArray) -> PyTree:
+    """Reshuffle a rollout array across arbitrary batch dimensions."""
+    rngs = jax.random.split(rng, len(batch_shape))
+    perms = [jax.random.choice(rng_i, jnp.arange(dim), (dim,)) for rng_i, dim in zip(rngs, batch_shape)]
+
+    # n-dimensional index grid from permutations
+    idx_grids = jnp.meshgrid(*perms, indexing="ij")
+
+    def permute_array(x: Any) -> Array:  # noqa: ANN401
+        if isinstance(x, Array):
+            return x[tuple(idx_grids)]
+        return x
+
+    return jax.tree_util.tree_map(permute_array, data)
