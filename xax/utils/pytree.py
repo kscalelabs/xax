@@ -47,10 +47,10 @@ def pytree_has_nans(pytree: PyTree) -> Array:
     return has_nans
 
 
-def update_pytree(cond: Array, original: PyTree, new: PyTree) -> PyTree:
+def update_pytree(cond: Array, new: PyTree, original: PyTree) -> PyTree:
     """Update a pytree based on a condition."""
     # Tricky, need use tree_map because where expects array leafs.
-    return jax.tree_util.tree_map(lambda x, y: jnp.where(cond, x, y), original, new)
+    return jax.tree_util.tree_map(lambda x, y: jnp.where(cond, x, y), new, original)
 
 
 def compute_nan_ratio(pytree: PyTree) -> Array:
