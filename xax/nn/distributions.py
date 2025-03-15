@@ -211,7 +211,6 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         log_probs = base_log_prob - jacobian_correction
 
-
         assert_shape(log_probs, actions.shape)
         return log_probs
 

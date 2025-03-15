@@ -311,3 +311,32 @@ def test_categorical_entropy(logits: jnp.ndarray) -> None:
     log_p = jax.nn.log_softmax(logits, axis=-1)
     expected_entropy = -jnp.sum(p * log_p)
     assert jnp.allclose(computed_entropy, expected_entropy, atol=EPSILON)
+
+
+def test_jittability() -> None:
+    """Test that the distributions are jittable."""
+    categorical = xax.CategoricalDistribution(action_dim=10)
+    gaussian = xax.GaussianDistribution(action_dim=10)
+    tanh_gaussian = xax.TanhGaussianDistribution(action_dim=10)
+
+    rng = jax.random.PRNGKey(101112)
+
+    # jit the entropy function
+    jax.jit(categorical.entropy)(jnp.zeros(10), rng)
+    jax.jit(gaussian.entropy)(jnp.zeros(20), rng)
+    jax.jit(tanh_gaussian.entropy)(jnp.zeros(20), rng)
+
+    jax.jit(categorical.log_prob)(jnp.zeros(10), 0)
+    jax.jit(gaussian.log_prob)(jnp.zeros(20), jnp.zeros(10))
+    jax.jit(tanh_gaussian.log_prob)(jnp.zeros(20), jnp.zeros(10))
+
+    jax.jit(categorical.sample)(jnp.zeros(10), rng)
+    jax.jit(gaussian.sample)(jnp.zeros(20), rng)
+    jax.jit(tanh_gaussian.sample)(jnp.zeros(20), rng)
+
+    jax.jit(categorical.mode)(jnp.zeros(10))
+    jax.jit(gaussian.mode)(jnp.zeros(20))
+    jax.jit(tanh_gaussian.mode)(jnp.zeros(20))
+
+    jax.jit(gaussian.get_mean_std)(jnp.zeros(20))
+    jax.jit(tanh_gaussian.get_mean_std)(jnp.zeros(20))
