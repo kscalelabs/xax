@@ -75,7 +75,7 @@ def reshuffle_pytree(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArr
     # n-dimensional index grid from permutations
     idx_grids = jnp.meshgrid(*perms, indexing="ij")
 
-    def permute_array(x: Any) -> Array:
+    def permute_array(x: Any) -> Array:  # noqa: ANN401
         if isinstance(x, Array):
             return x[tuple(idx_grids)]
         return x
