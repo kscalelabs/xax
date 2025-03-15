@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import attrs
 import jax
 import jax.numpy as jnp
+from chex import assert_shape
 from jaxtyping import Array, PRNGKeyArray
 
 
@@ -59,14 +60,7 @@ class GaussianDistribution(ActionDistribution):
         Returns:
             The mean and standard deviation, shape (*, action_dim).
         """
-        # Validate that parameters has the expected shape
-        if parameters.shape[-1] != 2 * self.action_dim:
-            raise ValueError(
-                f"Expected parameters with last dimension of size {2 * self.action_dim}, "
-                f"but got {parameters.shape[-1]}. Make sure the parameters match the "
-                f"distribution's num_params ({self.num_params})."
-            )
-
+        assert_shape(parameters, (..., 2 * self.action_dim))
         mean, std = jnp.split(parameters, 2, axis=-1)
         return mean, std
 
@@ -118,8 +112,7 @@ class GaussianDistribution(ActionDistribution):
         """
         mean, std = self.get_mean_std(parameters)
         log_probs = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
-        if log_probs.shape != actions.shape:
-            raise ValueError(f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}.")
+        assert_shape(log_probs, actions.shape)
         return log_probs
 
     def entropy(self, parameters: Array, rng: Array) -> Array:
@@ -136,10 +129,7 @@ class GaussianDistribution(ActionDistribution):
         log_normalization = 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
         entropies = 0.5 + log_normalization
 
-        if entropies.shape[-1] != self.action_dim:
-            raise ValueError(
-                f"Expected entropies with last dimension {self.action_dim}, but got {entropies.shape[-1]}."
-            )
+        assert_shape(entropies, (..., self.action_dim))
         return entropies
 
 
@@ -220,8 +210,9 @@ class TanhGaussianDistribution(GaussianDistribution):
         jacobian_correction = jnp.log(1 - jnp.square(actions) + eps)
 
         log_probs = base_log_prob - jacobian_correction
-        if log_probs.shape != actions.shape:
-            raise ValueError(f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}.")
+
+
+        assert_shape(log_probs, actions.shape)
         return log_probs
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
@@ -251,10 +242,7 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         entropies = normal_entropy + log_det_jacobian
 
-        if entropies.shape[-1] != self.action_dim:
-            raise ValueError(
-                f"Expected entropies with last dimension {self.action_dim}, but got {entropies.shape[-1]}."
-            )
+        assert_shape(entropies, (..., self.action_dim))
         return entropies
 
 
@@ -313,8 +301,7 @@ class CategoricalDistribution(ActionDistribution):
         flat_action_log_prob = flat_log_probs[jnp.arange(flat_log_probs.shape[0]), flat_actions]
         action_log_prob = flat_action_log_prob.reshape(batch_shape)
 
-        if action_log_prob.shape != batch_shape:
-            raise ValueError(f"Expected action_log_prob with shape {batch_shape}, but got {action_log_prob.shape}.")
+        assert_shape(action_log_prob, batch_shape)
         return action_log_prob
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
@@ -331,6 +318,5 @@ class CategoricalDistribution(ActionDistribution):
         log_probs = jax.nn.log_softmax(logits, axis=-1)
         entropies = -log_probs * jnp.exp(log_probs)
 
-        if entropies.shape != parameters.shape:
-            raise ValueError(f"Expected entropies with shape {parameters.shape}, but got {entropies.shape}.")
+        assert_shape(entropies, parameters.shape)
         return entropies

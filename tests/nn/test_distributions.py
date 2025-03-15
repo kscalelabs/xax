@@ -96,7 +96,7 @@ def test_gaussian_invalid_parameters() -> None:
     distribution = xax.GaussianDistribution(action_dim=3)
     # For action_dim=3, we expect parameters to have 6 elements.
     parameters = jnp.zeros(5)
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         distribution.get_mean_std(parameters)
 
 
