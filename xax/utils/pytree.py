@@ -38,6 +38,15 @@ def flatten_pytree(pytree: PyTree, flatten_size: int) -> PyTree:
     return jax.tree_util.tree_map(lambda x: flatten_array(x, flatten_size), pytree)
 
 
+def pytree_has_nans(pytree: PyTree) -> Array:
+    """Check if a pytree has any NaNs."""
+    has_nans = jax.tree_util.tree_reduce(
+        lambda a, b: jnp.logical_or(a, b),
+        jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree),
+    )
+    return has_nans
+
+
 def compute_nan_ratio(pytree: PyTree) -> Array:
     """Computes the ratio of NaNs vs non-NaNs in a given PyTree."""
     nan_counts = jax.tree_util.tree_map(lambda x: jnp.sum(jnp.isnan(x)), pytree)
