@@ -4,11 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xax.nn.distributions import (
-    CategoricalDistribution,
-    GaussianDistribution,
-    TanhGaussianDistribution,
-)
+import xax
 
 EPSILON = 1e-6
 
@@ -16,11 +12,6 @@ EPSILON = 1e-6
 # Helper function to construct parameter vector from mean and std.
 def construct_params(mean: jnp.ndarray, std: jnp.ndarray) -> jnp.ndarray:
     return jnp.concatenate([mean, std])
-
-
-# -------------------------------
-# GaussianDistribution Tests
-# -------------------------------
 
 
 @pytest.mark.parametrize(
@@ -37,7 +28,7 @@ def construct_params(mean: jnp.ndarray, std: jnp.ndarray) -> jnp.ndarray:
 def test_gaussian_log_prob_values(mean: jnp.ndarray, std: jnp.ndarray, actions: jnp.ndarray) -> None:
     """Test that Gaussian log_prob returns the expected value for various means and stds."""
     parameters = construct_params(mean, std)
-    distribution = GaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.GaussianDistribution(action_dim=mean.shape[0])
     expected = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
     expected_log_prob = expected
     computed_log_prob = distribution.log_prob(parameters, actions)
@@ -56,7 +47,7 @@ def test_gaussian_log_prob_values(mean: jnp.ndarray, std: jnp.ndarray, actions: 
 def test_gaussian_mode(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that Gaussian mode returns the mean for various parameter settings."""
     parameters = construct_params(mean, std)
-    distribution = GaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.GaussianDistribution(action_dim=mean.shape[0])
     computed_mode = distribution.mode(parameters)
     expected_mode = mean
     assert jnp.allclose(computed_mode, expected_mode, atol=EPSILON)
@@ -74,7 +65,7 @@ def test_gaussian_mode(mean: jnp.ndarray, std: jnp.ndarray) -> None:
 def test_gaussian_sample_shape(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that Gaussian sample returns the correct shape for different dimensions."""
     parameters = construct_params(mean, std)
-    distribution = GaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.GaussianDistribution(action_dim=mean.shape[0])
     rng = jax.random.PRNGKey(42)
     sample = distribution.sample(parameters, rng)
     assert sample.shape == mean.shape
@@ -93,7 +84,7 @@ def test_gaussian_sample_shape(mean: jnp.ndarray, std: jnp.ndarray) -> None:
 def test_gaussian_entropy(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that Gaussian entropy returns the expected value for various parameters."""
     parameters = construct_params(mean, std)
-    distribution = GaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.GaussianDistribution(action_dim=mean.shape[0])
     expected_entropy = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
     rng = jax.random.PRNGKey(123)
     computed_entropy = distribution.entropy(parameters, rng)
@@ -102,7 +93,7 @@ def test_gaussian_entropy(mean: jnp.ndarray, std: jnp.ndarray) -> None:
 
 def test_gaussian_invalid_parameters() -> None:
     """Test that an invalid parameters shape raises a ValueError."""
-    distribution = GaussianDistribution(action_dim=3)
+    distribution = xax.GaussianDistribution(action_dim=3)
     # For action_dim=3, we expect parameters to have 6 elements.
     parameters = jnp.zeros(5)
     with pytest.raises(ValueError):
@@ -111,7 +102,7 @@ def test_gaussian_invalid_parameters() -> None:
 
 def test_gaussian_negative_std() -> None:
     """Test that negative std values in GaussianDistribution produce NaN values in computations."""
-    distribution = GaussianDistribution(action_dim=2)
+    distribution = xax.GaussianDistribution(action_dim=2)
     neg_std = jnp.array([-1.0, -0.5])
     parameters = construct_params(jnp.array([0.0, 0.0]), neg_std)
     mean, std = distribution.get_mean_std(parameters)
@@ -128,11 +119,6 @@ def test_gaussian_negative_std() -> None:
     assert jnp.any(jnp.isnan(entropy))
 
 
-# -------------------------------
-# TanhGaussianDistribution Tests
-# -------------------------------
-
-
 @pytest.mark.parametrize(
     "mean, std",
     [
@@ -146,7 +132,7 @@ def test_gaussian_negative_std() -> None:
 def test_tanh_gaussian_mode(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that the mode of TanhGaussianDistribution is tanh(mean) for various parameters."""
     parameters = construct_params(mean, std)
-    distribution = TanhGaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.TanhGaussianDistribution(action_dim=mean.shape[0])
     computed_mode = distribution.mode(parameters)
     expected_mode = jnp.tanh(mean)
     assert jnp.allclose(computed_mode, expected_mode, atol=EPSILON)
@@ -164,7 +150,7 @@ def test_tanh_gaussian_mode(mean: jnp.ndarray, std: jnp.ndarray) -> None:
 def test_tanh_gaussian_sample_range(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that samples from TanhGaussianDistribution lie in (-1, 1) for various parameters."""
     parameters = construct_params(mean, std)
-    distribution = TanhGaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.TanhGaussianDistribution(action_dim=mean.shape[0])
     rng = jax.random.PRNGKey(0)
     samples = [distribution.sample(parameters, rng) for _ in range(100)]
     samples_array = jnp.array(samples)
@@ -186,7 +172,7 @@ def test_tanh_gaussian_sample_range(mean: jnp.ndarray, std: jnp.ndarray) -> None
 def test_tanh_gaussian_log_prob(mean: jnp.ndarray, std: jnp.ndarray, pre_tanh: jnp.ndarray) -> None:
     """Test that TanhGaussian log_prob returns the expected value for various parameters."""
     parameters = construct_params(mean, std)
-    distribution = TanhGaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.TanhGaussianDistribution(action_dim=mean.shape[0])
     actions = jnp.tanh(pre_tanh)
     # Mimic the clipping performed in the implementation.
     clipped_actions = jnp.clip(actions, -1 + EPSILON, 1 - EPSILON)
@@ -212,9 +198,9 @@ def test_tanh_gaussian_log_prob(mean: jnp.ndarray, std: jnp.ndarray, pre_tanh: j
 def test_tanh_gaussian_entropy_manual(mean: jnp.ndarray, std: jnp.ndarray) -> None:
     """Test that TanhGaussianDistribution entropy matches a manual calculation for various parameters."""
     parameters = construct_params(mean, std)
-    distribution = TanhGaussianDistribution(action_dim=mean.shape[0])
+    distribution = xax.TanhGaussianDistribution(action_dim=mean.shape[0])
     # Use the underlying Gaussian for a baseline calculation.
-    gaussian = GaussianDistribution(action_dim=mean.shape[0])
+    gaussian = xax.GaussianDistribution(action_dim=mean.shape[0])
     rng = jax.random.PRNGKey(456)
     base_entropy = jnp.sum(gaussian.entropy(parameters, rng))
     pre_tanh_sample = gaussian.sample(parameters, rng)
@@ -229,7 +215,7 @@ def test_tanh_gaussian_entropy_manual(mean: jnp.ndarray, std: jnp.ndarray) -> No
 
 def test_tanh_gaussian_negative_std() -> None:
     """Test that negative std values in TanhGaussianDistribution produce NaN values in computations."""
-    distribution = TanhGaussianDistribution(action_dim=2)
+    distribution = xax.TanhGaussianDistribution(action_dim=2)
     neg_std = jnp.array([-1.0, -0.5])
     parameters = construct_params(jnp.array([0.5, -0.5]), neg_std)
     mean, std = distribution.get_mean_std(parameters)
@@ -248,11 +234,6 @@ def test_tanh_gaussian_negative_std() -> None:
     assert jnp.any(jnp.isnan(entropy))
 
 
-# -------------------------------
-# CategoricalDistribution Tests
-# -------------------------------
-
-
 @pytest.mark.parametrize(
     "logits",
     [
@@ -265,7 +246,7 @@ def test_tanh_gaussian_negative_std() -> None:
 )
 def test_categorical_mode(logits: jnp.ndarray) -> None:
     """Test that Categorical mode returns the index of the highest logit."""
-    distribution = CategoricalDistribution(action_dim=logits.shape[0])
+    distribution = xax.CategoricalDistribution(action_dim=logits.shape[0])
     computed_mode = distribution.mode(logits)
     expected_mode = jnp.argmax(logits)
     assert computed_mode == expected_mode
@@ -283,7 +264,7 @@ def test_categorical_mode(logits: jnp.ndarray) -> None:
 )
 def test_categorical_log_prob(logits: jnp.ndarray, action_index: int) -> None:
     """Test that Categorical log_prob computes the correct log probability."""
-    distribution = CategoricalDistribution(action_dim=logits.shape[0])
+    distribution = xax.CategoricalDistribution(action_dim=logits.shape[0])
     actions = jnp.array(action_index)
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     expected_log_prob = log_probs[action_index]
@@ -303,7 +284,7 @@ def test_categorical_log_prob(logits: jnp.ndarray, action_index: int) -> None:
 )
 def test_categorical_sample(logits: jnp.ndarray) -> None:
     """Test that Categorical sample returns a valid index for various logits."""
-    distribution = CategoricalDistribution(action_dim=logits.shape[0])
+    distribution = xax.CategoricalDistribution(action_dim=logits.shape[0])
     rng = jax.random.PRNGKey(789)
     sample = distribution.sample(logits, rng)
     # Check that the sample is an integer index within the valid range.
@@ -323,7 +304,7 @@ def test_categorical_sample(logits: jnp.ndarray) -> None:
 )
 def test_categorical_entropy(logits: jnp.ndarray) -> None:
     """Test that Categorical entropy returns the expected value for various logits."""
-    distribution = CategoricalDistribution(action_dim=logits.shape[0])
+    distribution = xax.CategoricalDistribution(action_dim=logits.shape[0])
     rng = jax.random.PRNGKey(101112)
     computed_entropy = jnp.sum(distribution.entropy(logits, rng))
     p = jax.nn.softmax(logits, axis=-1)

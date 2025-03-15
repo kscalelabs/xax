@@ -135,7 +135,8 @@ class GaussianDistribution(ActionDistribution):
             The entropy of the distribution, shape (*, action_dim).
         """
         _, std = self.get_mean_std(parameters)
-        entropies = 0.5 + 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
+        log_normalization = 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
+        entropies = 0.5 + log_normalization
 
         if entropies.shape[-1] != self.action_dim:
             raise ValueError(
