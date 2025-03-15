@@ -94,6 +94,7 @@ __all__ = [
     "compute_nan_ratio",
     "flatten_array",
     "flatten_pytree",
+    "pytree_has_nans",
     "slice_array",
     "slice_pytree",
     "TextBlock",
@@ -216,6 +217,7 @@ NAME_MAP: dict[str, str] = {
     "compute_nan_ratio": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
+    "pytree_has_nans": "utils.pytree",
     "slice_array": "utils.pytree",
     "slice_pytree": "utils.pytree",
     "TextBlock": "utils.text",
@@ -348,6 +350,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         compute_nan_ratio,
         flatten_array,
         flatten_pytree,
+        pytree_has_nans,
         slice_array,
         slice_pytree,
     )
