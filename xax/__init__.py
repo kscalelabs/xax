@@ -97,6 +97,7 @@ __all__ = [
     "pytree_has_nans",
     "slice_array",
     "slice_pytree",
+    "update_pytree",
     "TextBlock",
     "camelcase_to_snakecase",
     "colored",
@@ -220,6 +221,7 @@ NAME_MAP: dict[str, str] = {
     "pytree_has_nans": "utils.pytree",
     "slice_array": "utils.pytree",
     "slice_pytree": "utils.pytree",
+    "update_pytree": "utils.pytree",
     "TextBlock": "utils.text",
     "camelcase_to_snakecase": "utils.text",
     "colored": "utils.text",
@@ -353,6 +355,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         pytree_has_nans,
         slice_array,
         slice_pytree,
+        update_pytree,
     )
     from xax.utils.text import (
         TextBlock,
