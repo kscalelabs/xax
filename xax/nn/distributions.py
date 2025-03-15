@@ -119,9 +119,7 @@ class GaussianDistribution(ActionDistribution):
         mean, std = self.get_mean_std(parameters)
         log_probs = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
         if log_probs.shape != actions.shape:
-            raise ValueError(
-                f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}."
-            )
+            raise ValueError(f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}.")
         return log_probs
 
     def entropy(self, parameters: Array, rng: Array) -> Array:
@@ -223,9 +221,7 @@ class TanhGaussianDistribution(GaussianDistribution):
 
         log_probs = base_log_prob - jacobian_correction
         if log_probs.shape != actions.shape:
-            raise ValueError(
-                f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}."
-            )
+            raise ValueError(f"Expected log_probs with shape {actions.shape}, but got {log_probs.shape}.")
         return log_probs
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
@@ -318,9 +314,7 @@ class CategoricalDistribution(ActionDistribution):
         action_log_prob = flat_action_log_prob.reshape(batch_shape)
 
         if action_log_prob.shape != batch_shape:
-            raise ValueError(
-                f"Expected action_log_prob with shape {batch_shape}, but got {action_log_prob.shape}."
-            )
+            raise ValueError(f"Expected action_log_prob with shape {batch_shape}, but got {action_log_prob.shape}.")
         return action_log_prob
 
     def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
@@ -338,7 +332,5 @@ class CategoricalDistribution(ActionDistribution):
         entropies = -log_probs * jnp.exp(log_probs)
 
         if entropies.shape != parameters.shape:
-            raise ValueError(
-                f"Expected entropies with shape {parameters.shape}, but got {entropies.shape}."
-            )
+            raise ValueError(f"Expected entropies with shape {parameters.shape}, but got {entropies.shape}.")
         return entropies
