@@ -1,7 +1,5 @@
 """Tests for the pytree utils."""
 
-from typing import Any, Dict
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -50,7 +48,7 @@ def shuffle_test_data() -> PyTree:
 
 
 @pytest.fixture
-def nested_dict_data() -> Dict[str, Any]:
+def nested_dict_data() -> dict[str, PyTree]:
     """Fixture providing a deeply nested dictionary structure with arrays at the leaf nodes."""
     # Create base arrays with shape (num_envs=2, num_timesteps=3, feature_dim=2)
     obs_array = jnp.arange(1, 2 * 3 * 2 + 1).reshape(2, 3, 2)
@@ -517,7 +515,7 @@ def test_compare_reshuffle_methods(shuffle_test_data: PyTree, key_42: jax.Array)
 
 
 def test_reshuffle_pytree_with_nested_dict(
-    nested_dict_data: Dict[str, Any], key_42: jax.Array, key_43: jax.Array
+    nested_dict_data: dict[str, PyTree], key_42: jax.Array, key_43: jax.Array
 ) -> None:
     """Test reshuffling a deeply nested dictionary structure."""
     # Test reshuffling along the first dimension (num_envs=2)
@@ -615,7 +613,9 @@ def test_reshuffle_pytree_with_nested_dict(
     assert jnp.array_equal(reshuffled_data_2d["level1"]["level2"]["rewards"], expected_rewards_2d)
 
 
-def test_reshuffle_pytree_independently_with_nested_dict(nested_dict_data: Dict[str, Any], key_44: jax.Array) -> None:
+def test_reshuffle_pytree_independently_with_nested_dict(
+    nested_dict_data: dict[str, PyTree], key_44: jax.Array
+) -> None:
     """Test reshuffling a deeply nested dictionary structure independently."""
     # Reshuffle along the first two dimensions independently
     reshuffled_data = xax.reshuffle_pytree_independently(nested_dict_data, (2, 3), key_44)
@@ -669,7 +669,7 @@ def test_reshuffle_pytree_independently_with_nested_dict(nested_dict_data: Dict[
 
 
 def test_reshuffle_pytree_along_dims_with_nested_dict(
-    nested_dict_data: Dict[str, Any], key_42: jax.Array, key_45: jax.Array, key_46: jax.Array
+    nested_dict_data: dict[str, PyTree], key_45: jax.Array, key_46: jax.Array
 ) -> None:
     """Test reshuffling a deeply nested dictionary structure along specific dimensions."""
     # Test reshuffling along the time dimension only (dimension 1)
