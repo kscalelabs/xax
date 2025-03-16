@@ -130,7 +130,7 @@ def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], r
     return jax.tree_util.tree_map(permute_array, data)
 
 
-TransposeResult = tuple[Union[Array, PyTree], tuple[int, ...], tuple[int, ...]]
+TransposeResult = tuple[PyTree, tuple[int, ...], tuple[int, ...]]
 PathType = tuple[Union[str, int], ...]
 
 
@@ -158,9 +158,7 @@ def reshuffle_pytree_along_dims(
     if len(dims) != len(shape_dims):
         raise ValueError(f"dims {dims} and shape_dims {shape_dims} must have the same length")
 
-    T = TypeVar("T")
-
-    def transpose_for_shuffle(x: T) -> TransposeResult:
+    def transpose_for_shuffle(x: PyTree) -> TransposeResult:
         if not isinstance(x, jnp.ndarray):
             return x, (), ()
 
@@ -184,9 +182,7 @@ def reshuffle_pytree_along_dims(
 
         return transposed, transpose_order, x.shape
 
-    def transpose_back(
-        x: Union[Array, T], transpose_order: tuple[int, ...], original_shape: tuple[int, ...]
-    ) -> Union[Array, T]:
+    def transpose_back(x: PyTree, transpose_order: tuple[int, ...], original_shape: tuple[int, ...]) -> PyTree:
         if not isinstance(x, jnp.ndarray) or not transpose_order:
             return x
 
@@ -202,7 +198,7 @@ def reshuffle_pytree_along_dims(
     transposed_data: dict[PathType, Array] = {}
     transpose_info: dict[PathType, tuple[tuple[int, ...], tuple[int, ...]]] = {}
 
-    def prepare_for_shuffle(path: PathType, x: T) -> T:
+    def prepare_for_shuffle(path: PathType, x: PyTree) -> PyTree:
         if isinstance(x, jnp.ndarray):
             transposed, transpose_order, original_shape = transpose_for_shuffle(x)
             if isinstance(transposed, jnp.ndarray):  # Check if it's an array
@@ -213,7 +209,7 @@ def reshuffle_pytree_along_dims(
     jax.tree_util.tree_map_with_path(prepare_for_shuffle, data)
 
     # Create a transposed pytree
-    def get_transposed(path: PathType, x: T) -> Union[Array, T]:
+    def get_transposed(path: PathType, x: PyTree) -> PyTree:
         if isinstance(x, jnp.ndarray) and path in transposed_data:
             return transposed_data[path]
         return x
@@ -224,7 +220,7 @@ def reshuffle_pytree_along_dims(
     reshuffled_transposed = reshuffle_pytree(transposed_pytree, shape_dims, rng)
 
     # Transpose back
-    def restore_transpose(path: PathType, x: T) -> Union[Array, T]:
+    def restore_transpose(path: PathType, x: PyTree) -> PyTree:
         if isinstance(x, jnp.ndarray) and path in transpose_info:
             transpose_order, original_shape = transpose_info[path]
             return transpose_back(x, transpose_order, original_shape)
