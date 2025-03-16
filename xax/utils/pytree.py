@@ -1,7 +1,5 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
-from typing import TypeVar, Union
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -131,7 +129,7 @@ def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], r
 
 
 TransposeResult = tuple[PyTree, tuple[int, ...], tuple[int, ...]]
-PathType = tuple[Union[str, int], ...]
+PathType = tuple[str | int, ...]
 
 
 def reshuffle_pytree_along_dims(
