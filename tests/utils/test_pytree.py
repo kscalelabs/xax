@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 from jaxtyping import PyTree
+from typing import Dict, Any
 
 import xax
 
@@ -44,6 +45,26 @@ def shuffle_test_data() -> PyTree:
                 ],
             ]
         ),
+    }
+
+
+@pytest.fixture
+def nested_dict_data() -> Dict[str, Any]:
+    """Fixture providing a deeply nested dictionary structure with arrays at the leaf nodes."""
+    # Create base arrays with shape (num_envs=2, num_timesteps=3, feature_dim=2)
+    obs_array = jnp.arange(1, 2 * 3 * 2 + 1).reshape(2, 3, 2)
+    action_array = jnp.arange(101, 2 * 3 * 2 + 101).reshape(2, 3, 2)
+    reward_array = jnp.arange(201, 2 * 3 + 201).reshape(2, 3)
+    
+    # Create the nested dictionary structure
+    return {
+        'level1': {
+            'level2': {
+                'observations': obs_array,
+                'actions': action_array,
+                'rewards': reward_array
+            }
+        }
     }
 
 
@@ -500,3 +521,249 @@ def test_compare_reshuffle_methods(shuffle_test_data: PyTree, key_42: jax.Array)
         orig_timesteps = jnp.sort(shuffle_test_data["observations"][env, :, 0])
         reshuffled_timesteps = jnp.sort(reshuffled4["observations"][env, :, 0])
         assert jnp.array_equal(orig_timesteps, reshuffled_timesteps)
+
+
+def test_reshuffle_pytree_with_nested_dict(nested_dict_data: Dict[str, Any], key_42: jax.Array, key_43: jax.Array) -> None:
+    """Test reshuffling a deeply nested dictionary structure."""
+    # Test reshuffling along the first dimension (num_envs=2)
+    reshuffled_data = xax.reshuffle_pytree(nested_dict_data, (2,), key_42)
+    
+    # Pre-computed expected values for PRNGKey(42) and dimension size 2
+    # Based on actual output
+    expected_obs = jnp.array(
+        [
+            [
+                [1, 2],  # Original (0, 0) data
+                [3, 4],  # Original (0, 1) data
+                [5, 6],  # Original (0, 2) data
+            ],
+            [
+                [7, 8],  # Original (1, 0) data
+                [9, 10],  # Original (1, 1) data
+                [11, 12],  # Original (1, 2) data
+            ],
+        ]
+    )
+
+    expected_actions = jnp.array(
+        [
+            [
+                [101, 102],  # Original (0, 0) data
+                [103, 104],  # Original (0, 1) data
+                [105, 106],  # Original (0, 2) data
+            ],
+            [
+                [107, 108],  # Original (1, 0) data
+                [109, 110],  # Original (1, 1) data
+                [111, 112],  # Original (1, 2) data
+            ],
+        ]
+    )
+    
+    expected_rewards = jnp.array(
+        [
+            [201, 202, 203],  # Original (0, :) data
+            [204, 205, 206],  # Original (1, :) data
+        ]
+    )
+    
+    # Compare with expected values
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['observations'], expected_obs)
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['actions'], expected_actions)
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['rewards'], expected_rewards)
+    
+    # Test reshuffling along the first two dimensions (num_envs=2, num_timesteps=3)
+    reshuffled_data_2d = xax.reshuffle_pytree(nested_dict_data, (2, 3), key_43)
+    
+    # Pre-computed expected values for PRNGKey(43) and flattened dimension size 6
+    # Based on actual output
+    expected_obs_2d = jnp.array(
+        [
+            [
+                [1, 2],  # Original (0, 0) data
+                [11, 12],  # Original (1, 2) data
+                [9, 10],  # Original (1, 1) data
+            ],
+            [
+                [7, 8],  # Original (1, 0) data
+                [3, 4],  # Original (0, 1) data
+                [5, 6],  # Original (0, 2) data
+            ],
+        ]
+    )
+
+    expected_actions_2d = jnp.array(
+        [
+            [
+                [101, 102],  # Original (0, 0) data
+                [111, 112],  # Original (1, 2) data
+                [109, 110],  # Original (1, 1) data
+            ],
+            [
+                [107, 108],  # Original (1, 0) data
+                [103, 104],  # Original (0, 1) data
+                [105, 106],  # Original (0, 2) data
+            ],
+        ]
+    )
+    
+    expected_rewards_2d = jnp.array(
+        [
+            [201, 206, 205],  # Corresponding to the observations pattern
+            [204, 202, 203],  # Corresponding to the observations pattern
+        ]
+    )
+    
+    # Compare with expected values
+    assert jnp.array_equal(reshuffled_data_2d['level1']['level2']['observations'], expected_obs_2d)
+    assert jnp.array_equal(reshuffled_data_2d['level1']['level2']['actions'], expected_actions_2d)
+    assert jnp.array_equal(reshuffled_data_2d['level1']['level2']['rewards'], expected_rewards_2d)
+
+
+def test_reshuffle_pytree_independently_with_nested_dict(nested_dict_data: Dict[str, Any], key_44: jax.Array) -> None:
+    """Test reshuffling a deeply nested dictionary structure independently."""
+    # Reshuffle along the first two dimensions independently
+    reshuffled_data = xax.reshuffle_pytree_independently(nested_dict_data, (2, 3), key_44)
+    
+    # Pre-computed expected values for PRNGKey(44)
+    # Based on actual output
+    expected_obs = jnp.array(
+        [
+            [
+                [9, 10],  # Original (1, 1) data
+                [7, 8],  # Original (1, 0) data
+                [11, 12],  # Original (1, 2) data
+            ],
+            [
+                [3, 4],  # Original (0, 1) data
+                [1, 2],  # Original (0, 0) data
+                [5, 6],  # Original (0, 2) data
+            ],
+        ]
+    )
+
+    expected_actions = jnp.array(
+        [
+            [
+                [109, 110],  # Original (1, 1) data
+                [107, 108],  # Original (1, 0) data
+                [111, 112],  # Original (1, 2) data
+            ],
+            [
+                [103, 104],  # Original (0, 1) data
+                [101, 102],  # Original (0, 0) data
+                [105, 106],  # Original (0, 2) data
+            ],
+        ]
+    )
+    
+    expected_rewards = jnp.array(
+        [
+            [205, 204, 206],
+            [202, 201, 203],
+        ]
+    )
+    
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['observations'], expected_obs)
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['actions'], expected_actions)
+    assert jnp.array_equal(reshuffled_data['level1']['level2']['rewards'], expected_rewards)
+    
+    assert reshuffled_data['level1']['level2']['observations'].shape == (2, 3, 2)
+    assert reshuffled_data['level1']['level2']['actions'].shape == (2, 3, 2)
+    assert reshuffled_data['level1']['level2']['rewards'].shape == (2, 3)
+
+
+def test_reshuffle_pytree_along_dims_with_nested_dict(nested_dict_data: Dict[str, Any], key_42: jax.Array, key_45: jax.Array, key_46: jax.Array) -> None:
+    """Test reshuffling a deeply nested dictionary structure along specific dimensions."""
+    # Test reshuffling along the time dimension only (dimension 1)
+    time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (1,), (3,), key_45)
+    
+    # Pre-computed expected values for PRNGKey(45)
+    # Based on actual output
+    expected_time_obs = jnp.array(
+        [
+            [
+                [1, 2],  # Original (0, 0) data
+                [3, 4],  # Original (0, 1) data
+                [5, 6],  # Original (0, 2) data
+            ],
+            [
+                [7, 8],  # Original (1, 0) data
+                [9, 10],  # Original (1, 1) data
+                [11, 12],  # Original (1, 2) data
+            ],
+        ]
+    )
+
+    expected_time_actions = jnp.array(
+        [
+            [
+                [101, 102],  # Original (0, 0) data
+                [103, 104],  # Original (0, 1) data
+                [105, 106],  # Original (0, 2) data
+            ],
+            [
+                [107, 108],  # Original (1, 0) data
+                [109, 110],  # Original (1, 1) data
+                [111, 112],  # Original (1, 2) data
+            ],
+        ]
+    )
+    
+    expected_time_rewards = jnp.array(
+        [
+            [201, 202, 203],  # Original (0, :) data
+            [204, 205, 206],  # Original (1, :) data
+        ]
+    )
+    
+    # Compare with expected values
+    assert jnp.array_equal(time_reshuffled_data['level1']['level2']['observations'], expected_time_obs)
+    assert jnp.array_equal(time_reshuffled_data['level1']['level2']['actions'], expected_time_actions)
+    assert jnp.array_equal(time_reshuffled_data['level1']['level2']['rewards'], expected_time_rewards)
+    
+    # Test reshuffling along both env and time dimensions
+    env_time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (0, 1), (2, 3), key_46)
+    
+    # Pre-computed expected values for PRNGKey(46)
+    # Based on actual output
+    expected_env_time_obs = jnp.array(
+        [
+            [
+                [1, 2],  # Original (0, 0) data
+                [9, 10],  # Original (1, 1) data
+                [7, 8],  # Original (1, 0) data
+            ],
+            [
+                [5, 6],  # Original (0, 2) data
+                [11, 12],  # Original (1, 2) data
+                [3, 4],  # Original (0, 1) data
+            ],
+        ]
+    )
+
+    expected_env_time_actions = jnp.array(
+        [
+            [
+                [101, 102],  # Original (0, 0) data
+                [109, 110],  # Original (1, 1) data
+                [107, 108],  # Original (1, 0) data
+            ],
+            [
+                [105, 106],  # Original (0, 2) data
+                [111, 112],  # Original (1, 2) data
+                [103, 104],  # Original (0, 1) data
+            ],
+        ]
+    )
+    
+    expected_env_time_rewards = jnp.array(
+        [
+            [201, 205, 204],
+            [203, 206, 202],
+        ]
+    )
+    
+    assert jnp.array_equal(env_time_reshuffled_data['level1']['level2']['observations'], expected_env_time_obs)
+    assert jnp.array_equal(env_time_reshuffled_data['level1']['level2']['actions'], expected_env_time_actions)
+    assert jnp.array_equal(env_time_reshuffled_data['level1']['level2']['rewards'], expected_env_time_rewards)
