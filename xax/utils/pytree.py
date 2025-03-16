@@ -165,7 +165,7 @@ def reshuffle_pytree_along_dims(
         # Check if the dimensions match the shape_dims
         for i, dim in enumerate(dims):
             if x.shape[dim] != shape_dims[i]:
-                raise ValueError(f"Array shape {x.shape} doesn't match shape_dims {shape_dims} at dimension {dims[i]}")
+                raise ValueError(f"Array shape {x.shape} doesn't match shape_dims {shape_dims} at dimension {dim}")
 
         # Create the transpose order to move the specified dimensions to the front
         # while preserving the relative order of the other dimensions

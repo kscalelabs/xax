@@ -1,6 +1,7 @@
+"""Tests for the pytree utils."""
+
 import jax
 import jax.numpy as jnp
-import numpy as np
 import pytest
 from jaxtyping import PyTree
 
@@ -187,9 +188,7 @@ def test_pytree_has_nans(pytree: PyTree, expected: bool) -> None:
     assert xax.pytree_has_nans(pytree) == expected
 
 
-def test_reshuffle_pytree(
-    shuffle_test_data: PyTree, key_42: jax.Array, key_43: jax.Array
-) -> None:
+def test_reshuffle_pytree(shuffle_test_data: PyTree, key_42: jax.Array, key_43: jax.Array) -> None:
     """Test reshuffle_pytree with fixed PRNG key."""
     # Test reshuffling along the first dimension (num_envs=2)
     reshuffled_data = xax.reshuffle_pytree(shuffle_test_data, (2,), key_42)
@@ -336,9 +335,7 @@ def test_reshuffle_pytree_independently(shuffle_test_data: PyTree, key_44: jax.A
     assert env0_perm == [1, 0, 2]
 
 
-def test_reshuffle_pytree_along_dims(
-    shuffle_test_data: PyTree, key_45: jax.Array, key_46: jax.Array
-) -> None:
+def test_reshuffle_pytree_along_dims(shuffle_test_data: PyTree, key_45: jax.Array, key_46: jax.Array) -> None:
     """Test reshuffle_pytree_along_dims with fixed PRNG key."""
     # Test reshuffling along the time dimension only (dimension 1)
     time_reshuffled_data = xax.reshuffle_pytree_along_dims(shuffle_test_data, (1,), (3,), key_45)
