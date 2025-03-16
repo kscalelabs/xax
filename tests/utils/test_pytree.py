@@ -14,13 +14,13 @@ def shuffle_test_data() -> PyTree:
     return {
         "observations": jnp.array(
             [
-                # env 1
+                # env 0
                 [
                     [1, 2],  # t0 - feature_dim=2
                     [3, 4],  # t1
                     [5, 6],  # t2
                 ],
-                # env 2
+                # env 1
                 [
                     [7, 8],
                     [9, 10],
@@ -30,13 +30,13 @@ def shuffle_test_data() -> PyTree:
         ),
         "actions": jnp.array(
             [
-                # env 1
+                # env 0
                 [
                     [101, 102],
                     [201, 202],
                     [301, 302],
                 ],
-                # env 2
+                # env 1
                 [
                     [401, 402],
                     [501, 502],
