@@ -23,6 +23,7 @@ import urllib.request
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Iterator, TypeVar, cast
 from urllib.parse import urlparse
 
@@ -145,6 +146,23 @@ class IntervalTicker:
             self.last_tick_time = elapsed_time
             return True
         return False
+
+
+class ContextTimer:
+    def __init__(self) -> None:
+        self.start_time = 0.0
+        self.elapsed_time = 0.0
+
+    def __enter__(self) -> None:
+        self.start_time = time.time()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.elapsed_time = time.time() - self.start_time
 
 
 def abs_path(path: str) -> str:
