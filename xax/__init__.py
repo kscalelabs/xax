@@ -118,6 +118,7 @@ __all__ = [
     "snakecase_to_camelcase",
     "uncolored",
     "wrapped",
+    "scan_model",
 ]
 
 __all__ += [
@@ -247,6 +248,7 @@ NAME_MAP: dict[str, str] = {
     "snakecase_to_camelcase": "utils.text",
     "uncolored": "utils.text",
     "wrapped": "utils.text",
+    "scan_model": "utils.transformation",
 }
 
 # Need to manually set some values which can't be auto-generated.
@@ -391,5 +393,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         uncolored,
         wrapped,
     )
+    from xax.utils.transformation import scan_model
 
 del TYPE_CHECKING, IMPORT_ALL
