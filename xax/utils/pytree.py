@@ -1,14 +1,10 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
-from typing import TypeVar
-
 import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jaxtyping import PRNGKeyArray, PyTree
-
-T = TypeVar("T")
 
 
 def slice_array(x: Array, start: Array, slice_length: int) -> Array:
@@ -132,7 +128,7 @@ def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], r
     # n-dimensional index grid from permutations
     idx_grids = jnp.meshgrid(*perms, indexing="ij")
 
-    def permute_array(x: T) -> T:
+    def permute_array(x: Array) -> Array:
         if isinstance(x, Array):
             return x[tuple(idx_grids)]
         return x
