@@ -8,6 +8,7 @@ from typing import Generic, Self, TypeVar
 
 import jax
 
+from xax.core.conf import field
 from xax.core.state import State
 from xax.task.base import BaseConfig, BaseTask
 from xax.task.logger import Logger, LoggerImpl
@@ -22,7 +23,14 @@ from xax.utils.text import is_interactive_session
 @jax.tree_util.register_dataclass
 @dataclass
 class LoggerConfig(BaseConfig):
-    pass
+    log_interval_seconds: float = field(
+        value=1.0,
+        help="The interval between successive log lines.",
+    )
+    tensorboard_log_interval_seconds: float = field(
+        value=10.0,
+        help="The interval between successive Tensorboard log lines.",
+    )
 
 
 Config = TypeVar("Config", bound=LoggerConfig)
@@ -49,11 +57,27 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
         self.logger.add_logger(*logger)
 
     def set_loggers(self) -> None:
-        self.add_logger(StdoutLogger() if is_interactive_session() else JsonLogger())
+        self.add_logger(
+            StdoutLogger(
+                log_interval_seconds=self.config.log_interval_seconds,
+            )
+            if is_interactive_session()
+            else JsonLogger(
+                log_interval_seconds=self.config.log_interval_seconds,
+            )
+        )
+
+        # If this is also an ArtifactsMixin, we should default add some
+        # additional loggers which log data to the artifacts directory.
         if isinstance(self, ArtifactsMixin):
             self.add_logger(
-                StateLogger(self.exp_dir),
-                TensorboardLogger(self.exp_dir),
+                StateLogger(
+                    run_directory=self.exp_dir,
+                ),
+                TensorboardLogger(
+                    run_directory=self.exp_dir,
+                    log_interval_seconds=self.config.tensorboard_log_interval_seconds,
+                ),
             )
 
     def write_logs(self, state: State) -> None:
