@@ -24,7 +24,7 @@ import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Iterator, TypeVar, cast
+from typing import Any, Iterator, Self, TypeVar, cast
 from urllib.parse import urlparse
 
 import git
@@ -153,8 +153,9 @@ class ContextTimer:
         self.start_time = 0.0
         self.elapsed_time = 0.0
 
-    def __enter__(self) -> None:
+    def __enter__(self) -> Self:
         self.start_time = time.time()
+        return self
 
     def __exit__(
         self,
