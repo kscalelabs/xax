@@ -1,6 +1,6 @@
 """Transformations that work with Equinox, NNX, etc. with JAX-like API."""
 
-from typing import Callable
+from typing import Any, Callable
 
 import equinox as eqx
 import jax
@@ -11,20 +11,38 @@ def scan_model(
     fn: Callable[[tuple[PyTree, ...], PyTree], tuple[tuple[PyTree, ...], PyTree]],
     stateful_model_init: PyTree,
     rest_init: tuple[PyTree, ...],
-    xs: PyTree | None,
+    xs: PyTree | None = None,
     length: int | None = None,
+    mutable_criterion: Callable[[Any], bool] = eqx.is_inexact_array,
 ) -> tuple[tuple[PyTree, ...], PyTree]:
-    """Scan that works with models that have both mutable and static parts."""
+    """Scan that works with models that have both mutable and static parts.
+
+    This is useful for training models that have both mutable and static
+    parts, such as RNNs. This lets you achieve similar behavior with Equinox
+    models as you would with the Flax linen API.
+
+    Args:
+        fn: The function to scan.
+        stateful_model_init: The initial stateful model.
+        rest_init: The initial rest of the model.
+        xs: The input to the scan.
+        length: The length of the scan.
+        mutable_criterion: The criterion for determining whether a part of
+            the model is mutable.
+
+    Returns:
+        The output of the scan.
+    """
     # partitioning separates a model into effectively params and functions
     # inexact is the criterion that JAX uses for this
-    mutable_model, static_model = eqx.partition(stateful_model_init, eqx.is_inexact_array)
+    mutable_model, static_model = eqx.partition(stateful_model_init, mutable_criterion)
 
     def wrapped_fn(carry: tuple[PyTree, ...], x: PyTree) -> tuple[tuple[PyTree, ...], PyTree]:
         mutable_model, *other_state = carry
         full_model = eqx.combine(mutable_model, static_model)
         new_carry, y = fn((full_model, *other_state), x)
         new_model, *new_other = new_carry
-        new_mutable_model, _ = eqx.partition(new_model, eqx.is_inexact_array)
+        new_mutable_model, _ = eqx.partition(new_model, mutable_criterion)
         return (new_mutable_model, *new_other), y
 
     init_carry = (mutable_model, *rest_init)
