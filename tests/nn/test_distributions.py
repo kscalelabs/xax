@@ -340,3 +340,39 @@ def test_jittability() -> None:
 
     jax.jit(gaussian.get_mean_std)(jnp.zeros(20))
     jax.jit(tanh_gaussian.get_mean_std)(jnp.zeros(20))
+
+
+def test_differentiability() -> None:
+    """Test that log_prob and entropy functions are differentiable with jax.value_and_grad."""
+    rng = jax.random.PRNGKey(123)
+    actions = jnp.array([0.1, -0.1])
+
+    def sample_loss_fn(log_prob: jnp.ndarray, entropy: jnp.ndarray) -> jnp.ndarray:
+        return jnp.mean(log_prob) + jnp.mean(entropy)
+
+    gaussian = xax.GaussianDistribution(action_dim=2)
+    parameters = construct_params(jnp.array([0.0, 0.0]), jnp.array([1.0, 1.0]))
+    grad_fn = jax.value_and_grad(
+        lambda params: sample_loss_fn(gaussian.log_prob(params, actions), gaussian.entropy(params, rng))
+    )
+    grad, _ = grad_fn(parameters)
+    assert grad is not None
+
+    tanh_gaussian = xax.TanhGaussianDistribution(action_dim=2)
+    parameters = construct_params(jnp.array([0.0, 0.0]), jnp.array([1.0, 1.0]))
+    grad_fn = jax.value_and_grad(
+        lambda params: sample_loss_fn(tanh_gaussian.log_prob(params, actions), tanh_gaussian.entropy(params, rng))
+    )
+    grad, _ = grad_fn(parameters)
+    assert grad is not None
+
+    categorical = xax.CategoricalDistribution(action_dim=3)
+    logits = jnp.array([0.1, 0.2, 0.3])
+    action_index = 1
+    grad_fn = jax.value_and_grad(
+        lambda logits: sample_loss_fn(
+            categorical.log_prob(logits, jnp.array(action_index)), categorical.entropy(logits, rng)
+        )
+    )
+    grad, _ = grad_fn(logits)
+    assert grad is not None
