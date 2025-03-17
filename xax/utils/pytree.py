@@ -1,10 +1,14 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
+from typing import TypeVar
+
 import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jaxtyping import PRNGKeyArray, PyTree
+
+T = TypeVar("T")
 
 
 def slice_array(x: Array, start: Array, slice_length: int) -> Array:
@@ -12,6 +16,14 @@ def slice_array(x: Array, start: Array, slice_length: int) -> Array:
 
     For multi-dimensional arrays, this slices only along the first dimension
     and keeps all other dimensions intact.
+
+    Args:
+        x: The array to slice.
+        start: The start index of the slice.
+        slice_length: The length of the slice.
+
+    Returns:
+        The sliced array.
     """
     chex.assert_shape(start, ())
     chex.assert_shape(slice_length, ())
@@ -120,7 +132,7 @@ def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], r
     # n-dimensional index grid from permutations
     idx_grids = jnp.meshgrid(*perms, indexing="ij")
 
-    def permute_array(x: Array) -> Array:
+    def permute_array(x: T) -> T:
         if isinstance(x, Array):
             return x[tuple(idx_grids)]
         return x
@@ -133,7 +145,10 @@ PathType = tuple[str | int, ...]
 
 
 def reshuffle_pytree_along_dims(
-    data: PyTree, dims: tuple[int, ...], shape_dims: tuple[int, ...], rng: PRNGKeyArray
+    data: PyTree,
+    dims: tuple[int, ...],
+    shape_dims: tuple[int, ...],
+    rng: PRNGKeyArray,
 ) -> PyTree:
     """Reshuffle a pytree along arbitrary dimensions.
 

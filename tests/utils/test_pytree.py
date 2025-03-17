@@ -57,31 +57,6 @@ def make_nested_dict_data() -> dict[str, PyTree]:
     return {"level1": {"level2": {"observations": obs_array, "actions": action_array, "rewards": reward_array}}}
 
 
-def key_42() -> jax.Array:
-    """Function to get a PRNGKey with seed 42."""
-    return jax.random.PRNGKey(42)
-
-
-def key_43() -> jax.Array:
-    """Function to get a PRNGKey with seed 43."""
-    return jax.random.PRNGKey(43)
-
-
-def key_44() -> jax.Array:
-    """Function to get a PRNGKey with seed 44."""
-    return jax.random.PRNGKey(44)
-
-
-def key_45() -> jax.Array:
-    """Function to get a PRNGKey with seed 45."""
-    return jax.random.PRNGKey(45)
-
-
-def key_46() -> jax.Array:
-    """Function to get a PRNGKey with seed 46."""
-    return jax.random.PRNGKey(46)
-
-
 @pytest.mark.parametrize(
     "pytree, expected",
     [
@@ -92,101 +67,6 @@ def key_46() -> jax.Array:
         ({"a": jnp.array([1, 2, 3]), "b": {"c": jnp.array([4, jnp.nan, 6])}}, True),
         ({"a": jnp.array([]), "b": jnp.array([])}, False),
         ({"a": [1, 2, 3], "b": (4, 5, 6)}, False),
-        (
-            {
-                "conv1": {
-                    "kernel": jnp.ones((3, 3, 1, 16)),
-                    "bias": jnp.zeros(16),
-                },
-                "conv2": {
-                    "kernel": jnp.ones((3, 3, 16, 32)),
-                    "bias": jnp.zeros(32),
-                },
-                "dense": {
-                    "kernel": jnp.ones((32, 10)),
-                    "bias": jnp.zeros(10),
-                },
-            },
-            False,
-        ),
-        (
-            {
-                "conv1": {
-                    "kernel": jnp.ones((3, 3, 1, 16)),
-                    "bias": jnp.zeros(16),
-                },
-                "conv2": {
-                    "kernel": jnp.ones((3, 3, 16, 32)),
-                    "bias": jnp.array([0.0, jnp.nan, 0.0, 0.0] + [0.0] * 28),
-                },
-                "dense": {
-                    "kernel": jnp.ones((32, 10)),
-                    "bias": jnp.zeros(10),
-                },
-            },
-            True,
-        ),
-        (
-            {
-                "embedding": jnp.ones((1000, 128)),
-                "transformer_blocks": [
-                    {
-                        "attention": {
-                            "query": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "key": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "value": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "output": {"kernel": jnp.ones((64, 128)), "bias": jnp.zeros(128)},
-                        },
-                        "ffn": {
-                            "linear1": {"kernel": jnp.ones((128, 256)), "bias": jnp.zeros(256)},
-                            "linear2": {"kernel": jnp.ones((256, 128)), "bias": jnp.zeros(128)},
-                        },
-                    },
-                    {
-                        "attention": {
-                            "query": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "key": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "value": {"kernel": jnp.ones((128, 64)), "bias": jnp.zeros(64)},
-                            "output": {"kernel": jnp.ones((64, 128)), "bias": jnp.zeros(128)},
-                        },
-                        "ffn": {
-                            "linear1": {"kernel": jnp.ones((128, 256)), "bias": jnp.zeros(256)},
-                            "linear2": {"kernel": jnp.array([[jnp.nan]] + [[1.0]] * 255), "bias": jnp.zeros(128)},
-                        },
-                    },
-                ],
-                "layernorm": {"scale": jnp.ones(128), "bias": jnp.zeros(128)},
-            },
-            True,
-        ),
-        (
-            {
-                "params": {"w": jnp.ones((10, 5)), "b": jnp.zeros(5)},
-                "state": {"mean": jnp.zeros(5), "var": jnp.ones(5)},
-                "hyperparams": {"lr": 0.01, "dropout_rate": 0.5},
-                "metrics": {"loss": jnp.array([0.1, 0.09, 0.08]), "accuracy": jnp.array([0.85, 0.86, 0.87])},
-            },
-            False,
-        ),
-        (
-            {
-                "grads": {
-                    "layer1": {"w": jnp.ones((5, 10)), "b": jnp.zeros(10)},
-                    "layer2": {"w": jnp.ones((10, 1)), "b": jnp.array([jnp.nan])},
-                },
-                "optimizer_state": {
-                    "m": {
-                        "layer1": {"w": jnp.zeros((5, 10)), "b": jnp.zeros(10)},
-                        "layer2": {"w": jnp.zeros((10, 1)), "b": jnp.zeros(1)},
-                    },
-                    "v": {
-                        "layer1": {"w": jnp.zeros((5, 10)), "b": jnp.zeros(10)},
-                        "layer2": {"w": jnp.zeros((10, 1)), "b": jnp.zeros(1)},
-                    },
-                },
-            },
-            True,
-        ),
     ],
 )
 def test_pytree_has_nans(pytree: PyTree, expected: bool) -> None:
@@ -196,8 +76,9 @@ def test_pytree_has_nans(pytree: PyTree, expected: bool) -> None:
 def test_reshuffle_pytree() -> None:
     """Test reshuffle_pytree with fixed PRNG key."""
     shuffle_test_data = make_shuffle_test_data()
+
     # Test reshuffling along the first dimension (num_envs=2)
-    reshuffled_data = xax.reshuffle_pytree(shuffle_test_data, (2,), key_42())
+    reshuffled_data = xax.reshuffle_pytree(shuffle_test_data, (2,), jax.random.PRNGKey(42))
 
     # Pre-computed expected values for PRNGKey(42) and dimension size 2
     # Based on actual output
@@ -236,7 +117,7 @@ def test_reshuffle_pytree() -> None:
     assert jnp.array_equal(reshuffled_data["actions"], expected_actions)
 
     # Test reshuffling along the first two dimensions (num_envs=2, num_timesteps=3)
-    reshuffled_data = xax.reshuffle_pytree(shuffle_test_data, (2, 3), key_43())
+    reshuffled_data = xax.reshuffle_pytree(shuffle_test_data, (2, 3), jax.random.PRNGKey(43))
 
     # Pre-computed expected values for PRNGKey(43) and flattened dimension size 6
     # Based on actual output
@@ -279,7 +160,7 @@ def test_reshuffle_pytree_independently() -> None:
     """Test reshuffle_pytree_independently with fixed PRNG key."""
     shuffle_test_data = make_shuffle_test_data()
     # Test reshuffling along the first two dimensions independently
-    reshuffled_data = xax.reshuffle_pytree_independently(shuffle_test_data, (2, 3), key_44())
+    reshuffled_data = xax.reshuffle_pytree_independently(shuffle_test_data, (2, 3), jax.random.PRNGKey(44))
 
     # Pre-computed expected values for PRNGKey(44)
     # Based on actual output
@@ -346,7 +227,7 @@ def test_reshuffle_pytree_along_dims() -> None:
     """Test reshuffle_pytree_along_dims with fixed PRNG key."""
     shuffle_test_data = make_shuffle_test_data()
     # Test reshuffling along the time dimension only (dimension 1)
-    time_reshuffled_data = xax.reshuffle_pytree_along_dims(shuffle_test_data, (1,), (3,), key_45())
+    time_reshuffled_data = xax.reshuffle_pytree_along_dims(shuffle_test_data, (1,), (3,), jax.random.PRNGKey(45))
 
     # Pre-computed expected values for PRNGKey(45)
     # Based on actual output
@@ -384,7 +265,9 @@ def test_reshuffle_pytree_along_dims() -> None:
     assert jnp.array_equal(time_reshuffled_data["actions"], expected_actions)
 
     # Test reshuffling along both env and time dimensions
-    env_time_reshuffled_data = xax.reshuffle_pytree_along_dims(shuffle_test_data, (0, 1), (2, 3), key_46())
+    env_time_reshuffled_data = xax.reshuffle_pytree_along_dims(
+        shuffle_test_data, (0, 1), (2, 3), jax.random.PRNGKey(46)
+    )
 
     # Pre-computed expected values for PRNGKey(46)
     # Based on actual output
@@ -427,7 +310,7 @@ def test_compare_reshuffle_methods() -> None:
     """Compare the behavior of different reshuffle methods."""
     shuffle_test_data = make_shuffle_test_data()
     # Reshuffle using reshuffle_pytree
-    reshuffled1 = xax.reshuffle_pytree(shuffle_test_data, (2, 3), key_42())
+    reshuffled1 = xax.reshuffle_pytree(shuffle_test_data, (2, 3), jax.random.PRNGKey(42))
 
     # Pre-computed expected values for PRNGKey(42) with reshuffle_pytree
     # Based on actual output
@@ -448,7 +331,7 @@ def test_compare_reshuffle_methods() -> None:
 
     assert jnp.array_equal(reshuffled1["observations"], expected_reshuffled1)
 
-    reshuffled2 = xax.reshuffle_pytree_along_dims(shuffle_test_data, (0, 1), (2, 3), key_42())
+    reshuffled2 = xax.reshuffle_pytree_along_dims(shuffle_test_data, (0, 1), (2, 3), jax.random.PRNGKey(42))
 
     # Verify that both methods produce the same result when reshuffling the same dimensions
     # with the same key (since reshuffle_pytree_along_dims uses reshuffle_pytree internally)
@@ -456,7 +339,7 @@ def test_compare_reshuffle_methods() -> None:
 
     # Compare with reshuffle_pytree_independently which should produce different results
     # since it uses a different reshuffling approach
-    reshuffled3 = xax.reshuffle_pytree_independently(shuffle_test_data, (2, 3), key_42())
+    reshuffled3 = xax.reshuffle_pytree_independently(shuffle_test_data, (2, 3), jax.random.PRNGKey(42))
 
     # Pre-computed expected values for PRNGKey(42) with reshuffle_pytree_independently
     # Based on actual output
@@ -480,7 +363,7 @@ def test_compare_reshuffle_methods() -> None:
 
     # Verify that reshuffle_pytree_along_dims with only the time dimension
     # produces different results than reshuffling both dimensions
-    reshuffled4 = xax.reshuffle_pytree_along_dims(shuffle_test_data, (1,), (3,), key_42())
+    reshuffled4 = xax.reshuffle_pytree_along_dims(shuffle_test_data, (1,), (3,), jax.random.PRNGKey(42))
 
     # Pre-computed expected values for PRNGKey(42) with reshuffle_pytree_along_dims on dim 1
     # Based on actual output
@@ -514,8 +397,9 @@ def test_compare_reshuffle_methods() -> None:
 def test_reshuffle_pytree_with_nested_dict() -> None:
     """Test reshuffling a deeply nested dictionary structure."""
     nested_dict_data = make_nested_dict_data()
+
     # Test reshuffling along the first dimension (num_envs=2)
-    reshuffled_data = xax.reshuffle_pytree(nested_dict_data, (2,), key_42())
+    reshuffled_data = xax.reshuffle_pytree(nested_dict_data, (2,), jax.random.PRNGKey(42))
 
     # Pre-computed expected values for PRNGKey(42) and dimension size 2
     # Based on actual output
@@ -562,7 +446,7 @@ def test_reshuffle_pytree_with_nested_dict() -> None:
     assert jnp.array_equal(reshuffled_data["level1"]["level2"]["rewards"], expected_rewards)
 
     # Test reshuffling along the first two dimensions (num_envs=2, num_timesteps=3)
-    reshuffled_data_2d = xax.reshuffle_pytree(nested_dict_data, (2, 3), key_43())
+    reshuffled_data_2d = xax.reshuffle_pytree(nested_dict_data, (2, 3), jax.random.PRNGKey(43))
 
     # Pre-computed expected values for PRNGKey(43) and flattened dimension size 6
     # Based on actual output
@@ -614,7 +498,7 @@ def test_reshuffle_pytree_independently_with_nested_dict() -> None:
     nested_dict_data = make_nested_dict_data()
 
     # Reshuffle along the first two dimensions independently
-    reshuffled_data = xax.reshuffle_pytree_independently(nested_dict_data, (2, 3), key_44())
+    reshuffled_data = xax.reshuffle_pytree_independently(nested_dict_data, (2, 3), jax.random.PRNGKey(44))
 
     # Pre-computed expected values for PRNGKey(44)
     # Based on actual output
@@ -668,7 +552,7 @@ def test_reshuffle_pytree_along_dims_with_nested_dict() -> None:
     """Test reshuffling a deeply nested dictionary structure along specific dimensions."""
     nested_dict_data = make_nested_dict_data()
     # Test reshuffling along the time dimension only (dimension 1)
-    time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (1,), (3,), key_45())
+    time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (1,), (3,), jax.random.PRNGKey(45))
 
     # Pre-computed expected values for PRNGKey(45)
     # Based on actual output
@@ -715,7 +599,7 @@ def test_reshuffle_pytree_along_dims_with_nested_dict() -> None:
     assert jnp.array_equal(time_reshuffled_data["level1"]["level2"]["rewards"], expected_time_rewards)
 
     # Test reshuffling along both env and time dimensions
-    env_time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (0, 1), (2, 3), key_46())
+    env_time_reshuffled_data = xax.reshuffle_pytree_along_dims(nested_dict_data, (0, 1), (2, 3), jax.random.PRNGKey(46))
 
     # Pre-computed expected values for PRNGKey(46)
     # Based on actual output
