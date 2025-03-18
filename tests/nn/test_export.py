@@ -14,8 +14,7 @@ import jax.numpy as jnp
 import pytest
 import tensorflow as tf
 from jax.experimental import jax2tf
-from jaxtyping import Array, Float, PyTree
-import numpy as np
+from jaxtyping import Array, Float
 
 from xax.nn.export import export, export_flax, export_with_params
 
@@ -236,9 +235,7 @@ def test_export_flax_mlp(
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
 
 
-def test_export_with_params_basic_multiply(
-    tmp_path: Path
-) -> None:
+def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
     """Test exporting a basic multiply function with parameters."""
     factor = 3.0
 

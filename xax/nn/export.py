@@ -13,6 +13,7 @@ from orbax.export import ExportManager, JaxModule, ServingConfig
 
 logger = logging.getLogger(__name__)
 
+
 def _run_infer(tf_module: tf.Module, input_shape: tuple[int, ...], batch_size: int | None) -> tf.Tensor:
     """Warm up the model by running it once."""
     if batch_size is not None:
@@ -21,6 +22,7 @@ def _run_infer(tf_module: tf.Module, input_shape: tuple[int, ...], batch_size: i
         test_input = jax.random.normal(jax.random.PRNGKey(42), (1, *input_shape))
 
     return tf_module.infer(test_input)
+
 
 def export(
     model: Callable,
