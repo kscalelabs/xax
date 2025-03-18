@@ -9,6 +9,7 @@ dpshdl
 chex
 importlib-resources
 equinox
+flax
 
 # Data processing and serialization
 cloudpickle
