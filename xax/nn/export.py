@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Callable
 
 import flax
+import jax
 import tensorflow as tf
 from jax.experimental import jax2tf
 from jaxtyping import Array, PyTree
 from orbax.export import ExportManager, JaxModule, ServingConfig
-import jax
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,14 @@ def export(
     model: Callable,
     input_shape: tuple[int, ...],
     output_dir: str | Path = "export",
-    batch_dim: int | None = None,
+    batch_size: int | None = None,
 ) -> None:
     tf_module = tf.Module()
     tf_module.infer = tf.function(
         jax2tf.convert(
             model,
             polymorphic_shapes=[
-                "(b, ...)" if batch_dim is not None else "(None, ...)",
+                "(b, ...)" if batch_size is not None else "(None, ...)",
             ],
             # setting this to False will allow the model to run on platforms other than the one that exports the model
             # https://github.com/jax-ml/jax/blob/051687dc4c899df3d95c30b812ade401d8b31166/jax/experimental/jax2tf/README.md?plain=1#L1342
@@ -34,7 +34,7 @@ def export(
             with_gradient=False,
         ),
         autograph=False,
-        input_signature=[tf.TensorSpec([batch_dim] + list(input_shape), tf.float32)],
+        input_signature=[tf.TensorSpec([batch_size] + list(input_shape), tf.float32)],
     )
 
     logger.info("Exporting SavedModel to %s", output_dir)
