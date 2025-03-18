@@ -21,7 +21,7 @@ from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
 
 logger = logging.getLogger(__name__)
 
-CheckpointPart = Literal["model", "opt", "opt_state", "state", "config"]
+CheckpointPart = Literal["model", "opt", "opt_state", "state", "config", "model_state_config", "all"]
 
 
 def get_ckpt_path(exp_dir: Path, state: State | None = None) -> Path:
@@ -88,7 +88,15 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     def load_checkpoint(
         self,
         path: Path,
+        part: Literal["all"] = "all",
     ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["model_state_config"] = "model_state_config",
+    ) -> tuple[PyTree, State, DictConfig]: ...
 
     @overload
     def load_checkpoint(self, path: Path, part: Literal["model"]) -> PyTree: ...
@@ -108,9 +116,10 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     def load_checkpoint(
         self,
         path: Path,
-        part: CheckpointPart | None = None,
+        part: CheckpointPart = "all",
     ) -> (
         tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]
+        | tuple[PyTree, State, DictConfig]
         | PyTree
         | optax.GradientTransformation
         | optax.OptState
@@ -155,7 +164,9 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                     return get_state()
                 case "config":
                     return get_config()
-                case None:
+                case "model_state_config":
+                    return get_model(), get_state(), get_config()
+                case "all":
                     return get_model(), get_opt(), get_opt_state(), get_state(), get_config()
                 case _:
                     raise ValueError(f"Invalid checkpoint part: {part}")
