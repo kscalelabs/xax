@@ -24,6 +24,7 @@ from typing import (
     TypeVar,
     cast,
     get_args,
+    overload,
 )
 
 import equinox as eqx
@@ -279,23 +280,51 @@ class TrainMixin(
     def get_initial_opt_state(self, model: PyTree, optimizer: optax.GradientTransformation) -> optax.OptState:
         return optimizer.init(eqx.filter(model, eqx.is_array))
 
+    @overload
     def load_initial_state(
         self,
         key: PRNGKeyArray,
-    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State]:
+        load_optimizer: Literal[False] = False,
+    ) -> tuple[PyTree, State]: ...
+
+    @overload
+    def load_initial_state(
+        self,
+        key: PRNGKeyArray,
+        load_optimizer: Literal[True],
+    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State]: ...
+
+    def load_initial_state(
+        self,
+        key: PRNGKeyArray,
+        load_optimizer: bool = False,
+    ) -> tuple[PyTree, State] | tuple[PyTree, optax.GradientTransformation, optax.OptState, State]:
         init_ckpt_path = self.get_init_ckpt_path()
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
             with self.step_context("load_checkpoint"):
-                model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
-                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
-                if config_diff:
-                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
-                return model, optimizer, opt_state, state
+                if load_optimizer:
+                    model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
+                    config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
+                    if config_diff:
+                        logger.warning("Loaded config differs from current config:\n%s", config_diff)
+                    return model, optimizer, opt_state, state
+
+                else:
+                    model, state, config = self.load_checkpoint(init_ckpt_path, "model_state_config")
+                    config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
+                    if config_diff:
+                        logger.warning("Loaded config differs from current config:\n%s", config_diff)
+                    return model, state
 
         with self.step_context("get_model"):
             model = self.get_model(key)
+
+        state = State.init_state()
+
+        if not load_optimizer:
+            return model, state
 
         with self.step_context("get_optimizer"):
             optimizer = self.get_optimizer()
@@ -303,7 +332,7 @@ class TrainMixin(
         with self.step_context("get_initial_opt_state"):
             opt_state = self.get_initial_opt_state(model, optimizer)
 
-        return model, optimizer, opt_state, State.init_state()
+        return model, optimizer, opt_state, state
 
     @eqx.filter_jit
     def get_output(self, model: PyTree, batch: Batch) -> Output:
@@ -559,7 +588,7 @@ class TrainMixin(
                 Thread(target=self.log_state, daemon=True).start()
 
             key, model_key = jax.random.split(key)
-            model, optimizer, opt_state, state = self.load_initial_state(model_key)
+            model, optimizer, opt_state, state = self.load_initial_state(model_key, load_optimizer=True)
             state = self.on_training_start(state)
 
             def on_exit() -> None:
