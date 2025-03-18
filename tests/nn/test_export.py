@@ -8,13 +8,14 @@ when running the tests.
 from pathlib import Path
 
 import equinox as eqx
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import pytest
 import tensorflow as tf
 from jaxtyping import Array, Float
 
-from xax.nn.export import export
+from xax.nn.export import export, export_flax
 
 
 class SumModel(eqx.Module):
@@ -55,11 +56,13 @@ class MLP(eqx.Module):
         return self.layers[1](x)
 
 
-@pytest.mark.parametrize("tf_input, expected_output", [
-    ([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[6.0], [15.0]]),
-    ([[10.0, 20.0, 30.0]], [[60.0]])
-])
-def test_export_sum_model_parametric(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+@pytest.mark.parametrize(
+    "tf_input, expected_output",
+    [([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[6.0], [15.0]]), ([[10.0, 20.0, 30.0]], [[60.0]])],
+)
+def test_export_sum_model_parametric(
+    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+) -> None:
     model = SumModel()
     export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
@@ -67,11 +70,13 @@ def test_export_sum_model_parametric(tmp_path: Path, tf_input: list[list[float]]
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
 
 
-@pytest.mark.parametrize("tf_input, expected_output", [
-    ([[1.0, 2.0, 3.0]], [[3.0, 6.0, 9.0]]),
-    ([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], [[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]])
-])
-def test_export_multiply_model_parametric(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+@pytest.mark.parametrize(
+    "tf_input, expected_output",
+    [([[1.0, 2.0, 3.0]], [[3.0, 6.0, 9.0]]), ([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], [[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]])],
+)
+def test_export_multiply_model_parametric(
+    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+) -> None:
     model = MultiplyModel(factor=3.0)
     export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
@@ -90,9 +95,7 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
     test_input = jax.random.uniform(key, (in_features,)).tolist()
     jax_out = model(jnp.array(test_input))
 
-    batched_expected = tf.convert_to_tensor(
-        jnp.stack([jax_out] * batch_size), dtype=tf.float32
-    )
+    batched_expected = tf.convert_to_tensor(jnp.stack([jax_out] * batch_size), dtype=tf.float32)
 
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
@@ -117,29 +120,19 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
         ([[1.0, 2.0, 3.0]], [[2.0, 4.0, 6.0]]),
         # Batch size 3
         (
-            [[1.0, 2.0, 3.0],
-             [4.0, 5.0, 6.0],
-             [7.0, 8.0, 9.0]],
-            [[2.0, 4.0, 6.0],
-             [8.0, 10.0, 12.0],
-             [14.0, 16.0, 18.0]],
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0], [14.0, 16.0, 18.0]],
         ),
         # Batch size 5
         (
-            [[1.0, 2.0, 3.0],
-             [4.0, 5.0, 6.0],
-             [7.0, 8.0, 9.0],
-             [10.0, 11.0, 12.0],
-             [13.0, 14.0, 15.0]],
-            [[2.0, 4.0, 6.0],
-             [8.0, 10.0, 12.0],
-             [14.0, 16.0, 18.0],
-             [20.0, 22.0, 24.0],
-             [26.0, 28.0, 30.0]],
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0], [13.0, 14.0, 15.0]],
+            [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0], [14.0, 16.0, 18.0], [20.0, 22.0, 24.0], [26.0, 28.0, 30.0]],
         ),
     ],
 )
-def test_export_multiply_model_poly(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+def test_export_multiply_model_poly(
+    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+) -> None:
     model = MultiplyModel(factor=2.0)
     # Export with polymorphic batch size (batch_size=None)
     export(model=jax.vmap(model), input_shape=(3,), output_dir=tmp_path, batch_size=None)
@@ -156,11 +149,13 @@ def test_export_multiply_model_poly(tmp_path: Path, tf_input: list[list[float]],
         # Batch size 3 (all same input)
         [[0.5, 1.0, 1.5, 2.0]] * 3,
         # Batch size 5 with varied inputs
-        [[0.5, 1.0, 1.5, 2.0],
-         [1.0, 1.5, 2.0, 2.5],
-         [0.1, 0.2, 0.3, 0.4],
-         [2.0, 2.0, 2.0, 2.0],
-         [-0.5, -1.0, -1.5, -2.0]],
+        [
+            [0.5, 1.0, 1.5, 2.0],
+            [1.0, 1.5, 2.0, 2.5],
+            [0.1, 0.2, 0.3, 0.4],
+            [2.0, 2.0, 2.0, 2.0],
+            [-0.5, -1.0, -1.5, -2.0],
+        ],
     ],
 )
 def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> None:
@@ -183,3 +178,57 @@ def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> N
     expected = tf.convert_to_tensor(jax_output, dtype=tf.float32)
     tf_result = loaded_model.infer(tf_input_tensor)
     tf.debugging.assert_near(tf_result, expected, rtol=1e-5)
+
+
+class FlaxMLP(nn.Module):
+    """Flax MLP for testing export."""
+
+    in_features: int
+    hidden_features: list[int]
+    out_features: int
+
+    @nn.compact
+    def __call__(self, x: Float[Array, "..."]) -> Float[Array, "..."]:
+        """Forward pass through the MLP with multiple hidden layers."""
+        x = nn.Dense(features=self.hidden_features[0])(x)
+        x = nn.relu(x)
+
+        for features in self.hidden_features[1:]:
+            x = nn.Dense(features=features)(x)
+            x = nn.relu(x)
+
+        x = nn.Dense(features=self.out_features)(x)
+        return x
+
+
+@pytest.mark.parametrize(
+    "in_features, hidden_features, out_features, batch_size",
+    [
+        (784, [128, 64], 10, 2),
+        (100, [50], 5, 1),
+        (3, [10, 10, 10], 2, 5),
+        (512, [256, 128, 64], 32, 3),
+    ],
+)
+def test_export_flax_mlp(
+    tmp_path: Path, in_features: int, hidden_features: list[int], out_features: int, batch_size: int
+) -> None:
+    """Test exporting a FlaxMLP model with different configurations."""
+    model = FlaxMLP(in_features, hidden_features, out_features)
+
+    # Initialize the model parameters (very important for flax models)
+    key = jax.random.PRNGKey(42)
+    params = model.init(key, jnp.ones((1, in_features)))
+
+    test_input = jax.random.normal(key, (batch_size, in_features))
+
+    expected_output = model.apply(params, test_input)
+
+    export_flax(model=model, params=params, input_shape=(in_features,), output_dir=tmp_path)
+
+    loaded_model = tf.saved_model.load(tmp_path)
+
+    tf_input = tf.constant(test_input, dtype=tf.float32)
+    result = loaded_model.signatures["serving_default"](inputs=tf_input)["outputs"]
+
+    tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)

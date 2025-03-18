@@ -88,7 +88,7 @@ def export_flax(
         [
             ServingConfig(
                 "serving_default",
-                input_signature=tf.TensorSpec([None] + list(input_shape), tf.float32, name=input_name),
+                input_signature=[tf.TensorSpec([None] + list(input_shape), tf.float32, name=input_name)],
                 tf_preprocessor=preprocessor,
                 tf_postprocessor=postprocessor,
             )
