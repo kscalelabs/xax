@@ -124,6 +124,8 @@ __all__ += [
     "Batch",
     "CollateMode",
     "EmbeddingKind",
+    "ActivationFunction",
+    "DTYPE",
     "LOG_ERROR_SUMMARY",
     "LOG_PING",
     "LOG_STATUS",
@@ -259,6 +261,8 @@ NAME_MAP.update(
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
+        "ActivationFunction": "nn.equinox",
+        "DTYPE": "nn.equinox",
     },
 )
 
@@ -297,6 +301,8 @@ if IMPORT_ALL or TYPE_CHECKING:
         rotary_embeddings,
     )
     from xax.nn.equinox import (
+        DTYPE,
+        ActivationFunction,
         MLPHyperParams,
         export_eqx_mlp,
         load_eqx,

@@ -8,6 +8,7 @@ optax
 dpshdl
 chex
 importlib-resources
+equinox
 
 # Data processing and serialization
 cloudpickle

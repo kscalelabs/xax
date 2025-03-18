@@ -1,4 +1,5 @@
 """Equinox utilities."""
+
 import json
 import logging
 from pathlib import Path
@@ -61,6 +62,7 @@ class MLPHyperParams(TypedDict):
     use_final_bias: bool
     dtype: DTYPE
 
+
 def _infer_activation(activation: ActivationFunction) -> Callable:
     if activation == "identity":
         return lambda x: x
@@ -93,6 +95,7 @@ def make_eqx_mlp(hyperparams: MLPHyperParams, key: PRNGKeyArray = jax.random.PRN
         dtype=dtype,
         key=key,
     )
+
 
 def export_eqx_mlp(
     model: eqx.nn.MLP,
@@ -139,6 +142,7 @@ def export_eqx_mlp(
         f.write((hyperparam_str + "\n").encode(encoding="utf-8"))
         eqx.tree_serialise_leaves(f, model)
 
+
 def save_eqx(
     model: eqx.Module,
     output_path: str | Path,
@@ -152,6 +156,7 @@ def save_eqx(
     with open(output_path, "wb") as f:
         eqx.tree_serialise_leaves(f, model)
 
+
 def load_eqx(
     model: eqx.Module,
     eqx_file: str | Path,
@@ -164,6 +169,7 @@ def load_eqx(
     """
     with open(eqx_file, "rb") as f:
         return eqx.tree_deserialise_leaves(f, model)
+
 
 def load_eqx_mlp(
     eqx_file: str | Path,

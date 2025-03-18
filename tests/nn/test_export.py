@@ -16,7 +16,7 @@ import tensorflow as tf
 from jax.experimental import jax2tf
 from jaxtyping import Array, Float
 
-from xax.nn.export import export, export_flax, export_with_params
+import xax
 
 
 class SumModel(eqx.Module):
@@ -65,7 +65,7 @@ def test_export_sum_model_parametric(
     tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
 ) -> None:
     model = SumModel()
-    export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
+    xax.export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -79,7 +79,7 @@ def test_export_multiply_model_parametric(
     tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
 ) -> None:
     model = MultiplyModel(factor=3.0)
-    export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
+    xax.export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -101,7 +101,7 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
 
-    export(
+    xax.export(
         model=batched_model,
         input_shape=(in_features,),
         output_dir=tmp_path,
@@ -136,7 +136,7 @@ def test_export_multiply_model_poly(
 ) -> None:
     model = MultiplyModel(factor=2.0)
     # Export with polymorphic batch size (batch_size=None)
-    export(model=jax.vmap(model), input_shape=(3,), output_dir=tmp_path, batch_size=None)
+    xax.export(model=jax.vmap(model), input_shape=(3,), output_dir=tmp_path, batch_size=None)
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -169,7 +169,7 @@ def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> N
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
 
-    export(model=batched_model, input_shape=(in_features,), output_dir=tmp_path, batch_size=None)
+    xax.export(model=batched_model, input_shape=(in_features,), output_dir=tmp_path, batch_size=None)
 
     loaded_model = tf.saved_model.load(tmp_path)
     tf_input_tensor = tf.constant(tf_input, dtype=tf.float32)
@@ -225,7 +225,7 @@ def test_export_flax_mlp(
 
     expected_output = model.apply(params, test_input)
 
-    export_flax(model=model, params=params, input_shape=(in_features,), output_dir=tmp_path)
+    xax.export_flax(model=model, params=params, input_shape=(in_features,), output_dir=tmp_path)
 
     loaded_model = tf.saved_model.load(tmp_path)
 
@@ -248,7 +248,7 @@ def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
     tf_input = jnp.array([[1.0, 2.0, 3.0]])
     expected_output = tf_input * factor
 
-    export_with_params(
+    xax.export_with_params(
         model=multiply_fn,
         params=params,
         input_shape=(3,),
