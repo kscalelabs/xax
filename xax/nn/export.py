@@ -20,7 +20,8 @@ def _run_infer(tf_module: tf.Module, input_shape: tuple[int, ...], batch_size: i
         test_input = jax.random.normal(jax.random.PRNGKey(42), (batch_size, *input_shape))
     else:
         test_input = jax.random.normal(jax.random.PRNGKey(42), (1, *input_shape))
-
+    if not hasattr(tf_module, "infer"):
+        raise ValueError("Model does not have an infer method")
     return tf_module.infer(test_input)
 
 
@@ -42,7 +43,7 @@ def export(
         batch_size: Optional batch dimension. If None, a polymorphic batch dimension is used.
     """
     tf_module = tf.Module()
-    tf_module.infer = tf.function(
+    tf_module.infer = tf.function(  # type: ignore [attr-defined]
         jax2tf.convert(
             model,
             polymorphic_shapes=[
@@ -92,8 +93,8 @@ def export_with_params(
         return converted_model(param_vars, inputs)
 
     tf_module = tf.Module()
-    tf_module._variables = tf.nest.flatten(param_vars)
-    tf_module.infer = tf.function(
+    tf_module._variables = tf.nest.flatten(param_vars)  # type: ignore [attr-defined]
+    tf_module.infer = tf.function(  # type: ignore [attr-defined]
         model_fn,
         jit_compile=True,
         autograph=False,
@@ -103,8 +104,7 @@ def export_with_params(
     )
 
     # warm up the model
-    test_input = jax.random.normal(jax.random.PRNGKey(42), (batch_dim, *input_shape))
-    tf_module.infer(test_input)
+    _run_infer(tf_module, input_shape, batch_dim)
 
     logger.info("Exporting SavedModel to %s", output_dir)
     tf.saved_model.save(tf_module, output_dir)

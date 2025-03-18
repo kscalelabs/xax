@@ -96,7 +96,7 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
     test_input = jax.random.uniform(key, (in_features,)).tolist()
     jax_out = model(jnp.array(test_input))
 
-    batched_expected = tf.convert_to_tensor(jnp.stack([jax_out] * batch_size), dtype=tf.float32)
+    batched_expected = tf.convert_to_tensor(jnp.stack([jax_out] * batch_size).tolist(), dtype=tf.float32)
 
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
@@ -176,7 +176,7 @@ def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> N
 
     # Compute expected output using jax.vmap
     jax_output = jax.vmap(model)(jnp.array(tf_input))
-    expected = tf.convert_to_tensor(jax_output, dtype=tf.float32)
+    expected = tf.convert_to_tensor(jax_output.tolist(), dtype=tf.float32)
     tf_result = loaded_model.infer(tf_input_tensor)
     tf.debugging.assert_near(tf_result, expected, rtol=1e-5)
 
@@ -229,10 +229,10 @@ def test_export_flax_mlp(
 
     loaded_model = tf.saved_model.load(tmp_path)
 
-    tf_input = tf.constant(test_input, dtype=tf.float32)
+    tf_input = tf.convert_to_tensor(test_input.tolist(), dtype=tf.float32)
     result = loaded_model.signatures["serving_default"](inputs=tf_input)["outputs"]
 
-    tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
+    tf.debugging.assert_near(result, expected_output, rtol=1e-5)
 
 
 def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
@@ -245,7 +245,7 @@ def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
     # Create a parameter array with the factor
     params = jnp.array([factor])
 
-    tf_input = jnp.array([[1.0, 2.0, 3.0]])
+    tf_input = tf.constant([[1.0, 2.0, 3.0]], dtype=tf.float32)
     expected_output = tf_input * factor
 
     xax.export_with_params(
@@ -258,9 +258,9 @@ def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
 
     loaded_model = tf.saved_model.load(tmp_path)
 
-    result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
+    result = loaded_model.infer(tf.convert_to_tensor(tf_input, dtype=tf.float32))
 
-    tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
+    tf.debugging.assert_near(result, expected_output, rtol=1e-5)
 
 
 @pytest.mark.parametrize(
@@ -287,7 +287,7 @@ def test_export_with_params_poly_batch(tmp_path: Path, tf_input: list[list[float
     def infer(inputs: tf.Tensor) -> tf.Tensor:
         return converted_model(inputs)
 
-    tf_module.infer = infer
+    tf_module.infer = infer  # type: ignore [attr-defined]
 
     tf.saved_model.save(tf_module, tmp_path)
 
