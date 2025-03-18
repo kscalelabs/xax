@@ -13,9 +13,11 @@ import jax
 import jax.numpy as jnp
 import pytest
 import tensorflow as tf
-from jaxtyping import Array, Float
+from jax.experimental import jax2tf
+from jaxtyping import Array, Float, PyTree
+import numpy as np
 
-from xax.nn.export import export, export_flax
+from xax.nn.export import export, export_flax, export_with_params
 
 
 class SumModel(eqx.Module):
@@ -230,5 +232,72 @@ def test_export_flax_mlp(
 
     tf_input = tf.constant(test_input, dtype=tf.float32)
     result = loaded_model.signatures["serving_default"](inputs=tf_input)["outputs"]
+
+    tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
+
+
+def test_export_with_params_basic_multiply(
+    tmp_path: Path
+) -> None:
+    """Test exporting a basic multiply function with parameters."""
+    factor = 3.0
+
+    def multiply_fn(params: Float[Array, "..."], x: Float[Array, "..."]) -> Float[Array, "..."]:
+        return x * params[0]
+
+    # Create a parameter array with the factor
+    params = jnp.array([factor])
+
+    tf_input = jnp.array([[1.0, 2.0, 3.0]])
+    expected_output = tf_input * factor
+
+    export_with_params(
+        model=multiply_fn,
+        params=params,
+        input_shape=(3,),
+        output_dir=tmp_path,
+        batch_dim=len(tf_input),
+    )
+
+    loaded_model = tf.saved_model.load(tmp_path)
+
+    result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
+
+    tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "tf_input, expected_factor",
+    [
+        ([[1.0, 2.0, 3.0]], 3.0),
+        ([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], 3.0),
+        ([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], 3.0),
+    ],
+)
+def test_export_with_params_poly_batch(tmp_path: Path, tf_input: list[list[float]], expected_factor: float) -> None:
+    """Test exporting a model with polymorphic batch dimensions using export_with_params."""
+    factor = jnp.array(expected_factor)
+
+    def multiply_model(x: Float[Array, "..."]) -> Float[Array, "..."]:
+        return x * factor
+
+    converted_model = jax2tf.convert(multiply_model, polymorphic_shapes=["(b, ...)"])
+
+    tf_module = tf.Module()
+
+    # Define the TF function that accepts polymorphic batch dimensions
+    @tf.function(input_signature=[tf.TensorSpec([None, 3], tf.float32)])
+    def infer(inputs: tf.Tensor) -> tf.Tensor:
+        return converted_model(inputs)
+
+    tf_module.infer = infer
+
+    tf.saved_model.save(tf_module, tmp_path)
+
+    loaded_model = tf.saved_model.load(tmp_path)
+
+    expected_output = [[x * expected_factor for x in batch] for batch in tf_input]
+
+    result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
 
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)

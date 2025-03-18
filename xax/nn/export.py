@@ -13,6 +13,14 @@ from orbax.export import ExportManager, JaxModule, ServingConfig
 
 logger = logging.getLogger(__name__)
 
+def _run_infer(tf_module: tf.Module, input_shape: tuple[int, ...], batch_size: int | None) -> tf.Tensor:
+    """Warm up the model by running it once."""
+    if batch_size is not None:
+        test_input = jax.random.normal(jax.random.PRNGKey(42), (batch_size, *input_shape))
+    else:
+        test_input = jax.random.normal(jax.random.PRNGKey(42), (1, *input_shape))
+
+    return tf_module.infer(test_input)
 
 def export(
     model: Callable,
@@ -20,6 +28,17 @@ def export(
     output_dir: str | Path = "export",
     batch_size: int | None = None,
 ) -> None:
+    """Export a JAX function to TensorFlow SavedModel.
+
+    Note: Tensorflow GraphDef can't be larger than 2GB - https://github.com/tensorflow/tensorflow/issues/51870
+    You can avoid this by saving model parameters as non-constants.
+
+    Args:
+        model: The JAX function to export.
+        input_shape: The shape of the input tensor, excluding batch dimension.
+        output_dir: Directory to save the exported model.
+        batch_size: Optional batch dimension. If None, a polymorphic batch dimension is used.
+    """
     tf_module = tf.Module()
     tf_module.infer = tf.function(
         jax2tf.convert(
@@ -36,6 +55,9 @@ def export(
         autograph=False,
         input_signature=[tf.TensorSpec([batch_size] + list(input_shape), tf.float32)],
     )
+
+    # warm up the model
+    _run_infer(tf_module, input_shape, batch_size)
 
     logger.info("Exporting SavedModel to %s", output_dir)
     tf.saved_model.save(
@@ -60,7 +82,30 @@ def export_with_params(
         output_dir: Directory to save the exported model.
         batch_dim: Optional batch dimension. If None, a polymorphic batch dimension is used.
     """
-    pass
+    param_vars = tf.nest.map_structure(tf.Variable, params)
+
+    converted_model = jax2tf.convert(model)
+
+    def model_fn(inputs: PyTree) -> Array:
+        return converted_model(param_vars, inputs)
+
+    tf_module = tf.Module()
+    tf_module._variables = tf.nest.flatten(param_vars)
+    tf_module.infer = tf.function(
+        model_fn,
+        jit_compile=True,
+        autograph=False,
+        input_signature=[
+            tf.TensorSpec([batch_dim] + list(input_shape), tf.float32),
+        ],
+    )
+
+    # warm up the model
+    test_input = jax.random.normal(jax.random.PRNGKey(42), (batch_dim, *input_shape))
+    tf_module.infer(test_input)
+
+    logger.info("Exporting SavedModel to %s", output_dir)
+    tf.saved_model.save(tf_module, output_dir)
 
 
 def export_flax(
