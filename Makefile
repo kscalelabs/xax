@@ -1,20 +1,18 @@
 # Makefile
 
-py-files := $(shell git ls-files '*.py')
-
 all: format static-checks test
 .PHONY: all
 
 format:
-	@black $(py-files)
-	@ruff format $(py-files)
-	@ruff check --fix $(py-files)
+	@black xax tests examples
+	@ruff format xax tests examples
+	@ruff check --fix xax tests examples
 .PHONY: format
 
 static-checks:
-	@black --diff --check $(py-files)
-	@ruff check $(py-files)
-	@mypy --install-types --non-interactive $(py-files)
+	@black --diff --check xax tests examples
+	@ruff check xax tests examples
+	@mypy --install-types --non-interactive xax tests examples
 .PHONY: static-checks
 
 test:

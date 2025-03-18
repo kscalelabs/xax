@@ -24,6 +24,10 @@ __all__ = [
     "load_user_config",
     "State",
     "cast_phase",
+    "ActionDistribution",
+    "CategoricalDistribution",
+    "GaussianDistribution",
+    "TanhGaussianDistribution",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -47,6 +51,8 @@ __all__ = [
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
+    "cast_norm_type",
+    "get_norm",
     "is_master",
     "BaseLauncher",
     "CliLauncher",
@@ -70,6 +76,7 @@ __all__ = [
     "collate",
     "collate_non_null",
     "BaseFileDownloader",
+    "ContextTimer",
     "CumulativeTimer",
     "DataDownloader",
     "IntervalTicker",
@@ -92,6 +99,7 @@ __all__ = [
     "stage_environment",
     "to_markdown_table",
     "jit",
+    "save_jaxpr_dot",
     "ColoredFormatter",
     "configure_logging",
     "one_hot",
@@ -101,8 +109,13 @@ __all__ = [
     "compute_nan_ratio",
     "flatten_array",
     "flatten_pytree",
+    "pytree_has_nans",
+    "reshuffle_pytree",
+    "reshuffle_pytree_along_dims",
+    "reshuffle_pytree_independently",
     "slice_array",
     "slice_pytree",
+    "update_pytree",
     "TextBlock",
     "camelcase_to_snakecase",
     "colored",
@@ -118,6 +131,7 @@ __all__ = [
     "snakecase_to_camelcase",
     "uncolored",
     "wrapped",
+    "scan_model",
 ]
 
 __all__ += [
@@ -129,6 +143,7 @@ __all__ += [
     "LOG_ERROR_SUMMARY",
     "LOG_PING",
     "LOG_STATUS",
+    "NormType",
     "Output",
     "Phase",
     "RawConfigType",
@@ -153,6 +168,10 @@ NAME_MAP: dict[str, str] = {
     "load_user_config": "core.conf",
     "State": "core.state",
     "cast_phase": "core.state",
+    "ActionDistribution": "nn.distributions",
+    "CategoricalDistribution": "nn.distributions",
+    "GaussianDistribution": "nn.distributions",
+    "TanhGaussianDistribution": "nn.distributions",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -176,6 +195,8 @@ NAME_MAP: dict[str, str] = {
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
+    "cast_norm_type": "nn.norm",
+    "get_norm": "nn.norm",
     "is_master": "nn.parallel",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
@@ -199,6 +220,7 @@ NAME_MAP: dict[str, str] = {
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
     "BaseFileDownloader": "utils.experiments",
+    "ContextTimer": "utils.experiments",
     "CumulativeTimer": "utils.experiments",
     "DataDownloader": "utils.experiments",
     "IntervalTicker": "utils.experiments",
@@ -221,6 +243,7 @@ NAME_MAP: dict[str, str] = {
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
     "jit": "utils.jax",
+    "save_jaxpr_dot": "utils.jaxpr",
     "ColoredFormatter": "utils.logging",
     "configure_logging": "utils.logging",
     "one_hot": "utils.numpy",
@@ -230,8 +253,13 @@ NAME_MAP: dict[str, str] = {
     "compute_nan_ratio": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
+    "pytree_has_nans": "utils.pytree",
+    "reshuffle_pytree": "utils.pytree",
+    "reshuffle_pytree_along_dims": "utils.pytree",
+    "reshuffle_pytree_independently": "utils.pytree",
     "slice_array": "utils.pytree",
     "slice_pytree": "utils.pytree",
+    "update_pytree": "utils.pytree",
     "TextBlock": "utils.text",
     "camelcase_to_snakecase": "utils.text",
     "colored": "utils.text",
@@ -247,6 +275,7 @@ NAME_MAP: dict[str, str] = {
     "snakecase_to_camelcase": "utils.text",
     "uncolored": "utils.text",
     "wrapped": "utils.text",
+    "scan_model": "utils.transformation",
 }
 
 # Need to manually set some values which can't be auto-generated.
@@ -258,6 +287,7 @@ NAME_MAP.update(
         "LOG_ERROR_SUMMARY": "utils.logging",
         "LOG_PING": "utils.logging",
         "LOG_STATUS": "utils.logging",
+        "NormType": "nn.norm",
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
@@ -286,6 +316,12 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State, cast_phase
+    from xax.nn.distributions import (
+        ActionDistribution,
+        CategoricalDistribution,
+        GaussianDistribution,
+        TanhGaussianDistribution,
+    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -320,6 +356,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
     )
+    from xax.nn.norm import NormType, cast_norm_type, get_norm
     from xax.nn.parallel import is_master
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
@@ -340,6 +377,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
     from xax.utils.experiments import (
         BaseFileDownloader,
+        ContextTimer,
         CumulativeTimer,
         DataDownloader,
         IntervalTicker,
@@ -363,6 +401,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         to_markdown_table,
     )
     from xax.utils.jax import jit
+    from xax.utils.jaxpr import save_jaxpr_dot
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,
         LOG_PING,
@@ -376,8 +415,13 @@ if IMPORT_ALL or TYPE_CHECKING:
         compute_nan_ratio,
         flatten_array,
         flatten_pytree,
+        pytree_has_nans,
+        reshuffle_pytree,
+        reshuffle_pytree_along_dims,
+        reshuffle_pytree_independently,
         slice_array,
         slice_pytree,
+        update_pytree,
     )
     from xax.utils.text import (
         TextBlock,
@@ -396,5 +440,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         uncolored,
         wrapped,
     )
+    from xax.utils.transformation import scan_model
 
 del TYPE_CHECKING, IMPORT_ALL

@@ -329,9 +329,9 @@ def image_with_text(
     else:
         text = text[:max_num_lines]
     width, height = image.size
-    font: ImageFont.ImageFont = ImageFont.load_default()
+    font: ImageFont.ImageFont | ImageFont.FreeTypeFont = ImageFont.load_default()
     _, _, _, line_height = font.getbbox(text[0])
-    new_width, new_height = width, height + line_spacing + max_num_lines * (line_height + line_spacing)
+    new_width, new_height = width, int(height + line_spacing + max_num_lines * (line_height + line_spacing))
     padded_image = Image.new(image.mode, (new_width, new_height), 255)
     padded_image.paste(image, (0, 0))
     drawer = ImageDraw.Draw(padded_image)

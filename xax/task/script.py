@@ -17,8 +17,6 @@ from xax.task.mixins import (
     ProcessMixin,
     RunnableConfig,
     RunnableMixin,
-    StepContextConfig,
-    StepContextMixin,
 )
 
 
@@ -28,7 +26,6 @@ class ScriptConfig(
     GPUStatsConfig,
     ProcessConfig,
     LoggerConfig,
-    StepContextConfig,
     ArtifactsConfig,
     RunnableConfig,
     BaseConfig,
@@ -44,7 +41,6 @@ class Script(
     GPUStatsMixin[ConfigT],
     ProcessMixin[ConfigT],
     LoggerMixin[ConfigT],
-    StepContextMixin[ConfigT],
     ArtifactsMixin[ConfigT],
     RunnableMixin[ConfigT],
     BaseTask[ConfigT],
