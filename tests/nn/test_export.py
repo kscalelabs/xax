@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 import tensorflow as tf
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PyTree
 
 from xax.nn.export import export
 
@@ -172,3 +172,118 @@ def test_export_mlp_model(temp_export_dir: str) -> None:
 
     # Compare the TF model output with the expected JAX output
     tf.debugging.assert_near(tf_result, expected_result, rtol=1e-5)
+
+
+def test_export_polymorphic_batch_size(temp_export_dir: str) -> None:
+    """Test exporting a model with polymorphic batch size support."""
+    # Define the model and input shape
+    model = MultiplyModel(factor=2.0)
+    input_shape = (3,)  # 3 dimensions as input
+
+    test_input_jax = jnp.array([1.0, 2.0, 3.0])
+    jax_result = model(test_input_jax)
+    assert jnp.allclose(jax_result, jnp.array([2.0, 4.0, 6.0]))
+
+    batched_model = jax.vmap(model)
+
+    # Export the model with None batch size to enable polymorphic batching
+    export(
+        model=batched_model,
+        input_shape=input_shape,
+        output_dir=temp_export_dir,
+        batch_dim=None,  # Use polymorphic batch size
+    )
+
+    assert os.path.exists(os.path.join(temp_export_dir, "saved_model.pb"))
+
+    loaded_model = tf.saved_model.load(temp_export_dir)
+
+    # Test with different batch sizes
+    # Test batch size 1
+    test_input_1 = tf.constant([[1.0, 2.0, 3.0]], dtype=tf.float32)
+    result_1 = loaded_model.infer(test_input_1)
+    expected_1 = tf.constant([[2.0, 4.0, 6.0]], dtype=tf.float32)
+    tf.debugging.assert_near(result_1, expected_1, rtol=1e-5)
+
+    # Test batch size 3
+    test_input_3 = tf.constant([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], dtype=tf.float32)
+    result_3 = loaded_model.infer(test_input_3)
+    expected_3 = tf.constant([[2.0, 4.0, 6.0], [8.0, 10.0, 12.0], [14.0, 16.0, 18.0]], dtype=tf.float32)
+    tf.debugging.assert_near(result_3, expected_3, rtol=1e-5)
+
+    # Test batch size 5
+    test_input_5 = tf.constant(
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0], [13.0, 14.0, 15.0]], dtype=tf.float32
+    )
+    result_5 = loaded_model.infer(test_input_5)
+    expected_5 = tf.constant(
+        [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0], [14.0, 16.0, 18.0], [20.0, 22.0, 24.0], [26.0, 28.0, 30.0]],
+        dtype=tf.float32,
+    )
+    tf.debugging.assert_near(result_5, expected_5, rtol=1e-5)
+
+
+def test_export_polymorphic_batch_size_mlp(temp_export_dir: str) -> None:
+    """Test exporting an MLP model with polymorphic batch size support."""
+    in_features = 4
+    hidden_features = 8
+    out_features = 2
+
+    key = jax.random.PRNGKey(42)
+
+    model = MLP(in_features, hidden_features, out_features, key)
+
+    # Create test input data - single example, no batch dimension
+    test_input_jax = jnp.array([0.5, 1.0, 1.5, 2.0])
+
+    jax_result = model(test_input_jax)
+
+    # Create a batched version of the model function for export
+    def batched_model(x: Array) -> Array:
+        return jax.vmap(model)(x)
+
+    # Export the model with polymorphic batch size
+    export(
+        model=batched_model,
+        input_shape=(in_features,),
+        output_dir=temp_export_dir,
+        batch_dim=None,
+    )
+
+    assert os.path.exists(os.path.join(temp_export_dir, "saved_model.pb"))
+
+    loaded_model = tf.saved_model.load(temp_export_dir)
+
+    # Batch size 1
+    test_input_1 = tf.constant([[0.5, 1.0, 1.5, 2.0]], dtype=tf.float32)
+    result_1 = loaded_model.infer(test_input_1)
+    expected_1 = tf.convert_to_tensor(jnp.expand_dims(jax_result, axis=0), dtype=tf.float32)
+    tf.debugging.assert_near(result_1, expected_1, rtol=1e-5)
+
+    # Batch size 3
+    test_input_3 = tf.constant([[0.5, 1.0, 1.5, 2.0], [0.5, 1.0, 1.5, 2.0], [0.5, 1.0, 1.5, 2.0]], dtype=tf.float32)
+    result_3 = loaded_model.infer(test_input_3)
+
+    expected_3 = tf.convert_to_tensor(jnp.stack([jax_result, jax_result, jax_result]), dtype=tf.float32)
+    tf.debugging.assert_near(result_3, expected_3, rtol=1e-5)
+
+    # Batch size 5 with varied inputs
+    test_input_5 = tf.constant(
+        [
+            [0.5, 1.0, 1.5, 2.0],  # Original input
+            [1.0, 1.5, 2.0, 2.5],  # Shifted input
+            [0.1, 0.2, 0.3, 0.4],  # Small values
+            [2.0, 2.0, 2.0, 2.0],  # Uniform values
+            [-0.5, -1.0, -1.5, -2.0],  # Negative values
+        ],
+        dtype=tf.float32,
+    )
+    result_5 = loaded_model.infer(test_input_5)
+
+    jax_results = []
+    for i in range(5):
+        input_i = jnp.array(test_input_5.numpy()[i])
+        jax_results.append(model(input_i))
+    expected_5 = tf.convert_to_tensor(jnp.stack(jax_results), dtype=tf.float32)
+
+    tf.debugging.assert_near(result_5, expected_5, rtol=1e-5)

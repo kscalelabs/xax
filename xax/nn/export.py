@@ -7,8 +7,9 @@ from typing import Callable
 import flax
 import tensorflow as tf
 from jax.experimental import jax2tf
-from jaxtyping import PyTree
+from jaxtyping import Array, PyTree
 from orbax.export import ExportManager, JaxModule, ServingConfig
+import jax
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,11 @@ def export(
         jax2tf.convert(
             model,
             polymorphic_shapes=[
-                "(b, ...)" if batch_dim is not None else None,
+                "(b, ...)" if batch_dim is not None else "(None, ...)",
             ],
             # setting this to False will allow the model to run on platforms other than the one that exports the model
             # https://github.com/jax-ml/jax/blob/051687dc4c899df3d95c30b812ade401d8b31166/jax/experimental/jax2tf/README.md?plain=1#L1342
+            # generally though I think native_serialization is recommended
             native_serialization=False,
             with_gradient=False,
         ),
@@ -49,6 +51,15 @@ def export_with_params(
     output_dir: str | Path = "export",
     batch_dim: int | None = None,
 ) -> None:
+    """Export a JAX function that takes parameters to TensorFlow SavedModel.
+
+    Args:
+        model: The JAX function to export. Should take parameters as first argument.
+        params: The parameters to use for the model.
+        input_shape: The shape of the input tensor, excluding batch dimension.
+        output_dir: Directory to save the exported model.
+        batch_dim: Optional batch dimension. If None, a polymorphic batch dimension is used.
+    """
     pass
 
 
