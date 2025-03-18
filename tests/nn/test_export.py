@@ -5,9 +5,7 @@ but we're still using it for compatibility reasons. This will generate deprecati
 when running the tests.
 """
 
-import shutil
-import tempfile
-from typing import Generator
+from pathlib import Path
 
 import equinox as eqx
 import jax
@@ -57,22 +55,14 @@ class MLP(eqx.Module):
         return self.layers[1](x)
 
 
-@pytest.fixture
-def temp_export_dir() -> Generator[str, None, None]:
-    """Create a temporary directory for exports."""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    shutil.rmtree(temp_dir)
-
-
 @pytest.mark.parametrize("tf_input, expected_output", [
     ([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[6.0], [15.0]]),
     ([[10.0, 20.0, 30.0]], [[60.0]])
 ])
-def test_export_sum_model_parametric(temp_export_dir: str, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+def test_export_sum_model_parametric(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
     model = SumModel()
-    export(model=model.__call__, input_shape=(3,), output_dir=temp_export_dir, batch_size=len(tf_input))
-    loaded_model = tf.saved_model.load(temp_export_dir)
+    export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
+    loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
 
@@ -81,16 +71,16 @@ def test_export_sum_model_parametric(temp_export_dir: str, tf_input: list[list[f
     ([[1.0, 2.0, 3.0]], [[3.0, 6.0, 9.0]]),
     ([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], [[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]])
 ])
-def test_export_multiply_model_parametric(temp_export_dir: str, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+def test_export_multiply_model_parametric(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
     model = MultiplyModel(factor=3.0)
-    export(model=model.__call__, input_shape=(3,), output_dir=temp_export_dir, batch_size=len(tf_input))
-    loaded_model = tf.saved_model.load(temp_export_dir)
+    export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
+    loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
 
 
 @pytest.mark.parametrize("batch_size, rand_key", [(1, 42), (2, 43), (3, 44), (5, 45)])
-def test_export_mlp_model_fixed(temp_export_dir: str, batch_size: int, rand_key: int) -> None:
+def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) -> None:
     key = jax.random.PRNGKey(rand_key)
 
     in_features = jax.random.randint(key, (1,), 1, 10).item()
@@ -110,10 +100,10 @@ def test_export_mlp_model_fixed(temp_export_dir: str, batch_size: int, rand_key:
     export(
         model=batched_model,
         input_shape=(in_features,),
-        output_dir=temp_export_dir,
+        output_dir=tmp_path,
         batch_size=batch_size,
     )
-    loaded_model = tf.saved_model.load(temp_export_dir)
+    loaded_model = tf.saved_model.load(tmp_path)
 
     tf_input = tf.constant([test_input] * batch_size, dtype=tf.float32)
     tf_result = loaded_model.infer(tf_input)
@@ -149,11 +139,11 @@ def test_export_mlp_model_fixed(temp_export_dir: str, batch_size: int, rand_key:
         ),
     ],
 )
-def test_export_multiply_model_poly(temp_export_dir: str, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
+def test_export_multiply_model_poly(tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]) -> None:
     model = MultiplyModel(factor=2.0)
     # Export with polymorphic batch size (batch_size=None)
-    export(model=jax.vmap(model), input_shape=(3,), output_dir=temp_export_dir, batch_size=None)
-    loaded_model = tf.saved_model.load(temp_export_dir)
+    export(model=jax.vmap(model), input_shape=(3,), output_dir=tmp_path, batch_size=None)
+    loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
 
@@ -173,7 +163,7 @@ def test_export_multiply_model_poly(temp_export_dir: str, tf_input: list[list[fl
          [-0.5, -1.0, -1.5, -2.0]],
     ],
 )
-def test_export_mlp_model_poly(temp_export_dir: str, tf_input: list[list[float]]) -> None:
+def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> None:
     in_features = 4
     hidden_features = 8
     out_features = 2
@@ -183,9 +173,9 @@ def test_export_mlp_model_poly(temp_export_dir: str, tf_input: list[list[float]]
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
 
-    export(model=batched_model, input_shape=(in_features,), output_dir=temp_export_dir, batch_size=None)
+    export(model=batched_model, input_shape=(in_features,), output_dir=tmp_path, batch_size=None)
 
-    loaded_model = tf.saved_model.load(temp_export_dir)
+    loaded_model = tf.saved_model.load(tmp_path)
     tf_input_tensor = tf.constant(tf_input, dtype=tf.float32)
 
     # Compute expected output using jax.vmap
