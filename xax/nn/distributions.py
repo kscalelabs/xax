@@ -3,77 +3,68 @@
 from abc import ABC, abstractmethod
 
 import attrs
+import chex
 import jax
 import jax.numpy as jnp
-from chex import assert_shape
 from jaxtyping import Array, PRNGKeyArray
 
 
 @attrs.define(kw_only=True, frozen=True)
-class ActionDistribution(ABC):
+class Distribution(ABC):
     """Abstract class for parametrized action distribution."""
-
-    action_dim: int = attrs.field()
-    """Shape of the distribution's output vector."""
 
     @property
     @abstractmethod
     def num_params(self) -> int:
         """Number of parameters of the distribution. Function of action_dim."""
-        ...
 
     @abstractmethod
-    def sample(self, parameters: Array, rng: Array) -> Array:
+    def sample(self, rng: Array) -> Array:
         """Returns a sample from the postprocessed distribution."""
-        ...
 
     @abstractmethod
-    def mode(self, parameters: Array) -> Array:
+    def mode(self) -> Array:
         """Returns the mode of the postprocessed distribution."""
-        ...
 
     @abstractmethod
-    def log_prob(self, parameters: Array, actions: Array) -> Array:
+    def log_prob(self, actions: Array) -> Array:
         """Compute the log probability of actions."""
-        ...
 
     @abstractmethod
-    def entropy(self, parameters: Array, rng: Array) -> Array:
+    def entropy(self, rng: Array) -> Array:
         """Return the entropy of the given distribution.
 
         Note that we pass in rng because some distributions may require
         sampling to compute the entropy.
         """
-        ...
 
 
 @attrs.define(kw_only=True, frozen=True)
-class GaussianDistribution(ActionDistribution):
+class GaussianDistribution(Distribution):
     """Normal distribution."""
 
-    def get_mean_std(self, parameters: Array) -> tuple[Array, Array]:
-        """Split the parameters into the mean and standard deviation.
-
-        Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
-
-        Returns:
-            The mean and standard deviation, shape (*, action_dim).
-        """
-        assert_shape(parameters, (..., 2 * self.action_dim))
-        mean, std = jnp.split(parameters, 2, axis=-1)
-        return mean, std
+    mean: Array = attrs.field()
+    std: Array = attrs.field()
 
     @property
     def num_params(self) -> int:
-        """Number of parameters of the distribution. Function of action_dim."""
-        return 2 * self.action_dim
+        return self.mean.shape[-1]
 
-    def sample(self, parameters: Array, rng: Array) -> Array:
+    def entropy(self, rng: Array) -> Array:
+        """Return the entropy of the normal distribution.
+
+        Args:
+            rng: A random number generator.
+
+        Returns:
+            The entropy of the distribution, shape (*, action_dim).
+        """
+        log_normalization = 0.5 * jnp.log(2 * jnp.pi) + jnp.log(self.std)
+        entropies = 0.5 + log_normalization
+        return entropies
+
+    def sample(self, rng: Array) -> Array:
         """Sample from the normal distribution.
-
-        Parameters should be the concatenation of the mean and standard
-        deviation. As such, it should have shape (..., 2 * action_dim).
 
         Args:
             parameters: The parameters of the distribution, shape (*, 2 * action_dim).
@@ -82,55 +73,28 @@ class GaussianDistribution(ActionDistribution):
         Returns:
             The sampled actions, shape (*, action_dim).
         """
-        mean, std = self.get_mean_std(parameters)
-        return jax.random.normal(rng, shape=mean.shape) * std + mean
+        return jax.random.normal(rng, shape=self.mean.shape) * self.std + self.mean
 
-    def mode(self, parameters: Array) -> Array:
+    def mode(self) -> Array:
         """Returns the mode of the normal distribution.
-
-        Parameters should be the concatenation of the mean and standard
-        deviation. As such, it should have shape (..., 2 * action_dim).
-
-        Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
 
         Returns:
             The mode of the distribution, shape (*, action_dim).
         """
-        mean, _ = self.get_mean_std(parameters)
-        return mean
+        return self.mean
 
-    def log_prob(self, parameters: Array, actions: Array) -> Array:
+    def log_prob(self, actions: Array) -> Array:
         """Compute the log probability of actions.
 
         Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
             actions: The actions to compute the log probability of, shape (*, action_dim).
 
         Returns:
             The log probability of the actions, shape (*, action_dim).
         """
-        mean, std = self.get_mean_std(parameters)
-        log_probs = -0.5 * jnp.square((actions - mean) / std) - jnp.log(std) - 0.5 * jnp.log(2 * jnp.pi)
-        assert_shape(log_probs, actions.shape)
+        log_probs = -0.5 * jnp.square((actions - self.mean) / self.std) - jnp.log(self.std) - 0.5 * jnp.log(2 * jnp.pi)
+        chex.assert_shape(log_probs, actions.shape)
         return log_probs
-
-    def entropy(self, parameters: Array, rng: Array) -> Array:
-        """Return the entropy of the normal distribution.
-
-        Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
-            rng: A random number generator.
-
-        Returns:
-            The entropy of the distribution, shape (*, action_dim).
-        """
-        _, std = self.get_mean_std(parameters)
-        log_normalization = 0.5 * jnp.log(2 * jnp.pi) + jnp.log(std)
-        entropies = 0.5 + log_normalization
-
-        assert_shape(entropies, (..., self.action_dim))
-        return entropies
 
 
 @attrs.define(kw_only=True, frozen=True)
@@ -152,37 +116,30 @@ class TanhGaussianDistribution(GaussianDistribution):
         """
         return 2.0 * (jnp.log(2.0) - actions - jax.nn.softplus(-2.0 * actions))
 
-    def sample(self, parameters: Array, rng: Array) -> Array:
+    def sample(self, rng: Array) -> Array:
         """Sample from the normal distribution and apply tanh.
 
-        Parameters should be the concatenation of the mean and standard
-        deviation parameters. As such, it should have shape (..., 2 * action_dim).
-
         Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
             rng: A random number generator.
 
         Returns:
             The sampled actions, shape (*, action_dim).
         """
-        normal_sample = super().sample(parameters, rng)
+        normal_sample = super().sample(rng)
         return jnp.tanh(normal_sample)
 
-    def mode(self, parameters: Array) -> Array:
+    def mode(self) -> Array:
         """Returns the mode of the normal-tanh distribution.
 
         For the normal distribution, the mode is the mean.
         After applying tanh, the mode is tanh(mean).
 
-        Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
-
         Returns:
             The mode of the distribution, shape (*, action_dim).
         """
-        return jnp.tanh(super().mode(parameters))
+        return jnp.tanh(self.mean)
 
-    def log_prob(self, parameters: Array, actions: Array, eps: float = 1e-6) -> Array:
+    def log_prob(self, actions: Array, eps: float = 1e-6) -> Array:
         """Compute the log probability of actions.
 
         This formulation computes the Gaussian log density on the pre-tanh
@@ -190,31 +147,27 @@ class TanhGaussianDistribution(GaussianDistribution):
         from the final actions.
 
         Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
             actions: The actions to compute the log probability of, shape (*, action_dim).
             eps: A small epsilon value to avoid division by zero.
 
         Returns:
             The log probability of the actions, shape (*, action_dim).
         """
-        mean, std = self.get_mean_std(parameters)
-
         # Compute the pre-tanh values from the actions (with clipping for stability)
         pre_tanh = jnp.arctanh(jnp.clip(actions, -1 + eps, 1 - eps))
 
         # Compute the base log probability from the Gaussian density (pre-tanh)
-        base_log_prob = super().log_prob(parameters, pre_tanh)
+        base_log_prob = super().log_prob(pre_tanh)
 
         # Compute the log-determinant of the Jacobian for the tanh transformation
         # uses post-tanh actions (y vs x)
         jacobian_correction = jnp.log(1 - jnp.square(actions) + eps)
 
         log_probs = base_log_prob - jacobian_correction
-
-        assert_shape(log_probs, actions.shape)
+        chex.assert_shape(log_probs, actions.shape)
         return log_probs
 
-    def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
+    def entropy(self, rng: PRNGKeyArray) -> Array:
         """Return the entropy of the normal-tanh distribution.
 
         Approximates entropy using sampling since there is no closed-form solution.
@@ -224,40 +177,37 @@ class TanhGaussianDistribution(GaussianDistribution):
         where H(X) is the Gaussian entropy and the Jacobian term is computed from the pre-tanh sample.
 
         Args:
-            parameters: The parameters of the distribution, shape (*, 2 * action_dim).
             rng: A random number generator.
 
         Returns:
             The entropy of the distribution, shape (*, action_dim).
         """
-        # base gaussian entropy
-        normal_entropy = super().entropy(parameters, rng)
+        # Base Gaussian entropy.
+        normal_entropy = super().entropy(rng)
 
-        # get pre-tanh sample
-        normal_sample = super().sample(parameters, rng)
+        # Get the pre-tanh sample.
+        normal_sample = super().sample(rng)
 
-        # compute log det of the jacobian of tanh transformation...
+        # Compute log determinant of the Jacobian of tanh transformation.
         log_det_jacobian = self._log_det_jacobian(normal_sample)
-
         entropies = normal_entropy + log_det_jacobian
-
-        assert_shape(entropies, (..., self.action_dim))
+        chex.assert_shape(entropies, (..., self.num_params))
         return entropies
 
 
 @attrs.define(kw_only=True, frozen=True)
-class CategoricalDistribution(ActionDistribution):
+class CategoricalDistribution(Distribution):
     """Categorical distribution."""
+
+    logits: Array = attrs.field()
 
     @property
     def num_params(self) -> int:
         """Number of parameters of the distribution. Function of action_dim."""
-        return self.action_dim
+        return self.logits.shape[-1]
 
-    def sample(self, parameters: Array, rng: PRNGKeyArray) -> Array:
+    def sample(self, rng: PRNGKeyArray) -> Array:
         """Sample from the categorical distribution. Parameters are logits.
-
-        Parameters should have shape (..., num_actions).
 
         Args:
             parameters: The parameters of the distribution, shape (*, num_actions).
@@ -266,56 +216,40 @@ class CategoricalDistribution(ActionDistribution):
         Returns:
             The sampled actions, shape (*).
         """
-        return jax.random.categorical(rng, parameters)
+        return jax.random.categorical(rng, self.logits)
 
-    def mode(self, parameters: Array) -> Array:
+    def mode(self) -> Array:
         """Returns the mode of the categorical distribution.
-
-        Parameters should have shape (..., num_actions).
-
-        Args:
-            parameters: The parameters of the distribution, shape (*, num_actions).
 
         Returns:
             The mode of the distribution, shape (*).
         """
-        return jnp.argmax(parameters, axis=-1)
+        return jnp.argmax(self.logits, axis=-1)
 
-    def log_prob(self, parameters: Array, actions: Array) -> Array:
+    def log_prob(self, actions: Array) -> Array:
         """Compute the log probability of actions.
 
         Args:
-            parameters: The parameters of the distribution, shape (*, num_actions).
             actions: The actions to compute the log probability of, shape (*).
 
         Returns:
             The log probability of the actions, shape (*).
         """
-        logits = parameters
-        log_probs = jax.nn.log_softmax(logits, axis=-1)
+        chex.assert_type(actions, jnp.int32)
+        log_probs = jax.nn.log_softmax(self.logits, axis=-1)
+        action_log_probs = log_probs[actions]
+        return action_log_probs
 
-        batch_shape = actions.shape
-        flat_log_probs = log_probs.reshape(-1, log_probs.shape[-1])
-        flat_actions = actions.reshape(-1)
-        flat_action_log_prob = flat_log_probs[jnp.arange(flat_log_probs.shape[0]), flat_actions]
-        action_log_prob = flat_action_log_prob.reshape(batch_shape)
-
-        assert_shape(action_log_prob, batch_shape)
-        return action_log_prob
-
-    def entropy(self, parameters: Array, rng: PRNGKeyArray) -> Array:
+    def entropy(self, rng: PRNGKeyArray) -> Array:
         """Return the entropy of the categorical distribution.
 
         Args:
-            parameters: The parameters of the distribution, shape (*, num_actions).
             rng: A random number generator.
 
         Returns:
             The entropy of the distribution, shape (*, num_actions).
         """
-        logits = parameters
-        log_probs = jax.nn.log_softmax(logits, axis=-1)
+        log_probs = jax.nn.log_softmax(self.logits, axis=-1)
         entropies = -log_probs * jnp.exp(log_probs)
-
-        assert_shape(entropies, parameters.shape)
+        chex.assert_shape(entropies, self.logits.shape)
         return entropies

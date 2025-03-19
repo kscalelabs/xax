@@ -23,7 +23,7 @@ __all__ = [
     "load_user_config",
     "State",
     "cast_phase",
-    "ActionDistribution",
+    "Distribution",
     "CategoricalDistribution",
     "GaussianDistribution",
     "TanhGaussianDistribution",
@@ -294,8 +294,8 @@ if IMPORT_ALL or TYPE_CHECKING:
     )
     from xax.core.state import Phase, State, cast_phase
     from xax.nn.distributions import (
-        ActionDistribution,
         CategoricalDistribution,
+        Distribution,
         GaussianDistribution,
         TanhGaussianDistribution,
     )
