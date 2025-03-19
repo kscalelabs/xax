@@ -23,10 +23,6 @@ __all__ = [
     "load_user_config",
     "State",
     "cast_phase",
-    "ActionDistribution",
-    "CategoricalDistribution",
-    "GaussianDistribution",
-    "TanhGaussianDistribution",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -156,10 +152,6 @@ NAME_MAP: dict[str, str] = {
     "load_user_config": "core.conf",
     "State": "core.state",
     "cast_phase": "core.state",
-    "ActionDistribution": "nn.distributions",
-    "CategoricalDistribution": "nn.distributions",
-    "GaussianDistribution": "nn.distributions",
-    "TanhGaussianDistribution": "nn.distributions",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -293,12 +285,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State, cast_phase
-    from xax.nn.distributions import (
-        ActionDistribution,
-        CategoricalDistribution,
-        GaussianDistribution,
-        TanhGaussianDistribution,
-    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
