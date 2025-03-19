@@ -4,7 +4,8 @@ This package is structured so that all the important stuff can be accessed
 without having to dig around through the internals. This is done by lazily
 importing the module by name.
 
-This file can be maintained by running the update script:
+This file can be maintained by updating the imports at the bottom of the file
+and running the update script:
 
 .. code-block:: bash
 
@@ -34,6 +35,15 @@ __all__ = [
     "get_positional_embeddings",
     "get_rotary_embeddings",
     "rotary_embeddings",
+    "MLPHyperParams",
+    "export_eqx_mlp",
+    "load_eqx",
+    "load_eqx_mlp",
+    "make_eqx_mlp",
+    "save_eqx",
+    "export",
+    "export_flax",
+    "export_with_params",
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
@@ -124,6 +134,8 @@ __all__ += [
     "Batch",
     "CollateMode",
     "EmbeddingKind",
+    "ActivationFunction",
+    "DTYPE",
     "LOG_ERROR_SUMMARY",
     "LOG_PING",
     "LOG_STATUS",
@@ -163,6 +175,15 @@ NAME_MAP: dict[str, str] = {
     "get_positional_embeddings": "nn.embeddings",
     "get_rotary_embeddings": "nn.embeddings",
     "rotary_embeddings": "nn.embeddings",
+    "MLPHyperParams": "nn.equinox",
+    "export_eqx_mlp": "nn.equinox",
+    "load_eqx": "nn.equinox",
+    "load_eqx_mlp": "nn.equinox",
+    "make_eqx_mlp": "nn.equinox",
+    "save_eqx": "nn.equinox",
+    "export": "nn.export",
+    "export_flax": "nn.export",
+    "export_with_params": "nn.export",
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
@@ -262,6 +283,8 @@ NAME_MAP.update(
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
+        "ActivationFunction": "nn.equinox",
+        "DTYPE": "nn.equinox",
     },
 )
 
@@ -298,6 +321,21 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_positional_embeddings,
         get_rotary_embeddings,
         rotary_embeddings,
+    )
+    from xax.nn.equinox import (
+        DTYPE,
+        ActivationFunction,
+        MLPHyperParams,
+        export_eqx_mlp,
+        load_eqx,
+        load_eqx_mlp,
+        make_eqx_mlp,
+        save_eqx,
+    )
+    from xax.nn.export import (
+        export,
+        export_flax,
+        export_with_params,
     )
     from xax.nn.geom import (
         euler_to_quat,
