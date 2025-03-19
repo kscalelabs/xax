@@ -14,20 +14,22 @@ from orbax.export import ExportManager, JaxModule, ServingConfig
 logger = logging.getLogger(__name__)
 
 
-def _run_infer(tf_module: tf.Module, input_shape: tuple[int, ...], batch_size: int | None) -> tf.Tensor:
+def _run_infer(tf_module: tf.Module, input_shapes: list[tuple[int, ...]], batch_size: int | None) -> tf.Tensor:
     """Warm up the model by running it once."""
     if batch_size is not None:
-        test_input = jax.random.normal(jax.random.PRNGKey(42), (batch_size, *input_shape))
+        test_inputs = [
+            jax.random.normal(jax.random.PRNGKey(42), (batch_size, *input_shape)) for input_shape in input_shapes
+        ]
     else:
-        test_input = jax.random.normal(jax.random.PRNGKey(42), (1, *input_shape))
+        test_inputs = [jax.random.normal(jax.random.PRNGKey(42), (1, *input_shape)) for input_shape in input_shapes]
     if not hasattr(tf_module, "infer"):
         raise ValueError("Model does not have an infer method")
-    return tf_module.infer(test_input)
+    return tf_module.infer(*test_inputs)
 
 
 def export(
     model: Callable,
-    input_shape: tuple[int, ...],
+    input_shapes: list[tuple[int, ...]],
     output_dir: str | Path = "export",
     batch_size: int | None = None,
 ) -> None:
@@ -38,17 +40,18 @@ def export(
 
     Args:
         model: The JAX function to export.
-        input_shape: The shape of the input tensor, excluding batch dimension.
+        input_shapes: The shape of the input tensors, excluding batch dimension.
         output_dir: Directory to save the exported model.
         batch_size: Optional batch dimension. If None, a polymorphic batch dimension is used.
     """
     tf_module = tf.Module()
+    # Create a polymorphic shape specification for each input
+    poly_spec = "(b, ...)" if batch_size is not None else "(None, ...)"
+    polymorphic_shapes = [poly_spec] * len(input_shapes)
     tf_module.infer = tf.function(  # type: ignore [attr-defined]
         jax2tf.convert(
             model,
-            polymorphic_shapes=[
-                "(b, ...)" if batch_size is not None else "(None, ...)",
-            ],
+            polymorphic_shapes=polymorphic_shapes,
             # setting this to False will allow the model to run on platforms other than the one that exports the model
             # https://github.com/jax-ml/jax/blob/051687dc4c899df3d95c30b812ade401d8b31166/jax/experimental/jax2tf/README.md?plain=1#L1342
             # generally though I think native_serialization is recommended
@@ -56,11 +59,11 @@ def export(
             with_gradient=False,
         ),
         autograph=False,
-        input_signature=[tf.TensorSpec([batch_size] + list(input_shape), tf.float32)],
+        input_signature=[tf.TensorSpec([batch_size] + list(input_shape), tf.float32) for input_shape in input_shapes],
     )
 
     # warm up the model
-    _run_infer(tf_module, input_shape, batch_size)
+    _run_infer(tf_module, input_shapes, batch_size)
 
     logger.info("Exporting SavedModel to %s", output_dir)
     tf.saved_model.save(
@@ -72,7 +75,7 @@ def export(
 def export_with_params(
     model: Callable,
     params: PyTree,
-    input_shape: tuple[int, ...],
+    input_shapes: list[tuple[int, ...]],
     output_dir: str | Path = "export",
     batch_dim: int | None = None,
 ) -> None:
@@ -81,7 +84,7 @@ def export_with_params(
     Args:
         model: The JAX function to export. Should take parameters as first argument.
         params: The parameters to use for the model.
-        input_shape: The shape of the input tensor, excluding batch dimension.
+        input_shapes: The shape of the input tensors, excluding batch dimension.
         output_dir: Directory to save the exported model.
         batch_dim: Optional batch dimension. If None, a polymorphic batch dimension is used.
     """
@@ -89,8 +92,8 @@ def export_with_params(
 
     converted_model = jax2tf.convert(model)
 
-    def model_fn(inputs: PyTree) -> Array:
-        return converted_model(param_vars, inputs)
+    def model_fn(*inputs: PyTree) -> Array:
+        return converted_model(param_vars, *inputs)
 
     tf_module = tf.Module()
     tf_module._variables = tf.nest.flatten(param_vars)  # type: ignore [attr-defined]
@@ -98,13 +101,11 @@ def export_with_params(
         model_fn,
         jit_compile=True,
         autograph=False,
-        input_signature=[
-            tf.TensorSpec([batch_dim] + list(input_shape), tf.float32),
-        ],
+        input_signature=[tf.TensorSpec([batch_dim] + list(input_shape), tf.float32) for input_shape in input_shapes],
     )
 
     # warm up the model
-    _run_infer(tf_module, input_shape, batch_dim)
+    _run_infer(tf_module, input_shapes, batch_dim)
 
     logger.info("Exporting SavedModel to %s", output_dir)
     tf.saved_model.save(tf_module, output_dir)
