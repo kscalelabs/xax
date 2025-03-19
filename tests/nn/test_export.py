@@ -61,8 +61,11 @@ class MLP(eqx.Module):
     "tf_input, expected_output",
     [([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[6.0], [15.0]]), ([[10.0, 20.0, 30.0]], [[60.0]])],
 )
+@pytest.mark.slow
 def test_export_sum_model_parametric(
-    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+    tmp_path: Path,
+    tf_input: list[list[float]],
+    expected_output: list[list[float]],
 ) -> None:
     model = SumModel()
     xax.export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
@@ -75,8 +78,11 @@ def test_export_sum_model_parametric(
     "tf_input, expected_output",
     [([[1.0, 2.0, 3.0]], [[3.0, 6.0, 9.0]]), ([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], [[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]])],
 )
+@pytest.mark.slow
 def test_export_multiply_model_parametric(
-    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+    tmp_path: Path,
+    tf_input: list[list[float]],
+    expected_output: list[list[float]],
 ) -> None:
     model = MultiplyModel(factor=3.0)
     xax.export(model=model.__call__, input_shape=(3,), output_dir=tmp_path, batch_size=len(tf_input))
@@ -86,6 +92,7 @@ def test_export_multiply_model_parametric(
 
 
 @pytest.mark.parametrize("batch_size, rand_key", [(1, 42), (2, 43), (3, 44), (5, 45)])
+@pytest.mark.slow
 def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) -> None:
     key = jax.random.PRNGKey(rand_key)
 
@@ -131,8 +138,11 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
         ),
     ],
 )
+@pytest.mark.slow
 def test_export_multiply_model_poly(
-    tmp_path: Path, tf_input: list[list[float]], expected_output: list[list[float]]
+    tmp_path: Path,
+    tf_input: list[list[float]],
+    expected_output: list[list[float]],
 ) -> None:
     model = MultiplyModel(factor=2.0)
     # Export with polymorphic batch size (batch_size=None)
@@ -159,6 +169,7 @@ def test_export_multiply_model_poly(
         ],
     ],
 )
+@pytest.mark.slow
 def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> None:
     in_features = 4
     hidden_features = 8
@@ -211,8 +222,13 @@ class FlaxMLP(nn.Module):
         (512, [256, 128, 64], 32, 3),
     ],
 )
+@pytest.mark.slow
 def test_export_flax_mlp(
-    tmp_path: Path, in_features: int, hidden_features: list[int], out_features: int, batch_size: int
+    tmp_path: Path,
+    in_features: int,
+    hidden_features: list[int],
+    out_features: int,
+    batch_size: int,
 ) -> None:
     """Test exporting a FlaxMLP model with different configurations."""
     model = FlaxMLP(in_features, hidden_features, out_features)
@@ -235,6 +251,7 @@ def test_export_flax_mlp(
     tf.debugging.assert_near(result, expected_output, rtol=1e-5)
 
 
+@pytest.mark.slow
 def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
     """Test exporting a basic multiply function with parameters."""
     factor = 3.0
@@ -271,6 +288,7 @@ def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
         ([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], 3.0),
     ],
 )
+@pytest.mark.slow
 def test_export_with_params_poly_batch(tmp_path: Path, tf_input: list[list[float]], expected_factor: float) -> None:
     """Test exporting a model with polymorphic batch dimensions using export_with_params."""
     factor = jnp.array(expected_factor)
@@ -290,11 +308,7 @@ def test_export_with_params_poly_batch(tmp_path: Path, tf_input: list[list[float
     tf_module.infer = infer  # type: ignore [attr-defined]
 
     tf.saved_model.save(tf_module, tmp_path)
-
     loaded_model = tf.saved_model.load(tmp_path)
-
     expected_output = [[x * expected_factor for x in batch] for batch in tf_input]
-
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
-
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)

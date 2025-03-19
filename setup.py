@@ -32,9 +32,9 @@ version: str = version_re.group(1)
 setup(
     name="xax",
     version=version,
-    description="The xax project",
+    description="A library for fast Jax experimentation",
     author="Benjamin Bolte",
-    url="https://github.com/dpshai/xax",
+    url="https://github.com/kscalelabs/xax",
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
