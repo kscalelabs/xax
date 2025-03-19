@@ -116,7 +116,7 @@ class ValidStepTimer:
         if self.last_valid_time is None or self.last_valid_step is None:
             self.last_valid_time = state.elapsed_time_s
             self.last_valid_step = state.num_steps
-            return True
+            return False
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
