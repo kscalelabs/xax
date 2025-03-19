@@ -126,6 +126,9 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         | State
         | DictConfig
     ):
+        # Calls the base callback.
+        self.on_before_checkpoint_load(path)
+
         with tarfile.open(path, "r:gz") as tar:
 
             def get_model() -> PyTree:
@@ -228,5 +231,8 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
 
         # Marks directory as having artifacts which shouldn't be overwritten.
         self.add_lock_file("ckpt", exists_ok=True)
+
+        # Calls the base callback.
+        self.on_after_checkpoint_save(ckpt_path, state)
 
         return ckpt_path
