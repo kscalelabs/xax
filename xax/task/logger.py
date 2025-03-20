@@ -227,6 +227,7 @@ class LogVideo:
 class LogLine:
     state: State
     scalars: dict[str, dict[str, Number]]
+    distributions: dict[str, dict[str, tuple[Number, Number]]]
     strings: dict[str, dict[str, str]]
     images: dict[str, dict[str, LogImage]]
     videos: dict[str, dict[str, LogVideo]]
@@ -497,6 +498,7 @@ class Logger:
 
     def __init__(self, default_namespace: str = DEFAULT_NAMESPACE) -> None:
         self.scalars: dict[str, dict[str, Callable[[], Number]]] = defaultdict(dict)
+        self.distributions: dict[str, dict[str, Callable[[], tuple[Number, Number]]]] = defaultdict(dict)
         self.strings: dict[str, dict[str, Callable[[], str]]] = defaultdict(dict)
         self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
         self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
@@ -522,6 +524,7 @@ class Logger:
         return LogLine(
             state=state,
             scalars={k: {kk: v() for kk, v in v.items()} for k, v in self.scalars.items()},
+            distributions={k: {kk: v() for kk, v in v.items()} for k, v in self.distributions.items()},
             strings={k: {kk: v() for kk, v in v.items()} for k, v in self.strings.items()},
             images={k: {kk: v() for kk, v in v.items()} for k, v in self.images.items()},
             videos={k: {kk: v() for kk, v in v.items()} for k, v in self.videos.items()},
@@ -529,6 +532,7 @@ class Logger:
 
     def clear(self) -> None:
         self.scalars.clear()
+        self.distributions.clear()
         self.strings.clear()
         self.images.clear()
         self.videos.clear()
@@ -611,6 +615,30 @@ class Logger:
             return value() if callable(value) else value
 
         self.scalars[namespace][key] = scalar_future
+
+    def log_distribution(
+        self,
+        key: str,
+        value: Callable[[], tuple[Number, Number]] | tuple[Number, Number],
+        *,
+        namespace: str | None = None,
+    ) -> None:
+        """Logs a distribution value.
+
+        Args:
+            key: The key being logged
+            value: The distribution value being logged, a tuple of (mean, std)
+            namespace: An optional logging namespace
+        """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def distribution_future() -> tuple[Number, Number]:
+            return value() if callable(value) else value
+
+        self.distributions[namespace][key] = distribution_future
 
     def log_string(self, key: str, value: Callable[[], str] | str, *, namespace: str | None = None) -> None:
         """Logs a string value.

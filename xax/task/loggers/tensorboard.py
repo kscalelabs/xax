@@ -177,6 +177,14 @@ class TensorboardLogger(LoggerImpl):
                     walltime=walltime,
                 )
 
+        for namespace, distributions in line.distributions.items():
+            for distribution_key, distribution_value in distributions.items():
+                writer.add_histogram(
+                    f"{namespace}/{distribution_key}",
+                    distribution_value,
+                    global_step=line.state.num_steps,
+                )
+
         for namespace, strings in line.strings.items():
             for string_key, string_value in strings.items():
                 writer.add_text(
