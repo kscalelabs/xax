@@ -1,6 +1,7 @@
 """Defines some useful Jax debugging utilities."""
 
 from collections import deque
+from collections.abc import Iterable, Mapping
 from typing import Any, Callable, Deque
 
 from jaxtyping import Array
@@ -15,12 +16,21 @@ def get_named_leaves(
     q.append(("", obj))
     while q:
         name, node = q.popleft()
-        if not hasattr(node, "__dict__"):
-            continue
-        for cname, cnode in node.__dict__.items():
-            gname = f"{name}.{cname}" if name else cname
-            if is_leaf(cnode):
-                ret.append((gname, cnode))
-            else:
-                q.append((gname, cnode))
+
+        if hasattr(node, "__dict__") or isinstance(node, Mapping):
+            for cname, cnode in node.__dict__.items():
+                gname = f"{name}.{cname}" if name else cname
+                if is_leaf(cnode):
+                    ret.append((gname, cnode))
+                else:
+                    q.append((gname, cnode))
+
+        elif isinstance(node, Iterable):
+            for i, cnode in enumerate(node):
+                gname = f"{name}.{i}" if name else str(i)
+                if is_leaf(cnode):
+                    ret.append((gname, cnode))
+                else:
+                    q.append((gname, cnode))
+
     return ret
