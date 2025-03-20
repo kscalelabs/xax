@@ -17,8 +17,16 @@ def get_named_leaves(
     while q:
         name, node = q.popleft()
 
-        if hasattr(node, "__dict__") or isinstance(node, Mapping):
+        if hasattr(node, "__dict__") and isinstance(node.__dict__, Mapping):
             for cname, cnode in node.__dict__.items():
+                gname = f"{name}.{cname}" if name else cname
+                if is_leaf(cnode):
+                    ret.append((gname, cnode))
+                else:
+                    q.append((gname, cnode))
+
+        elif isinstance(node, Mapping):
+            for cname, cnode in node.items():
                 gname = f"{name}.{cname}" if name else cname
                 if is_leaf(cnode):
                     ret.append((gname, cnode))
