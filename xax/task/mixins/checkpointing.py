@@ -229,9 +229,6 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         except FileExistsError:
             logger.exception("Exception while trying to update %s", ckpt_path)
 
-        # Marks directory as having artifacts which shouldn't be overwritten.
-        self.add_lock_file("ckpt", exists_ok=True)
-
         # Calls the base callback.
         self.on_after_checkpoint_save(ckpt_path, state)
 
