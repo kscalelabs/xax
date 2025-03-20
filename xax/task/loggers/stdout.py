@@ -33,8 +33,8 @@ class StdoutLogger(LoggerImpl):
         self,
         write_fp: TextIO = sys.stdout,
         precision: int = 4,
-        log_timers: bool = False,
-        log_perf: bool = True,
+        log_timers: bool = True,
+        log_perf: bool = False,
         log_optim: bool = False,
         log_fp: bool = False,
         log_interval_seconds: float = 1.0,
@@ -98,7 +98,7 @@ class StdoutLogger(LoggerImpl):
 
         def add_logs(log: dict[str, dict[str, Any]], namespace_to_lines: dict[str, dict[str, str]]) -> None:
             for namespace, values in log.items():
-                if not self.log_timers and namespace.startswith("⏰"):
+                if not self.log_timers and namespace.startswith("⌛"):
                     continue
                 if not self.log_perf and namespace.startswith("🔧"):
                     continue

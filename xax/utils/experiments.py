@@ -117,19 +117,19 @@ class StateTimer:
         logs: dict[str, dict[str, int | float]] = {}
 
         # Logs step statistics.
-        logs["⏰ steps"] = {
+        logs["⌛ steps"] = {
             "total": self.step_timer.steps,
             "per-second": self.step_timer.steps_per_second,
         }
 
         # Logs sample statistics.
-        logs["⏰ samples"] = {
+        logs["⌛ samples"] = {
             "total": self.sample_timer.steps,
             "per-second": self.sample_timer.steps_per_second,
         }
 
         # Logs full iteration statistics.
-        logs["🔧 dt"] = {
+        logs["⌛ dt"] = {
             "iter": self.iter_timer.iter_seconds,
         }
 
