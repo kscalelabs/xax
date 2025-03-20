@@ -10,12 +10,17 @@ from jaxtyping import Array
 def get_named_leaves(
     obj: Any,  # noqa: ANN401
     is_leaf: Callable[[Any], bool] = lambda x: isinstance(x, Array),  # noqa: ANN401
+    max_depth: int = 100,
 ) -> list[tuple[str, Any]]:  # noqa: ANN401
     ret: list[tuple[str, Any]] = []
-    q: Deque[tuple[str, Any]] = deque()  # noqa: ANN401
-    q.append(("", obj))
+    q: Deque[tuple[int, str, Any]] = deque()  # noqa: ANN401
+    q.append((0, "", obj))
+
     while q:
-        name, node = q.popleft()
+        depth, name, node = q.popleft()
+
+        if depth > max_depth:
+            continue
 
         if hasattr(node, "__dict__") and isinstance(node.__dict__, Mapping):
             for cname, cnode in node.__dict__.items():
@@ -23,7 +28,7 @@ def get_named_leaves(
                 if is_leaf(cnode):
                     ret.append((gname, cnode))
                 else:
-                    q.append((gname, cnode))
+                    q.append((depth + 1, gname, cnode))
 
         elif isinstance(node, Mapping):
             for cname, cnode in node.items():
@@ -31,7 +36,7 @@ def get_named_leaves(
                 if is_leaf(cnode):
                     ret.append((gname, cnode))
                 else:
-                    q.append((gname, cnode))
+                    q.append((depth + 1, gname, cnode))
 
         elif isinstance(node, Iterable):
             for i, cnode in enumerate(node):
@@ -39,6 +44,6 @@ def get_named_leaves(
                 if is_leaf(cnode):
                     ret.append((gname, cnode))
                 else:
-                    q.append((gname, cnode))
+                    q.append((depth + 1, gname, cnode))
 
     return ret
