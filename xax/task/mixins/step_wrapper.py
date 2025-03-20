@@ -19,10 +19,10 @@ class StepContext(ContextManager):
         self,
         step: str,
         on_context_start: Callable[[str], None],
-        on_context_end: Callable[[str], None],
+        on_context_end: Callable[[str, float], None],
     ) -> None:
         self.step = step
-        self.start_time = None
+        self.start_time = 0.0
         self.on_context_start = on_context_start
         self.on_context_end = on_context_end
 
