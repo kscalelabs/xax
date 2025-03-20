@@ -685,6 +685,7 @@ class Logger:
         @functools.lru_cache(maxsize=None)
         def histogram_future() -> LogHistogram:
             values = value() if callable(value) else value
+            values = values.reshape(-1)  # Must be flat.
 
             if isinstance(values, Array):
                 counts, limits = jnp.histogram(values, bins=bins)
