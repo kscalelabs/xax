@@ -179,10 +179,27 @@ class TensorboardLogger(LoggerImpl):
 
         for namespace, distributions in line.distributions.items():
             for distribution_key, distribution_value in distributions.items():
-                writer.add_histogram(
+                writer.add_gaussian_distribution(
                     f"{namespace}/{distribution_key}",
-                    distribution_value,
+                    mean=distribution_value.mean,
+                    std=distribution_value.std,
                     global_step=line.state.num_steps,
+                    walltime=walltime,
+                )
+
+        for namespace, histograms in line.histograms.items():
+            for histogram_key, histogram_value in histograms.items():
+                writer.add_histogram_raw(
+                    f"{namespace}/{histogram_key}",
+                    min=histogram_value.min,
+                    max=histogram_value.max,
+                    num=histogram_value.num,
+                    sum=histogram_value.sum,
+                    sum_squares=histogram_value.sum_squares,
+                    bucket_limits=histogram_value.bucket_limits,
+                    bucket_counts=histogram_value.bucket_counts,
+                    global_step=line.state.num_steps,
+                    walltime=walltime,
                 )
 
         for namespace, strings in line.strings.items():
