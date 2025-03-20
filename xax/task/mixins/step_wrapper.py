@@ -1,5 +1,6 @@
 """Defines a mixin to wrap some steps in a context manager."""
 
+import time
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Callable, ContextManager, TypeVar
@@ -49,7 +50,7 @@ class StepContextMixin(BaseTask[Config]):
         super().__init__(config)
 
     def step_context(self, step: str) -> ContextManager:
-        return StepContext(step, self.on_context_start, self.on_context_end)
+        return StepContext(step, self.on_context_start, self.on_context_stop)
 
     def on_context_start(self, step: str) -> None:
         pass
