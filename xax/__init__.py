@@ -72,6 +72,7 @@ __all__ = [
     "Task",
     "collate",
     "collate_non_null",
+    "eqx_weight_names",
     "BaseFileDownloader",
     "ContextTimer",
     "CumulativeTimer",
@@ -212,6 +213,7 @@ NAME_MAP: dict[str, str] = {
     "Task": "task.task",
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
+    "eqx_weight_names": "utils.debugging",
     "BaseFileDownloader": "utils.experiments",
     "ContextTimer": "utils.experiments",
     "CumulativeTimer": "utils.experiments",
@@ -362,6 +364,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
+    from xax.utils.debugging import eqx_weight_names
     from xax.utils.experiments import (
         BaseFileDownloader,
         ContextTimer,
