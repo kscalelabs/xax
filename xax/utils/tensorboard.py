@@ -341,27 +341,42 @@ class TensorboardWriter:
     def add_histogram_raw(
         self,
         tag: str,
-        min: float,
-        max: float,
-        num: int,
-        sum: float,
-        sum_squares: float,
-        bucket_limits: list[float],
-        bucket_counts: list[int],
+        min: float | np.ndarray,
+        max: float | np.ndarray,
+        num: int | np.ndarray,
+        sum: float | np.ndarray,
+        sum_squares: float | np.ndarray,
+        bucket_limits: list[float | np.ndarray],
+        bucket_counts: list[int | np.ndarray],
         global_step: int | None = None,
         walltime: float | None = None,
     ) -> None:
+        """Add histogram with raw data to summary.
+
+        Args:
+            tag: Data identifier
+            min: Min value
+            max: Max value
+            num: Number of values
+            sum: Sum of all values
+            sum_squares: Sum of squares for all values
+            bucket_limits: Upper value per bucket
+            bucket_counts: Number of values per bucket
+            global_step: Global step value to record
+            walltime: Optional override default walltime
+        """
         if len(bucket_limits) != len(bucket_counts):
             raise ValueError("len(bucket_limits) != len(bucket_counts)")
 
+        # Convert numpy arrays to Python types
         hist = HistogramProto(
-            min=min,
-            max=max,
-            num=num,
-            sum=sum,
-            sum_squares=sum_squares,
-            bucket_limit=bucket_limits,
-            bucket=bucket_counts,
+            min=float(min),
+            max=float(max),
+            num=int(num),
+            sum=float(sum),
+            sum_squares=float(sum_squares),
+            bucket_limit=[float(x) for x in bucket_limits],
+            bucket=[int(x) for x in bucket_counts],
         )
         self.pb_writer.add_summary(
             Summary(value=[Summary.Value(tag=tag, histo=hist)]),
@@ -372,12 +387,26 @@ class TensorboardWriter:
     def add_gaussian_distribution(
         self,
         tag: str,
-        mean: float,
-        std: float,
-        bins: int = 100,
+        mean: float | np.ndarray,
+        std: float | np.ndarray,
+        bins: int = 16,
         global_step: int | None = None,
         walltime: float | None = None,
     ) -> None:
+        """Add a Gaussian distribution to the summary.
+
+        Args:
+            tag: Data identifier
+            mean: Mean of the Gaussian distribution
+            std: Standard deviation of the Gaussian distribution
+            bins: Number of bins to use for the histogram
+            global_step: Global step value to record
+            walltime: Optional override default walltime
+        """
+        # Convert numpy arrays to Python types
+        mean = float(mean)
+        std = float(std)
+
         # Create bin edges spanning ±3 standard deviations
         bin_edges = np.linspace(mean - 3 * std, mean + 3 * std, bins + 1)
 

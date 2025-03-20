@@ -181,8 +181,8 @@ class TensorboardLogger(LoggerImpl):
             for distribution_key, distribution_value in distributions.items():
                 writer.add_gaussian_distribution(
                     f"{namespace}/{distribution_key}",
-                    mean=distribution_value.mean,
-                    std=distribution_value.std,
+                    mean=float(distribution_value.mean),
+                    std=float(distribution_value.std),
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )
@@ -191,13 +191,13 @@ class TensorboardLogger(LoggerImpl):
             for histogram_key, histogram_value in histograms.items():
                 writer.add_histogram_raw(
                     f"{namespace}/{histogram_key}",
-                    min=histogram_value.min,
-                    max=histogram_value.max,
-                    num=histogram_value.num,
-                    sum=histogram_value.sum,
-                    sum_squares=histogram_value.sum_squares,
-                    bucket_limits=histogram_value.bucket_limits,
-                    bucket_counts=histogram_value.bucket_counts,
+                    min=float(histogram_value.min),
+                    max=float(histogram_value.max),
+                    num=int(histogram_value.num),
+                    sum=float(histogram_value.sum),
+                    sum_squares=float(histogram_value.sum_squares),
+                    bucket_limits=[float(x) for x in histogram_value.bucket_limits],
+                    bucket_counts=[int(x) for x in histogram_value.bucket_counts],
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )
