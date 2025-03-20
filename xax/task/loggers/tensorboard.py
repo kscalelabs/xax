@@ -1,11 +1,9 @@
 """Defines a Tensorboard logger backend."""
 
 import atexit
-import functools
 import logging
 import os
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -140,15 +138,6 @@ class TensorboardLogger(LoggerImpl):
     def __del__(self) -> None:
         self.cleanup()
 
-    @functools.lru_cache(None)  # Avoid clearing logs multiple times.
-    def clear_logs(self) -> None:
-        if not self.log_directory.exists():
-            return
-        if not any(child.is_dir() for child in self.log_directory.iterdir()):
-            return
-        logger.warning("Clearing TensorBoard logs")
-        shutil.rmtree(self.log_directory)
-
     def get_writer(self, phase: Phase) -> TensorboardWriter:
         self._start()
         return self.writers.writer(phase)
@@ -161,9 +150,6 @@ class TensorboardLogger(LoggerImpl):
     def write(self, line: LogLine) -> None:
         if not is_master():
             return
-
-        if line.state.num_steps == 0:
-            self.clear_logs()
 
         writer = self.get_writer(line.state.phase)
         walltime = line.state.start_time_s + line.state.elapsed_time_s
