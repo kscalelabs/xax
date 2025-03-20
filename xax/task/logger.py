@@ -224,9 +224,28 @@ class LogVideo:
 
 
 @dataclass(kw_only=True)
+class LogDistribution:
+    mean: Number
+    std: Number
+
+
+@dataclass(kw_only=True)
+class LogHistogram:
+    min: Number
+    max: Number
+    num: int
+    sum: Number
+    sum_squares: Number
+    bucket_limits: list[Number]
+    bucket_counts: list[int]
+
+
+@dataclass(kw_only=True)
 class LogLine:
     state: State
     scalars: dict[str, dict[str, Number]]
+    distributions: dict[str, dict[str, LogDistribution]]
+    histograms: dict[str, dict[str, LogHistogram]]
     strings: dict[str, dict[str, str]]
     images: dict[str, dict[str, LogImage]]
     videos: dict[str, dict[str, LogVideo]]
@@ -497,6 +516,8 @@ class Logger:
 
     def __init__(self, default_namespace: str = DEFAULT_NAMESPACE) -> None:
         self.scalars: dict[str, dict[str, Callable[[], Number]]] = defaultdict(dict)
+        self.distributions: dict[str, dict[str, Callable[[], LogDistribution]]] = defaultdict(dict)
+        self.histograms: dict[str, dict[str, Callable[[], LogHistogram]]] = defaultdict(dict)
         self.strings: dict[str, dict[str, Callable[[], str]]] = defaultdict(dict)
         self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
         self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
@@ -522,6 +543,8 @@ class Logger:
         return LogLine(
             state=state,
             scalars={k: {kk: v() for kk, v in v.items()} for k, v in self.scalars.items()},
+            distributions={k: {kk: v() for kk, v in v.items()} for k, v in self.distributions.items()},
+            histograms={k: {kk: v() for kk, v in v.items()} for k, v in self.histograms.items()},
             strings={k: {kk: v() for kk, v in v.items()} for k, v in self.strings.items()},
             images={k: {kk: v() for kk, v in v.items()} for k, v in self.images.items()},
             videos={k: {kk: v() for kk, v in v.items()} for k, v in self.videos.items()},
@@ -529,6 +552,8 @@ class Logger:
 
     def clear(self) -> None:
         self.scalars.clear()
+        self.distributions.clear()
+        self.histograms.clear()
         self.strings.clear()
         self.images.clear()
         self.videos.clear()
@@ -611,6 +636,75 @@ class Logger:
             return value() if callable(value) else value
 
         self.scalars[namespace][key] = scalar_future
+
+    def log_distribution(
+        self,
+        key: str,
+        value: Callable[[], tuple[Number, Number]] | tuple[Number, Number],
+        *,
+        namespace: str | None = None,
+    ) -> None:
+        """Logs a distribution value.
+
+        Args:
+            key: The key being logged
+            value: The distribution value being logged, a tuple of (mean, std)
+            namespace: An optional logging namespace
+        """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def distribution_future() -> LogDistribution:
+            mean, std = value() if callable(value) else value
+            return LogDistribution(mean=mean, std=std)
+
+        self.distributions[namespace][key] = distribution_future
+
+    def log_histogram(
+        self,
+        key: str,
+        value: Callable[[], np.ndarray | Array] | np.ndarray | Array,
+        *,
+        bins: int = 100,
+        namespace: str | None = None,
+    ) -> None:
+        """Logs a histogram value.
+
+        Args:
+            key: The key being logged
+            value: The histogram value being logged
+            bins: The number of bins to use for the histogram
+            namespace: An optional logging namespace
+        """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def histogram_future() -> LogHistogram:
+            values = value() if callable(value) else value
+
+            if isinstance(values, Array):
+                values = np.array(values)  # Convert JAX array to numpy array
+                counts, limits = np.histogram(values, bins=bins)
+            elif isinstance(values, np.ndarray):
+                counts, limits = np.histogram(values, bins=bins)
+            else:
+                raise ValueError(f"Unsupported histogram type: {type(values)}")
+
+            return LogHistogram(
+                min=float(values.min()),
+                max=float(values.max()),
+                num=int(values.size),
+                sum=float(values.sum()),
+                sum_squares=float(values.dot(values)),
+                bucket_limits=limits[1:].tolist(),
+                bucket_counts=counts.tolist(),
+            )
+
+        self.histograms[namespace][key] = histogram_future
 
     def log_string(self, key: str, value: Callable[[], str] | str, *, namespace: str | None = None) -> None:
         """Logs a string value.
