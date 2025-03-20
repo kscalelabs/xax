@@ -687,8 +687,8 @@ class Logger:
             values = value() if callable(value) else value
 
             if isinstance(values, Array):
-                values = np.array(values)  # Convert JAX array to numpy array
-                counts, limits = np.histogram(values, bins=bins)
+                counts, limits = jnp.histogram(values, bins=bins)
+                counts, limits = as_numpy(counts), as_numpy(limits)
             elif isinstance(values, np.ndarray):
                 counts, limits = np.histogram(values, bins=bins)
             else:
