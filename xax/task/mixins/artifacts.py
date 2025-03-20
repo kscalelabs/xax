@@ -3,7 +3,6 @@
 import functools
 import inspect
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self, TypeVar
@@ -54,20 +53,6 @@ class ArtifactsMixin(BaseTask[Config]):
         self._exp_dir = Path(exp_dir).expanduser().resolve()
         return self
 
-    def add_lock_file(self, lock_type: str, *, exists_ok: bool = False) -> None:
-        if (lock_file := self.exp_dir / f".lock_{lock_type}").exists():
-            if not exists_ok:
-                raise RuntimeError(f"Lock file already exists at {lock_file}")
-        else:
-            with open(lock_file, "w", encoding="utf-8") as f:
-                f.write(f"PID: {os.getpid()}")
-
-    def remove_lock_file(self, lock_type: str, *, missing_ok: bool = False) -> None:
-        if (lock_file := self.exp_dir / f".lock_{lock_type}").exists():
-            lock_file.unlink()
-        elif not missing_ok:
-            raise RuntimeError(f"Lock file not found at {lock_file}")
-
     def get_exp_dir(self) -> Path:
         if self._exp_dir is not None:
             return self._exp_dir
@@ -82,13 +67,8 @@ class ArtifactsMixin(BaseTask[Config]):
         def get_exp_dir(run_id: int) -> Path:
             return self.run_dir / f"run_{run_id}"
 
-        def has_lock_file(exp_dir: Path, lock_type: str | None = None) -> bool:
-            if lock_type is not None:
-                return (exp_dir / f".lock_{lock_type}").exists()
-            return any(exp_dir.glob(".lock_*"))
-
         run_id = 0
-        while (exp_dir := get_exp_dir(run_id)).is_dir() and has_lock_file(exp_dir):
+        while (exp_dir := get_exp_dir(run_id)).is_dir():
             run_id += 1
         exp_dir.mkdir(exist_ok=True, parents=True)
         self._exp_dir = exp_dir.expanduser().resolve()
