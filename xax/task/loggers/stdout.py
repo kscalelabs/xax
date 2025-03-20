@@ -34,7 +34,7 @@ class StdoutLogger(LoggerImpl):
         write_fp: TextIO = sys.stdout,
         precision: int = 4,
         log_timers: bool = False,
-        log_perf: bool = False,
+        log_perf: bool = True,
         log_optim: bool = False,
         log_fp: bool = False,
         log_interval_seconds: float = 1.0,

@@ -307,34 +307,28 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            with self.step_context("load_checkpoint"):
-                if load_optimizer:
-                    model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
-                    config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
-                    if config_diff:
-                        logger.warning("Loaded config differs from current config:\n%s", config_diff)
-                    return model, optimizer, opt_state, state
+            if load_optimizer:
+                model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
+                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
+                if config_diff:
+                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
+                return model, optimizer, opt_state, state
 
-                else:
-                    model, state, config = self.load_checkpoint(init_ckpt_path, "model_state_config")
-                    config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
-                    if config_diff:
-                        logger.warning("Loaded config differs from current config:\n%s", config_diff)
-                    return model, state
+            else:
+                model, state, config = self.load_checkpoint(init_ckpt_path, "model_state_config")
+                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
+                if config_diff:
+                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
+                return model, state
 
-        with self.step_context("get_model"):
-            model = self.get_model(key)
-
+        model = self.get_model(key)
         state = State.init_state()
 
         if not load_optimizer:
             return model, state
 
-        with self.step_context("get_optimizer"):
-            optimizer = self.get_optimizer()
-
-        with self.step_context("get_initial_opt_state"):
-            opt_state = self.get_initial_opt_state(model, optimizer)
+        optimizer = self.get_optimizer()
+        opt_state = self.get_initial_opt_state(model, optimizer)
 
         return model, optimizer, opt_state, state
 
@@ -490,7 +484,8 @@ class TrainMixin(
         while not self.is_training_over(state):
             if self.valid_step_timer.is_valid_step(state):
                 valid_batch = next(valid_pf)
-                model, loss, output = self.val_step(model, valid_batch)
+                with self.step_context("model_step"):
+                    model, loss, output = self.val_step(model, valid_batch)
 
                 # Perform logging.
                 with self.step_context("write_logs"):
@@ -498,22 +493,19 @@ class TrainMixin(
                     self.log_step(model, valid_batch, output, loss, state)
                     state.num_valid_samples += 1
 
-            with self.step_context("on_step_start"):
-                state = self.on_step_start(state)
+            state = self.on_step_start(state)
 
-            with self.step_context("update_state"):
+            with self.step_context("model_step"):
                 train_batch = next(train_pf)
                 model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
 
-            # Perform logging.
             with self.step_context("write_logs"):
                 state.phase = "train"
                 self.log_step(model, train_batch, output, loss, state)
                 state.num_steps += 1
                 state.num_samples += self.get_size_of_batch(train_batch) or 0
 
-            with self.step_context("on_step_end"):
-                state = self.on_step_end(state)
+            state = self.on_step_end(state)
 
             if self.should_checkpoint(state):
                 self.save_checkpoint(model, optimizer, opt_state, state)
@@ -530,14 +522,9 @@ class TrainMixin(
         except NotImplementedError:
             pass
 
-        with self.step_context("get_dataset"):
-            train_ds = self.get_dataset("train")
-
-        with self.step_context("get_dataloader"):
-            train_dl = self.get_dataloader(train_ds, "train")
-
-        with self.step_context("get_prefetcher"):
-            train_pf = self.get_prefetcher(train_dl)
+        train_ds = self.get_dataset("train")
+        train_dl = self.get_dataloader(train_ds, "train")
+        train_pf = self.get_prefetcher(train_dl)
 
         try:
             with train_pf as train_pf_ctx:
@@ -554,14 +541,9 @@ class TrainMixin(
         except NotImplementedError:
             pass
 
-        with self.step_context("get_dataset"):
-            valid_ds = self.get_dataset("valid")
-
-        with self.step_context("get_dataloader"):
-            valid_dl = self.get_dataloader(valid_ds, "valid")
-
-        with self.step_context("get_prefetcher"):
-            valid_pf = self.get_prefetcher(valid_dl)
+        valid_ds = self.get_dataset("valid")
+        valid_dl = self.get_dataloader(valid_ds, "valid")
+        valid_pf = self.get_prefetcher(valid_dl)
 
         try:
             with valid_pf as valid_pf_ctx:
