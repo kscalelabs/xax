@@ -457,6 +457,7 @@ class TrainMixin(
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
+        logger.log(LOG_STATUS, "JAX devices: %s", jax.devices())
         self.logger.log_file("git_state.txt", get_git_state(self))
         self.logger.log_file("training_code.txt", get_training_code(self))
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
