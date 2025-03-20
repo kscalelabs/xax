@@ -36,6 +36,7 @@ from omegaconf import DictConfig
 
 from xax.core.conf import field
 from xax.core.state import Phase, State
+from xax.nn.functions import set_random_seed
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
 from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin
@@ -183,6 +184,9 @@ class TrainMixin(
 
     def __init__(self, config: Config) -> None:
         super().__init__(config)
+
+        # Sets the random seed whenever we instantiate a new train mixin.
+        set_random_seed(self.config.random_seed)
 
         # Timer for validation steps.
         self.valid_step_timer = ValidStepTimer(
