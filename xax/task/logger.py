@@ -751,7 +751,7 @@ class Logger:
                 num=int(counts_np.size),
                 sum=float(sumv_),
                 sum_squares=float(sum_squaresv_),
-                bucket_limits=cast(list[float], limits_np[1:].tolist()),
+                bucket_limits=cast(list[float], limits_np.tolist()),
                 bucket_counts=cast(list[int], counts_np.tolist()),
             )
 
