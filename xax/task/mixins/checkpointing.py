@@ -47,7 +47,6 @@ class CheckpointingConfig(ArtifactsConfig):
     only_save_most_recent: bool = field(True, help="Only keep the most recent checkpoint")
     load_from_ckpt_path: str | None = field(None, help="If set, load initial model weights from this path")
     load_ckpt_strict: bool = field(True, help="If set, only load weights for which have a matching key in the model")
-    save_tf_model: bool = field(False, help="If set, saves a Tensorflow version of the model")
 
 
 Config = TypeVar("Config", bound=CheckpointingConfig)
@@ -212,15 +211,6 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             add_file("opt_state", lambda buf: cloudpickle.dump(opt_state, buf))
             add_file("state", lambda buf: buf.write(json.dumps(asdict(state), indent=2).encode()))
             add_file("config", lambda buf: buf.write(OmegaConf.to_yaml(self.config).encode()))
-
-        if self.config.save_tf_model:
-            try:
-                from jax.experimental import jax2tf
-            except ModuleNotFoundError:
-                raise ImportError("Tensorflow is not installed. Install it with `pip install tensorflow`")
-
-            tf_model = jax2tf.convert(model)
-            add_file("model.tf", lambda buf: cloudpickle.dump(tf_model, buf))
 
         # Updates the symlink to the new checkpoint.
         last_ckpt_path.unlink(missing_ok=True)
