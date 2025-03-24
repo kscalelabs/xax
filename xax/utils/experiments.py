@@ -109,8 +109,8 @@ class StateTimer:
 
     def step(self, state: State) -> None:
         cur_time = time.time()
-        self.step_timer.step(state.num_steps, cur_time)
-        self.sample_timer.step(state.num_samples, cur_time)
+        self.step_timer.step(state.num_steps if state.phase == "train" else state.num_valid_steps, cur_time)
+        self.sample_timer.step(state.num_samples if state.phase == "train" else state.num_valid_samples, cur_time)
         self.iter_timer.step(cur_time)
 
     def log_dict(self) -> dict[str, dict[str, int | float]]:
