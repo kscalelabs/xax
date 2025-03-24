@@ -564,14 +564,14 @@ class Logger:
         Args:
             state: The current step's state.
         """
-        should_log = [logger.should_log(state) for logger in self.loggers]
+        should_log = [lg.should_log(state) for lg in self.loggers]
         if not any(should_log):
             self.clear()
             return
         line = self.pack(state)
         self.clear()
-        for logger in (logger for logger, should_log in zip(self.loggers, should_log) if should_log):
-            logger.write(line)
+        for lg in (lg for lg, should_log in zip(self.loggers, should_log) if should_log):
+            lg.write(line)
 
     def write_error_summary(self, error_summary: str) -> None:
         for logger in self.loggers:
