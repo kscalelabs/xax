@@ -28,6 +28,7 @@ from typing import Any, Iterator, Self, TypeVar, cast
 from urllib.parse import urlparse
 
 import git
+import pkg_resources
 import requests
 from jaxtyping import Array
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
@@ -466,6 +467,16 @@ def get_git_state(obj: object) -> str:
 
     except Exception:
         return traceback.format_exc()
+
+
+def get_packages_with_versions() -> str:
+    """Gets the packages and their versions.
+
+    Returns:
+        A dictionary of packages and their versions.
+    """
+    packages = [(pkg.key, pkg.version) for pkg in pkg_resources.working_set]
+    return "\n".join([f"{key}=={version}" for key, version in sorted(packages)])
 
 
 def get_training_code(obj: object) -> str:
