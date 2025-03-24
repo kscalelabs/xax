@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Callable, Iterator, Literal, Self, Sequence, TypeVar, get_args
+from typing import Callable, Iterator, Literal, Self, Sequence, TypeVar, cast, get_args
 
 import jax
 import jax.numpy as jnp
@@ -236,7 +236,7 @@ class LogHistogram:
     num: int
     sum: Number
     sum_squares: Number
-    bucket_limits: list[Number]
+    bucket_limits: list[float]
     bucket_counts: list[int]
 
 
@@ -701,8 +701,58 @@ class Logger:
                 num=int(values.size),
                 sum=float(values.sum()),
                 sum_squares=float(values.dot(values)),
-                bucket_limits=limits[1:].tolist(),
-                bucket_counts=counts.tolist(),
+                bucket_limits=cast(list[float], limits[1:].tolist()),
+                bucket_counts=cast(list[int], counts.tolist()),
+            )
+
+        self.histograms[namespace][key] = histogram_future
+
+    def log_histogram_raw(
+        self,
+        key: str,
+        counts: Array | np.ndarray,
+        limits: Array | np.ndarray,
+        minv: Number | None = None,
+        maxv: Number | None = None,
+        sumv: Number | None = None,
+        sum_squaresv: Number | None = None,
+        *,
+        namespace: str | None = None,
+    ) -> None:
+        """Logs a histogram from raw counts and limits.
+
+        Args:
+            key: The key being logged
+            counts: The counts of the histogram
+            limits: The limits of the histogram
+            minv: The minimum value of the histogram
+            maxv: The maximum value of the histogram
+            sumv: The sum of the histogram
+            sum_squaresv: The sum of the squares of the histogram
+            namespace: An optional logging namespace
+        """
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def histogram_future() -> LogHistogram:
+            counts_np = (as_numpy(counts) if isinstance(counts, Array) else counts).astype(int)
+            limits_np = (as_numpy(limits) if isinstance(limits, Array) else limits).astype(float)
+
+            minv_ = counts_np.min() if minv is None else minv
+            maxv_ = counts_np.max() if maxv is None else maxv
+            sumv_ = counts_np.sum() if sumv is None else sumv
+            sum_squaresv_ = counts_np.dot(counts_np) if sum_squaresv is None else sum_squaresv
+
+            return LogHistogram(
+                min=float(minv_),
+                max=float(maxv_),
+                num=int(counts_np.size),
+                sum=float(sumv_),
+                sum_squares=float(sum_squaresv_),
+                bucket_limits=cast(list[float], limits_np[1:].tolist()),
+                bucket_counts=cast(list[int], counts_np.tolist()),
             )
 
         self.histograms[namespace][key] = histogram_future
