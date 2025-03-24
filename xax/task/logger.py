@@ -28,7 +28,7 @@ from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as PILImage
 
 from xax.core.state import Phase, State
-from xax.utils.experiments import IntervalTicker
+from xax.utils.experiments import ContextTimer, IntervalTicker
 from xax.utils.logging import LOG_ERROR_SUMMARY, LOG_PING, LOG_STATUS
 
 logger = logging.getLogger(__name__)
@@ -564,14 +564,14 @@ class Logger:
         Args:
             state: The current step's state.
         """
-        should_log = [logger.should_log(state) for logger in self.loggers]
+        should_log = [lg.should_log(state) for lg in self.loggers]
         if not any(should_log):
             self.clear()
             return
         line = self.pack(state)
         self.clear()
-        for logger in (logger for logger, should_log in zip(self.loggers, should_log) if should_log):
-            logger.write(line)
+        for lg in (lg for lg, should_log in zip(self.loggers, should_log) if should_log):
+            lg.write(line)
 
     def write_error_summary(self, error_summary: str) -> None:
         for logger in self.loggers:
@@ -633,7 +633,10 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def scalar_future() -> Number:
-            return value() if callable(value) else value
+            with ContextTimer() as timer:
+                value_concrete = value() if callable(value) else value
+            logger.debug("Scalar Key: %s, Time: %s", key, timer.elapsed_time)
+            return value_concrete
 
         self.scalars[namespace][key] = scalar_future
 
@@ -657,7 +660,9 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def distribution_future() -> LogDistribution:
-            mean, std = value() if callable(value) else value
+            with ContextTimer() as timer:
+                mean, std = value() if callable(value) else value
+            logger.debug("Distribution Key: %s, Time: %s", key, timer.elapsed_time)
             return LogDistribution(mean=mean, std=std)
 
         self.distributions[namespace][key] = distribution_future
@@ -684,26 +689,30 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def histogram_future() -> LogHistogram:
-            values = value() if callable(value) else value
-            values = values.reshape(-1)  # Must be flat.
+            with ContextTimer() as timer:
+                values = value() if callable(value) else value
+                values = values.reshape(-1)  # Must be flat.
 
-            if isinstance(values, Array):
-                counts, limits = jnp.histogram(values, bins=bins)
-                counts, limits = as_numpy(counts), as_numpy(limits)
-            elif isinstance(values, np.ndarray):
-                counts, limits = np.histogram(values, bins=bins)
-            else:
-                raise ValueError(f"Unsupported histogram type: {type(values)}")
+                if isinstance(values, Array):
+                    counts, limits = jnp.histogram(values, bins=bins)
+                    counts, limits = as_numpy(counts), as_numpy(limits)
+                elif isinstance(values, np.ndarray):
+                    counts, limits = np.histogram(values, bins=bins)
+                else:
+                    raise ValueError(f"Unsupported histogram type: {type(values)}")
 
-            return LogHistogram(
-                min=float(values.min()),
-                max=float(values.max()),
-                num=int(values.size),
-                sum=float(values.sum()),
-                sum_squares=float(values.dot(values)),
-                bucket_limits=cast(list[float], limits[1:].tolist()),
-                bucket_counts=cast(list[int], counts.tolist()),
-            )
+                histogram_values = LogHistogram(
+                    min=float(values.min()),
+                    max=float(values.max()),
+                    num=int(values.size),
+                    sum=float(values.sum()),
+                    sum_squares=float(values.dot(values)),
+                    bucket_limits=cast(list[float], limits[1:].tolist()),
+                    bucket_counts=cast(list[int], counts.tolist()),
+                )
+
+            logger.debug("Histogram Key: %s, Time: %s", key, timer.elapsed_time)
+            return histogram_values
 
         self.histograms[namespace][key] = histogram_future
 
@@ -737,23 +746,27 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def histogram_future() -> LogHistogram:
-            counts_np = (as_numpy(counts) if isinstance(counts, Array) else counts).astype(int)
-            limits_np = (as_numpy(limits) if isinstance(limits, Array) else limits).astype(float)
+            with ContextTimer() as timer:
+                counts_np = (as_numpy(counts) if isinstance(counts, Array) else counts).astype(int)
+                limits_np = (as_numpy(limits) if isinstance(limits, Array) else limits).astype(float)
 
-            minv_ = counts_np.min() if minv is None else minv
-            maxv_ = counts_np.max() if maxv is None else maxv
-            sumv_ = counts_np.sum() if sumv is None else sumv
-            sum_squaresv_ = counts_np.dot(counts_np) if sum_squaresv is None else sum_squaresv
+                minv_ = counts_np.min() if minv is None else minv
+                maxv_ = counts_np.max() if maxv is None else maxv
+                sumv_ = counts_np.sum() if sumv is None else sumv
+                sum_squaresv_ = counts_np.dot(counts_np) if sum_squaresv is None else sum_squaresv
 
-            return LogHistogram(
-                min=float(minv_),
-                max=float(maxv_),
-                num=int(counts_np.size),
-                sum=float(sumv_),
-                sum_squares=float(sum_squaresv_),
-                bucket_limits=cast(list[float], limits_np.tolist()),
-                bucket_counts=cast(list[int], counts_np.tolist()),
-            )
+                histogram_values = LogHistogram(
+                    min=float(minv_),
+                    max=float(maxv_),
+                    num=int(counts_np.size),
+                    sum=float(sumv_),
+                    sum_squares=float(sum_squaresv_),
+                    bucket_limits=cast(list[float], limits_np.tolist()),
+                    bucket_counts=cast(list[int], counts_np.tolist()),
+                )
+
+            logger.debug("Raw Histogram Key: %s, Time: %s", key, timer.elapsed_time)
+            return histogram_values
 
         self.histograms[namespace][key] = histogram_future
 
@@ -798,7 +811,10 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def image_future() -> LogImage:
-            return get_image(value() if callable(value) else value, target_resolution)
+            with ContextTimer() as timer:
+                image = get_image(value() if callable(value) else value, target_resolution)
+            logger.debug("Image Key: %s, Time: %s", key, timer.elapsed_time)
+            return image
 
         self.images[namespace][key] = image_future
 
@@ -834,15 +850,20 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def image_future() -> LogImage:
-            image, label = value() if callable(value) else value
-            image = get_image(image, target_resolution)
-            return image_with_text(
-                image.image,
-                standardize_text(label, max_line_length),
-                max_num_lines=max_num_lines,
-                line_spacing=line_spacing,
-                centered=centered,
-            )
+            with ContextTimer() as timer:
+                image, label = value() if callable(value) else value
+                image = get_image(image, target_resolution)
+
+                image_value = image_with_text(
+                    image.image,
+                    standardize_text(label, max_line_length),
+                    max_num_lines=max_num_lines,
+                    line_spacing=line_spacing,
+                    centered=centered,
+                )
+
+            logger.debug("Labeled Image Key: %s, Time: %s", key, timer.elapsed_time)
+            return image_value
 
         self.images[namespace][key] = image_future
 
@@ -881,15 +902,18 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def images_future() -> LogImage:
-            images = value() if callable(value) else value
-            if max_images is not None:
-                images = images[:max_images]
-            if isinstance(images, Array):
-                images = as_numpy(images)
-            if isinstance(images, Sequence):
-                images = list(images)
-            images = [get_image(image, target_resolution) for image in images]
-            tiled = tile_images([img.image for img in images], sep)
+            with ContextTimer() as timer:
+                images = value() if callable(value) else value
+                if max_images is not None:
+                    images = images[:max_images]
+                if isinstance(images, Array):
+                    images = as_numpy(images)
+                if isinstance(images, Sequence):
+                    images = list(images)
+                images = [get_image(image, target_resolution) for image in images]
+                tiled = tile_images([img.image for img in images], sep)
+
+            logger.debug("Images Key: %s, Time: %s", key, timer.elapsed_time)
             return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
@@ -936,22 +960,25 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def images_future() -> LogImage:
-            images, labels = value() if callable(value) else value
-            if max_images is not None:
-                images = images[:max_images]
-                labels = labels[:max_images]
-            images = [get_image(image, target_resolution) for image in images]
-            labeled = [
-                image_with_text(
-                    img.image,
-                    standardize_text(label, max_line_length),
-                    max_num_lines=max_num_lines,
-                    line_spacing=line_spacing,
-                    centered=centered,
-                )
-                for img, label in zip(images, labels)
-            ]
-            tiled = tile_images([img.image for img in labeled], sep)
+            with ContextTimer() as timer:
+                images, labels = value() if callable(value) else value
+                if max_images is not None:
+                    images = images[:max_images]
+                    labels = labels[:max_images]
+                images = [get_image(image, target_resolution) for image in images]
+                labeled = [
+                    image_with_text(
+                        img.image,
+                        standardize_text(label, max_line_length),
+                        max_num_lines=max_num_lines,
+                        line_spacing=line_spacing,
+                        centered=centered,
+                    )
+                    for img, label in zip(images, labels)
+                ]
+                tiled = tile_images([img.image for img in labeled], sep)
+
+            logger.debug("Labeled Images Key: %s, Time: %s", key, timer.elapsed_time)
             return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
@@ -984,7 +1011,11 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def video_future() -> LogVideo:
-            return get_video(value() if callable(value) else value, fps=fps)
+            with ContextTimer() as timer:
+                video = get_video(value() if callable(value) else value, fps=fps)
+
+            logger.debug("Video Key: %s, Time: %s", key, timer.elapsed_time)
+            return video
 
         self.videos[namespace][key] = video_future
 
