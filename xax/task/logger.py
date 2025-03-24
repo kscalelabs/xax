@@ -635,7 +635,7 @@ class Logger:
         def scalar_future() -> Number:
             with ContextTimer() as timer:
                 value_concrete = value() if callable(value) else value
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Scalar Key: %s, Time: %s", key, timer.elapsed_time)
             return value_concrete
 
         self.scalars[namespace][key] = scalar_future
@@ -662,7 +662,7 @@ class Logger:
         def distribution_future() -> LogDistribution:
             with ContextTimer() as timer:
                 mean, std = value() if callable(value) else value
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Distribution Key: %s, Time: %s", key, timer.elapsed_time)
             return LogDistribution(mean=mean, std=std)
 
         self.distributions[namespace][key] = distribution_future
@@ -711,7 +711,7 @@ class Logger:
                     bucket_counts=cast(list[int], counts.tolist()),
                 )
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Histogram Key: %s, Time: %s", key, timer.elapsed_time)
             return histogram_values
 
         self.histograms[namespace][key] = histogram_future
@@ -765,7 +765,7 @@ class Logger:
                     bucket_counts=cast(list[int], counts_np.tolist()),
                 )
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Raw Histogram Key: %s, Time: %s", key, timer.elapsed_time)
             return histogram_values
 
         self.histograms[namespace][key] = histogram_future
@@ -813,7 +813,7 @@ class Logger:
         def image_future() -> LogImage:
             with ContextTimer() as timer:
                 image = get_image(value() if callable(value) else value, target_resolution)
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Image Key: %s, Time: %s", key, timer.elapsed_time)
             return image
 
         self.images[namespace][key] = image_future
@@ -862,7 +862,7 @@ class Logger:
                     centered=centered,
                 )
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Labeled Image Key: %s, Time: %s", key, timer.elapsed_time)
             return image_value
 
         self.images[namespace][key] = image_future
@@ -913,7 +913,7 @@ class Logger:
                 images = [get_image(image, target_resolution) for image in images]
                 tiled = tile_images([img.image for img in images], sep)
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Images Key: %s, Time: %s", key, timer.elapsed_time)
             return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
@@ -978,7 +978,7 @@ class Logger:
                 ]
                 tiled = tile_images([img.image for img in labeled], sep)
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Labeled Images Key: %s, Time: %s", key, timer.elapsed_time)
             return LogImage(image=tiled)
 
         self.images[namespace][key] = images_future
@@ -1014,7 +1014,7 @@ class Logger:
             with ContextTimer() as timer:
                 video = get_video(value() if callable(value) else value, fps=fps)
 
-            logger.debug("Key: %s, Time: %s", key, timer.elapsed_time)
+            logger.debug("Video Key: %s, Time: %s", key, timer.elapsed_time)
             return video
 
         self.videos[namespace][key] = video_future
