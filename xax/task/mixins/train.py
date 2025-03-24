@@ -156,7 +156,6 @@ class TrainConfig(
     valid_first_n_steps: int = field(0, help="Treat the first N steps as validation steps")
     valid_every_n_seconds: float | None = field(60.0 * 10.0, help="Run validation every N seconds")
     valid_first_n_seconds: float | None = field(60.0, help="Run first validation after N seconds")
-    batch_dim: int = field(0, help="The batch dimension, for splitting batches into chunks")
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
     random_seed: int = field(1337, help="Random seed for the task")
