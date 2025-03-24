@@ -140,7 +140,13 @@ class ColoredFormatter(logging.Formatter):
         return logging.Formatter.format(self, record)
 
 
-def configure_logging(prefix: str | None = None, *, rank: int | None = None, world_size: int | None = None) -> None:
+def configure_logging(
+    prefix: str | None = None,
+    *,
+    rank: int | None = None,
+    world_size: int | None = None,
+    debug: bool | None = None,
+) -> None:
     """Instantiates logging.
 
     This captures logs and reroutes them to the Toasts module, which is
@@ -151,6 +157,7 @@ def configure_logging(prefix: str | None = None, *, rank: int | None = None, wor
         prefix: An optional prefix to add to the logger
         rank: The current rank, or None if not using multiprocessing
         world_size: The total world size, or None if not using multiprocessing
+        debug: Whether to enable debug logging
     """
     if rank is not None or world_size is not None:
         assert rank is not None and world_size is not None
@@ -168,7 +175,10 @@ def configure_logging(prefix: str | None = None, *, rank: int | None = None, wor
     stream_handler.addFilter(filter)
     root_logger.addHandler(stream_handler)
 
-    root_logger.setLevel(logging._nameToLevel[config.log_level])
+    if debug is None:
+        root_logger.setLevel(logging._nameToLevel[config.log_level])
+    else:
+        root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
     # Avoid junk logs from other libraries.
     if config.hide_third_party_logs:
