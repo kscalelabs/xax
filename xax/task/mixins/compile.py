@@ -5,6 +5,7 @@ behavior during initialization and training.
 """
 
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
@@ -15,6 +16,16 @@ from xax.core.conf import field
 from xax.task.base import BaseConfig, BaseTask
 
 logger = logging.getLogger(__name__)
+
+
+def get_cache_dir() -> str | None:
+    # By default, only cache on MacOS, since Jax caching on Linux is very
+    # prone to NaNs.
+    match sys.platform:
+        case "darwin":
+            return str((Path.home() / ".cache" / "jax" / "jaxcache").resolve())
+        case _:
+            return None
 
 
 @jax.tree_util.register_dataclass
@@ -42,7 +53,8 @@ class CompileOptions:
 
     # JAX cache options
     cache_dir: str | None = field(
-        value=lambda: str((Path.home() / ".cache" / "jax" / "jaxcache").resolve()),
+        # Only cache by default on MacOS systems.
+        value=get_cache_dir,
         help="Directory for JAX compilation cache. If None, caching is disabled",
     )
     cache_min_size_bytes: int = field(
