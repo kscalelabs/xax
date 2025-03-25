@@ -153,6 +153,8 @@ class BaseTask(Generic[Config]):
             for base in cls.__orig_bases__:
                 if hasattr(base, "__args__"):
                     for arg in base.__args__:
+                        if isinstance(arg, TypeVar) and arg.__bound__ is not None:
+                            arg = arg.__bound__
                         if issubclass(arg, BaseConfig):
                             return arg
 
