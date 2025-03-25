@@ -9,7 +9,14 @@ import jax
 import tensorflow as tf
 from jax.experimental import jax2tf
 from jaxtyping import Array, PyTree
-from orbax.export import ExportManager, JaxModule, ServingConfig
+
+try:
+    from orbax.export import ExportManager, JaxModule, ServingConfig
+except ImportError as e:
+    raise ImportError(
+        "Please install the package with `orbax` as a dependency, using "
+        "'xax[export]` to install the required dependencies."
+    ) from e
 
 logger = logging.getLogger(__name__)
 
