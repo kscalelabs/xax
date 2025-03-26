@@ -122,7 +122,7 @@ class ValidStepTimer:
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
-        if valid_every_n_steps is not None and state.num_steps > valid_every_n_steps + self.last_valid_step:
+        if valid_every_n_steps is not None and state.num_steps >= valid_every_n_steps + self.last_valid_step:
             self.last_valid_step = state.num_steps
             return True
 
