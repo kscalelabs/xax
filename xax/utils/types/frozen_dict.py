@@ -113,7 +113,7 @@ class FrozenDict(Mapping[K, V]):
     def values(self) -> FrozenValuesView[V]:
         return FrozenValuesView(self)
 
-    def items(self) -> Iterator[tuple[K, V]]:
+    def items(self) -> Iterator[tuple[K, V]]:  # type: ignore[override]
         for key in self._dict:
             yield (key, self[key])
 
@@ -125,7 +125,7 @@ class FrozenDict(Mapping[K, V]):
         return new_self, value
 
     def unfreeze(self) -> dict[K, V]:
-        return unfreeze(self)  # type: ignore[return-value]
+        return unfreeze(self)
 
     def tree_flatten_with_keys(self) -> tuple[tuple[tuple[jax.tree_util.DictKey, Any], ...], tuple[K, ...]]:
         sorted_keys = sorted(self._dict)
