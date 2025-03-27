@@ -258,12 +258,40 @@ class TensorboardWriter:
         fps: int = 30,
     ) -> None:
         assert value.ndim == 4, "Video must be 4D array (T, H, W, C)"
-        images = [PIL.Image.fromarray(frame) for frame in value]
+
+        images = [PIL.Image.fromarray(frame).convert("RGB") for frame in value]
+        width, height = images[0].size
+        big_image = PIL.Image.new("RGB", (width, height * len(images)))
+        for i, im in enumerate(images):
+            big_image.paste(im, (0, i * height))
+
+        quantized_big = big_image.quantize(method=PIL.Image.Quantize.MAXCOVERAGE, dither=PIL.Image.Dither.NONE)
+        palette = quantized_big.getpalette()
+
+        processed = []
+        for im in images:
+            q = im.quantize(
+                method=PIL.Image.Quantize.MAXCOVERAGE,
+                palette=quantized_big,
+                dither=PIL.Image.Dither.NONE,
+            )
+            processed.append(q)
+
+        if palette is not None:
+            palette[0:3] = [255, 255, 255]
+            for im in processed:
+                im.putpalette(palette)
 
         # Create temporary file for GIF
         temp_file = tempfile.NamedTemporaryFile(suffix=".gif", delete=False)
         try:
-            images[0].save(temp_file.name, save_all=True, append_images=images[1:], duration=int(1000 / fps), loop=0)
+            processed[0].save(
+                temp_file.name,
+                save_all=True,
+                append_images=processed[1:],
+                duration=int(1000 / fps),
+                loop=0,
+            )
             with open(temp_file.name, "rb") as f:
                 video_string = f.read()
 
