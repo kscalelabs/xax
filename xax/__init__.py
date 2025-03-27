@@ -97,6 +97,7 @@ __all__ = [
     "save_config",
     "stage_environment",
     "to_markdown_table",
+    "hashable_array",
     "jit",
     "save_jaxpr_dot",
     "ColoredFormatter",
@@ -251,6 +252,7 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
+    "hashable_array": "utils.jax",
     "jit": "utils.jax",
     "save_jaxpr_dot": "utils.jaxpr",
     "ColoredFormatter": "utils.logging",
@@ -404,7 +406,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.jax import jit
+    from xax.utils.jax import hashable_array, jit
     from xax.utils.jaxpr import save_jaxpr_dot
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,

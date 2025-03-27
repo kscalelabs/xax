@@ -138,3 +138,20 @@ def jit(
         return wrapped
 
     return decorator
+
+
+class HashableArray:
+    def __init__(self, array: np.ndarray | jnp.ndarray) -> None:
+        self.array = array
+
+    def __hash__(self) -> int:
+        return hash(self.array.tobytes())
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, HashableArray):
+            return False
+        return bool(jnp.array_equal(self.array, other.array))
+
+
+def hashable_array(array: np.ndarray | jnp.ndarray) -> HashableArray:
+    return HashableArray(array)
