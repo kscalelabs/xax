@@ -145,7 +145,7 @@ class HashableArray:
         if not isinstance(array, (np.ndarray, jnp.ndarray)):
             raise ValueError(f"Expected np.ndarray or jnp.ndarray, got {type(array)}")
         self.array = array
-        self._hash = None
+        self._hash: int | None = None
 
     def __hash__(self) -> int:
         if self._hash is None:
