@@ -41,9 +41,6 @@ __all__ = [
     "load_eqx_mlp",
     "make_eqx_mlp",
     "save_eqx",
-    "export",
-    "export_flax",
-    "export_with_params",
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
@@ -97,8 +94,6 @@ __all__ = [
     "save_config",
     "stage_environment",
     "to_markdown_table",
-    "HashableArray",
-    "hashable_array",
     "jit",
     "save_jaxpr_dot",
     "ColoredFormatter",
@@ -132,6 +127,9 @@ __all__ = [
     "snakecase_to_camelcase",
     "uncolored",
     "wrapped",
+    "FrozenDict",
+    "HashableArray",
+    "hashable_array",
 ]
 
 __all__ += [
@@ -197,9 +195,6 @@ NAME_MAP: dict[str, str] = {
     "load_eqx_mlp": "nn.equinox",
     "make_eqx_mlp": "nn.equinox",
     "save_eqx": "nn.equinox",
-    "export": "nn.export",
-    "export_flax": "nn.export",
-    "export_with_params": "nn.export",
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
@@ -253,8 +248,6 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
-    "HashableArray": "utils.jax",
-    "hashable_array": "utils.jax",
     "jit": "utils.jax",
     "save_jaxpr_dot": "utils.jaxpr",
     "ColoredFormatter": "utils.logging",
@@ -288,6 +281,9 @@ NAME_MAP: dict[str, str] = {
     "snakecase_to_camelcase": "utils.text",
     "uncolored": "utils.text",
     "wrapped": "utils.text",
+    "FrozenDict": "utils.types.frozen_dict",
+    "HashableArray": "utils.types.hashable_array",
+    "hashable_array": "utils.types.hashable_array",
 }
 
 # Need to manually set some values which can't be auto-generated.
@@ -352,11 +348,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         make_eqx_mlp,
         save_eqx,
     )
-    from xax.nn.export import (
-        export,
-        export_flax,
-        export_with_params,
-    )
     from xax.nn.geom import (
         euler_to_quat,
         get_projected_gravity_vector_from_quat,
@@ -408,7 +399,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.jax import HashableArray, hashable_array, jit
+    from xax.utils.jax import jit
     from xax.utils.jaxpr import save_jaxpr_dot
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,
@@ -448,5 +439,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         uncolored,
         wrapped,
     )
+    from xax.utils.types.frozen_dict import FrozenDict
+    from xax.utils.types.hashable_array import HashableArray, hashable_array
 
 del TYPE_CHECKING, IMPORT_ALL

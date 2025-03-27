@@ -31,7 +31,7 @@ def default_hyperparams() -> xax.MLPHyperParams:
 @pytest.fixture
 def test_model(default_hyperparams: xax.MLPHyperParams) -> eqx.nn.MLP:
     """Create a model for testing."""
-    return xax.make_eqx_mlp(default_hyperparams, jax.random.PRNGKey(42))
+    return xax.make_eqx_mlp(default_hyperparams, key=jax.random.PRNGKey(42))
 
 
 class TestInferActivation:
@@ -70,7 +70,7 @@ class TestMakeEqxMLP:
 
     def test_make_mlp(self, default_hyperparams: xax.MLPHyperParams) -> None:
         """Test making an MLP with default parameters."""
-        model = xax.make_eqx_mlp(default_hyperparams, jax.random.PRNGKey(42))
+        model = xax.make_eqx_mlp(default_hyperparams, key=jax.random.PRNGKey(42))
 
         assert model.in_size == default_hyperparams["in_size"]
         assert model.out_size == default_hyperparams["out_size"]
@@ -91,7 +91,7 @@ class TestMakeEqxMLP:
         """Test making MLPs with different activation functions."""
         params = default_hyperparams.copy()
         params["activation"] = activation
-        model = xax.make_eqx_mlp(params, jax.random.PRNGKey(42))
+        model = xax.make_eqx_mlp(params, key=jax.random.PRNGKey(42))
         assert model.activation is getattr(jax.nn, activation)
 
     @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ class TestMakeEqxMLP:
     )
     def test_make_mlp_different_configs(self, hyperparams_config: xax.MLPHyperParams) -> None:
         """Test making MLPs with different configurations."""
-        model = xax.make_eqx_mlp(hyperparams_config, jax.random.PRNGKey(42))
+        model = xax.make_eqx_mlp(hyperparams_config, key=jax.random.PRNGKey(42))
 
         # Test model properties match hyperparameters
         assert model.in_size == hyperparams_config["in_size"]
@@ -200,7 +200,7 @@ class TestExportLoadEqxMLP:
         """Test exporting and loading preserves the dtype."""
         params = default_hyperparams.copy()
         params["dtype"] = cast(xax.DTYPE, dtype)
-        model = xax.make_eqx_mlp(params, jax.random.PRNGKey(42))
+        model = xax.make_eqx_mlp(params, key=jax.random.PRNGKey(42))
         model_path = tmpdir / f"model_{dtype}.eqx"
 
         xax.export_eqx_mlp(model, model_path)

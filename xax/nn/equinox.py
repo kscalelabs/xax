@@ -72,7 +72,7 @@ def _infer_activation(activation: ActivationFunction) -> Callable:
         raise ValueError(f"Activation function `{activation}` not found in `jax.nn`")
 
 
-def make_eqx_mlp(hyperparams: MLPHyperParams, key: PRNGKeyArray = jax.random.PRNGKey(0)) -> eqx.nn.MLP:
+def make_eqx_mlp(hyperparams: MLPHyperParams, *, key: PRNGKeyArray) -> eqx.nn.MLP:
     """Create an Equinox MLP from a set of hyperparameters.
 
     Args:
