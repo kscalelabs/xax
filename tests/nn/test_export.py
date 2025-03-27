@@ -16,7 +16,7 @@ import tensorflow as tf
 from jax.experimental import jax2tf
 from jaxtyping import Array, Float
 
-import xax
+from xax.nn.export import export, export_flax, export_with_params
 
 
 class SumModel(eqx.Module):
@@ -89,7 +89,7 @@ def test_export_sum_model_parametric(
     expected_output: list[list[float]],
 ) -> None:
     model = SumModel()
-    xax.export(model=model.__call__, input_shapes=[(3,)], output_dir=tmp_path, batch_size=len(tf_input))
+    export(model=model.__call__, input_shapes=[(3,)], output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -106,7 +106,7 @@ def test_export_multiply_model_parametric(
     expected_output: list[list[float]],
 ) -> None:
     model = MultiplyModel(factor=3.0)
-    xax.export(model=model.__call__, input_shapes=[(3,)], output_dir=tmp_path, batch_size=len(tf_input))
+    export(model=model.__call__, input_shapes=[(3,)], output_dir=tmp_path, batch_size=len(tf_input))
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -129,7 +129,7 @@ def test_export_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key: int) 
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
 
-    xax.export(
+    export(
         model=batched_model,
         input_shapes=[(in_features,)],
         output_dir=tmp_path,
@@ -165,7 +165,7 @@ def test_export_multi_mlp_model_fixed(tmp_path: Path, batch_size: int, rand_key:
     def batched_model(*xs: Array) -> Array:
         return jax.vmap(model)(*xs)
 
-    xax.export(
+    export(
         model=batched_model,
         input_shapes=[(in_features[i].item(),) for i in range(num_mlps)],
         output_dir=tmp_path,
@@ -202,7 +202,7 @@ def test_export_multiply_model_poly(
 ) -> None:
     model = MultiplyModel(factor=2.0)
     # Export with polymorphic batch size (batch_size=None)
-    xax.export(model=jax.vmap(model), input_shapes=[(3,)], output_dir=tmp_path, batch_size=None)
+    export(model=jax.vmap(model), input_shapes=[(3,)], output_dir=tmp_path, batch_size=None)
     loaded_model = tf.saved_model.load(tmp_path)
     result = loaded_model.infer(tf.constant(tf_input, dtype=tf.float32))
     tf.debugging.assert_near(result, tf.constant(expected_output, dtype=tf.float32), rtol=1e-5)
@@ -236,7 +236,7 @@ def test_export_mlp_model_poly(tmp_path: Path, tf_input: list[list[float]]) -> N
     def batched_model(x: Array) -> Array:
         return jax.vmap(model)(x)
 
-    xax.export(model=batched_model, input_shapes=[(in_features,)], output_dir=tmp_path, batch_size=None)
+    export(model=batched_model, input_shapes=[(in_features,)], output_dir=tmp_path, batch_size=None)
 
     loaded_model = tf.saved_model.load(tmp_path)
     tf_input_tensor = tf.constant(tf_input, dtype=tf.float32)
@@ -271,7 +271,7 @@ def test_export_multi_mlp_model_poly(tmp_path: Path, batch_size: int, rand_key: 
     def batched_model(*xs: Array) -> Array:
         return jax.vmap(model)(*xs)
 
-    xax.export(
+    export(
         model=batched_model,
         input_shapes=[(in_features[i].item(),) for i in range(num_mlps)],
         output_dir=tmp_path,
@@ -331,7 +331,7 @@ def test_export_flax_mlp(
 
     expected_output = model.apply(params, test_input)
 
-    xax.export_flax(model=model, params=params, input_shape=(in_features,), output_dir=tmp_path)
+    export_flax(model=model, params=params, input_shape=(in_features,), output_dir=tmp_path)
 
     loaded_model = tf.saved_model.load(tmp_path)
 
@@ -355,7 +355,7 @@ def test_export_with_params_basic_multiply(tmp_path: Path) -> None:
     tf_input = tf.constant([[1.0, 2.0, 3.0]], dtype=tf.float32)
     expected_output = tf_input * factor
 
-    xax.export_with_params(
+    export_with_params(
         model=multiply_fn,
         params=params,
         input_shapes=[(3,)],

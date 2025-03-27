@@ -4,18 +4,18 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-import flax
 import jax
-import tensorflow as tf
-from jax.experimental import jax2tf
 from jaxtyping import Array, PyTree
 
 try:
+    import flax
+    import tensorflow as tf
+    from jax.experimental import jax2tf
     from orbax.export import ExportManager, JaxModule, ServingConfig
 except ImportError as e:
     raise ImportError(
-        "Please install the package with `orbax` as a dependency, using "
-        "'xax[export]` to install the required dependencies."
+        "In order to export models, please install Xax with export dependencies, "
+        "using 'xax[export]` to install the required dependencies."
     ) from e
 
 logger = logging.getLogger(__name__)
