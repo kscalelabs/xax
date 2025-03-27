@@ -1,6 +1,5 @@
 """Defines some utility functions for interfacing with Jax."""
 
-import functools
 import inspect
 import logging
 import os
@@ -143,9 +142,10 @@ def jit(
 
 class HashableArray:
     def __init__(self, array: np.ndarray | jnp.ndarray) -> None:
+        if not isinstance(array, (np.ndarray, jnp.ndarray)):
+            raise ValueError(f"Expected np.ndarray or jnp.ndarray, got {type(array)}")
         self.array = array
 
-    @functools.lru_cache()
     def __hash__(self) -> int:
         return hash(self.array.tobytes())
 
