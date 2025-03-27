@@ -14,8 +14,8 @@ try:
     from orbax.export import ExportManager, JaxModule, ServingConfig
 except ImportError as e:
     raise ImportError(
-        "Please install the package with export dependencies, using "
-        "'xax[export]` to install the required dependencies."
+        "In order to export models, please install Xax with export dependencies, "
+        "using 'xax[export]` to install the required dependencies."
     ) from e
 
 logger = logging.getLogger(__name__)
