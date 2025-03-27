@@ -258,7 +258,13 @@ class TensorboardWriter:
         fps: int = 30,
     ) -> None:
         assert value.ndim == 4, "Video must be 4D array (T, H, W, C)"
-        images = [PIL.Image.fromarray(frame) for frame in value]
+
+        def process(im: PILImage) -> PILImage:
+            im = im.convert("RGB")
+            im = im.quantize(method=PIL.Image.Quantize.MEDIANCUT, dither=PIL.Image.Dither.NONE)
+            return im
+
+        images = [process(PIL.Image.fromarray(frame)) for frame in value]
 
         # Create temporary file for GIF
         temp_file = tempfile.NamedTemporaryFile(suffix=".gif", delete=False)
