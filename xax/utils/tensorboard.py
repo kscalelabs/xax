@@ -291,7 +291,6 @@ class TensorboardWriter:
                 append_images=processed[1:],
                 duration=int(1000 / fps),
                 loop=0,
-                optimize=False,
             )
             with open(temp_file.name, "rb") as f:
                 video_string = f.read()
