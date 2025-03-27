@@ -1,11 +1,13 @@
 """Defines some utility functions for interfacing with Jax."""
 
+import collections
 import inspect
 import logging
 import os
 import time
 from functools import wraps
-from typing import Any, Callable, Iterable, ParamSpec, Sequence, TypeVar, cast
+from types import MappingProxyType
+from typing import Any, Callable, Iterable, Mapping, ParamSpec, Self, Sequence, TypeVar, cast
 
 import jax
 import jax.numpy as jnp
@@ -22,6 +24,9 @@ Number = int | float | np.ndarray | jnp.ndarray
 
 P = ParamSpec("P")  # For function parameters
 R = TypeVar("R")  # For function return type
+
+K = TypeVar("K")
+V = TypeVar("V")
 
 
 def as_float(value: int | float | np.ndarray | jnp.ndarray) -> float:
@@ -160,3 +165,137 @@ class HashableArray:
 
 def hashable_array(array: np.ndarray | jnp.ndarray) -> HashableArray:
     return HashableArray(array)
+
+
+def _prepare_freeze(xs: Any) -> Any:  # noqa: ANN401
+    """Deep copy unfrozen dicts to make the dictionary FrozenDict safe."""
+    if isinstance(xs, FrozenDict):
+        return xs._dict  # pylint: disable=protected-access
+    if not isinstance(xs, dict):
+        return xs
+    return {key: _prepare_freeze(val) for key, val in xs.items()}
+
+
+def _indent(x: str, num_spaces: int) -> str:
+    indent_str = " " * num_spaces
+    lines = x.split("\n")
+    assert not lines[-1]
+    return "\n".join(indent_str + line for line in lines[:-1]) + "\n"
+
+
+class FrozenKeysView(collections.abc.KeysView[K]):
+    def __repr__(self) -> str:
+        return f"frozen_dict_keys({list(self)})"
+
+
+class FrozenValuesView(collections.abc.ValuesView[V]):
+    def __repr__(self) -> str:
+        return f"frozen_dict_values({list(self)})"
+
+
+@jax.tree_util.register_pytree_with_keys_class
+class FrozenDict(Mapping[K, V]):
+    """An immutable variant of the Python dict."""
+
+    __slots__ = ("_dict", "_hash")
+
+    def __init__(self, *args: Any, __unsafe_skip_copy__: bool = False, **kwargs: Any) -> None:  # noqa: ANN401
+        # make sure the dict is as
+        xs = dict(*args, **kwargs)
+        if __unsafe_skip_copy__:
+            self._dict = xs
+        else:
+            self._dict = _prepare_freeze(xs)
+
+        self._hash: int | None = None
+
+    def __getitem__(self, key: K) -> V:
+        v = self._dict[key]
+        if isinstance(v, dict):
+            return FrozenDict(v)  # type: ignore[return-value]
+        return v
+
+    def __setitem__(self, key: K, value: V) -> None:
+        raise ValueError("FrozenDict is immutable.")
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._dict
+
+    def __iter__(self) -> iter[K]:
+        return iter(self._dict)
+
+    def __len__(self) -> int:
+        return len(self._dict)
+
+    def __repr__(self) -> str:
+        return self.pretty_repr()
+
+    def __reduce__(self) -> tuple[type["FrozenDict[K, V]"], tuple[dict[K, V]]]:
+        return FrozenDict, (self.unfreeze(),)
+
+    def pretty_repr(self, num_spaces: int = 4) -> str:
+        """Returns an indented representation of the nested dictionary."""
+
+        def pretty_dict(x: Any) -> str:
+            if not isinstance(x, dict):
+                return repr(x)
+            rep = ""
+            for key, val in x.items():
+                rep += f"{key}: {pretty_dict(val)},\n"
+            if rep:
+                return "{\n" + _indent(rep, num_spaces) + "}"
+            else:
+                return "{}"
+
+        return f"FrozenDict({pretty_dict(self._dict)})"
+
+    def __hash__(self) -> int:
+        if self._hash is None:
+            h = 0
+            for key, value in self.items():
+                h ^= hash((key, value))
+            self._hash = h
+        return self._hash
+
+    def copy(self, add_or_replace: Mapping[K, V] = MappingProxyType({})) -> Self:
+        return type(self)({**self, **unfreeze(add_or_replace)})  # type: ignore[arg-type]
+
+    def keys(self) -> FrozenKeysView[K]:
+        return FrozenKeysView(self)
+
+    def values(self) -> FrozenValuesView[V]:
+        return FrozenValuesView(self)
+
+    def items(self) -> iter[tuple[K, V]]:
+        for key in self._dict:
+            yield (key, self[key])
+
+    def pop(self, key: K) -> tuple["FrozenDict[K, V]", V]:
+        value = self[key]
+        new_dict = dict(self._dict)
+        new_dict.pop(key)
+        new_self = type(self)(new_dict)
+        return new_self, value
+
+    def unfreeze(self) -> dict[K, V]:
+        return unfreeze(self)  # type: ignore[return-value]
+
+    def tree_flatten_with_keys(self) -> tuple[tuple[tuple[jax.tree_util.DictKey, Any], ...], tuple[K, ...]]:
+        sorted_keys = sorted(self._dict)
+        return tuple([(jax.tree_util.DictKey(k), self._dict[k]) for k in sorted_keys]), tuple(sorted_keys)
+
+    @classmethod
+    def tree_unflatten(cls, keys: tuple[K, ...], values: tuple[Any, ...]) -> "FrozenDict[K, V]":
+        return cls({k: v for k, v in zip(keys, values)}, __unsafe_skip_copy__=True)
+
+
+def unfreeze(x: FrozenDict[K, V] | dict[str, Any]) -> dict[Any, Any]:  # noqa: ANN401
+    if isinstance(x, FrozenDict):
+        return jax.tree_util.tree_map(lambda y: y, x._dict)
+    elif isinstance(x, dict):
+        ys = {}
+        for key, value in x.items():
+            ys[key] = unfreeze(value)
+        return ys
+    else:
+        return x
