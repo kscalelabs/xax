@@ -22,7 +22,7 @@ def get_cache_dir() -> str | None:
     # By default, only cache on MacOS, since Jax caching on Linux is very
     # prone to NaNs.
     match sys.platform:
-        case "darwin":
+        case "darwin" | "linux":
             return str((Path.home() / ".cache" / "jax" / "jaxcache").resolve())
         case _:
             return None

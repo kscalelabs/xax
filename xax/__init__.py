@@ -161,7 +161,7 @@ if "XLA_FLAGS" in os.environ:
 # If Nvidia GPU is detected (meaning, is `nvidia-smi` available?), disable
 # Triton GEMM kernels. See https://github.com/NVIDIA/JAX-Toolbox
 if shutil.which("nvidia-smi") is not None:
-    xla_flags += ["--xla_gpu_enable_latency_hiding_scheduler", "--xla_gpu_enable_triton_gemm"]
+    xla_flags += ["--xla_gpu_enable_latency_hiding_scheduler=true", "--xla_gpu_enable_triton_gemm=false"]
 os.environ["XLA_FLAGS"] = " ".join(xla_flags)
 
 # If this flag is set, eagerly imports the entire package (not recommended).
