@@ -53,6 +53,7 @@ from xax.utils.experiments import (
     get_packages_with_versions,
     get_training_code,
 )
+from xax.utils.jax import jit as xax_jit
 from xax.utils.logging import LOG_STATUS
 from xax.utils.text import highlight_exception_message, show_info
 
@@ -212,8 +213,7 @@ class TrainMixin(
 
     def on_step_end(self, state: State) -> State:
         state = super().on_step_end(state)
-        state.elapsed_time_s = time.time() - state.start_time_s
-        return state
+        return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
     def log_train_step(self, model: PyTree, batch: Batch, output: Output, state: State) -> None:
         """Override this function to do logging during the training phase.
@@ -333,7 +333,7 @@ class TrainMixin(
         return model, optimizer, opt_state, state
 
     @eqx.filter_jit
-    def get_output(self, model: PyTree, batch: Batch) -> Output:
+    def get_output(self, model: PyTree, batch: Batch, state: State) -> Output:
         """Gets the output from the model.
 
         By default, we assume the model is a function that takes the batch as
@@ -347,7 +347,7 @@ class TrainMixin(
         raise NotImplementedError("`get_output` must be implemented by the subclass")
 
     @eqx.filter_jit
-    def compute_loss(self, model: PyTree, batch: Batch, output: Output) -> Array:
+    def compute_loss(self, model: PyTree, batch: Batch, output: Output, state: State) -> Array:
         """Gets the loss for the current batch.
 
         By default, we assume the model is a function that takes the batch as
@@ -366,13 +366,13 @@ class TrainMixin(
             raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
 
-    @eqx.filter_jit
-    def get_output_and_loss(self, model: PyTree, batch: Batch) -> tuple[Array, Output]:
-        output = self.get_output(model, batch)
-        loss = self.compute_loss(model, batch, output)
+    @xax_jit(static_argnames=["self"])
+    def get_output_and_loss(self, model: PyTree, batch: Batch, state: State) -> tuple[Array, Output]:
+        output = self.get_output(model, batch, state)
+        loss = self.compute_loss(model, batch, output, state)
         return loss, output
 
-    @eqx.filter_jit
+    @xax_jit(static_argnames=["self", "optimizer"])
     def update(
         self,
         model: PyTree,
@@ -457,20 +457,21 @@ class TrainMixin(
         self.logger.log_file("training_code.txt", get_training_code(self))
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
 
-    @eqx.filter_jit
+    @xax_jit(static_argnames=["self", "optimizer"])
     def train_step(
         self,
         model: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
+        state: State,
     ) -> tuple[PyTree, optax.OptState, Array, Output]:
         loss, model, opt_state, output = self.update(model, optimizer, opt_state, batch)
         return model, opt_state, loss, output
 
-    @eqx.filter_jit
-    def val_step(self, model: PyTree, batch: Batch) -> tuple[PyTree, Array, Output]:
-        loss, output = eqx.filter_jit(self.get_output_and_loss)(model, batch)
+    @xax_jit(static_argnames=["self"])
+    def val_step(self, model: PyTree, batch: Batch, state: State) -> tuple[PyTree, Array, Output]:
+        loss, output = self.get_output_and_loss(model, batch, state)
         return model, loss, output
 
     def train_loop(
@@ -485,26 +486,25 @@ class TrainMixin(
         while not self.is_training_over(state):
             if self.valid_step_timer.is_valid_step(state):
                 valid_batch = next(valid_pf)
-                with self.step_context("model_step"):
-                    model, loss, output = self.val_step(model, valid_batch)
+                state = state.replace(
+                    raw_phase="valid",
+                    num_valid_steps=state.num_valid_steps + 1,
+                    num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
+                )
 
-                # Perform logging.
-                with self.step_context("write_logs"):
-                    state.phase = "valid"
-                    self.log_step(model, valid_batch, output, loss, state)
-                    state.num_valid_samples += 1
+                model, loss, output = self.val_step(model, valid_batch, state)
+                self.log_step(model, valid_batch, output, loss, state)
 
             state = self.on_step_start(state)
+            train_batch = next(train_pf)
+            state = state.replace(
+                raw_phase="train",
+                num_steps=state.num_steps + 1,
+                num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
+            )
 
-            with self.step_context("model_step"):
-                train_batch = next(train_pf)
-                model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch)
-
-            with self.step_context("write_logs"):
-                state.phase = "train"
-                self.log_step(model, train_batch, output, loss, state)
-                state.num_steps += 1
-                state.num_samples += self.get_size_of_batch(train_batch) or 0
+            model, opt_state, loss, output = self.train_step(model, optimizer, opt_state, train_batch, state)
+            self.log_step(model, train_batch, output, loss, state)
 
             state = self.on_step_end(state)
 

@@ -1,9 +1,10 @@
 """Defines a dataclass for keeping track of the current training state."""
 
 import time
-from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict, cast, get_args
+from dataclasses import asdict, dataclass
+from typing import Literal, NotRequired, Self, TypedDict, Unpack, cast, get_args
 
+import jax
 from omegaconf import MISSING
 
 from xax.core.conf import field
@@ -27,7 +28,8 @@ class StateDict(TypedDict, total=False):
     raw_phase: NotRequired[str]
 
 
-@dataclass
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True, kw_only=True)
 class State:
     num_steps: int = field(MISSING, help="Number of steps so far")
     num_samples: int = field(MISSING, help="Number of sample so far")
@@ -40,10 +42,6 @@ class State:
     @property
     def phase(self) -> Phase:
         return cast_phase(self.raw_phase)
-
-    @phase.setter
-    def phase(self, phase: Phase) -> None:
-        self.raw_phase = phase
 
     @classmethod
     def init_state(cls) -> "State":
@@ -69,3 +67,6 @@ class State:
                 return self.num_valid_steps
             case _:
                 raise ValueError(f"Invalid phase: {phase}")
+
+    def replace(self, **kwargs: Unpack[StateDict]) -> Self:
+        return State(**{**asdict(self), **kwargs})

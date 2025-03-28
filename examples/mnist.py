@@ -71,11 +71,11 @@ class MnistClassification(xax.Task[Config]):
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
 
-    def get_output(self, model: Model, batch: tuple[Array, Array]) -> Array:
+    def get_output(self, model: Model, batch: tuple[Array, Array], state: xax.State) -> Array:
         x, _ = batch
         return jax.vmap(model)(x)
 
-    def compute_loss(self, model: Model, batch: tuple[Array, Array], output: Array) -> Array:
+    def compute_loss(self, model: Model, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
         (_, y), yhat = batch, output
         return cross_entropy(y, yhat)
 
