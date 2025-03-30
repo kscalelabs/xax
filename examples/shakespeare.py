@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import tensorflow_datasets as tfds
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
 
@@ -162,6 +162,21 @@ class ShakespearePrediction(xax.Task[Config]):
         self.ds = load_shakespeare_text()
         self.token_ids = jnp.array([self.ds.token_to_id[c] for c in self.ds.text], dtype=jnp.int32)
 
+    def compute_metrics(
+        self,
+        model: PyTree,
+        batch: tuple[Array, Array],
+        output: Array,
+        loss: Array,
+        state: xax.State,
+    ) -> dict[str, Array]:
+        _, y = batch
+        yhat = output.argmax(axis=-1)
+        return {
+            "loss": loss,
+            "acc": (yhat == y).astype(float).mean(),
+        }
+
     def get_model(self, key: PRNGKeyArray) -> RecurrentModel:
         match self.config.model_type:
             case "rnn":
@@ -186,7 +201,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
                     num_layers=self.config.num_layers,
-                    block_type="dplrssm",
+                    block_type="diag",
                     skip_connections=True,
                     key=key,
                 )
@@ -202,7 +217,7 @@ class ShakespearePrediction(xax.Task[Config]):
 
     def compute_loss(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
         (_, y), yhat = batch, output
-        return xax.cross_entropy(y, yhat, axis=2).mean()
+        return xax.cross_entropy(y, yhat, axis=-1).mean()
 
     def log_valid_step(
         self,

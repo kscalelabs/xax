@@ -9,6 +9,10 @@ import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
 
 
+def glorot(key: PRNGKeyArray, shape: tuple[int, ...]) -> Array:
+    return jax.random.uniform(key, shape, minval=-1.0, maxval=1.0) * jnp.sqrt(2 / sum(shape))
+
+
 class DiscreteTimeS4(eqx.Module):
     a: Array
     B: Array
@@ -151,8 +155,8 @@ class SSMBlock(BaseSSMBlock):
 
     def __init__(self, hidden_size: int, *, key: PRNGKeyArray) -> None:
         key_a, key_b = jax.random.split(key)
-        self.a_mat = jax.nn.initializers.glorot_uniform()(key_a, (hidden_size, hidden_size))
-        self.b_mat = jax.nn.initializers.glorot_uniform()(key_b, (hidden_size, hidden_size))
+        self.a_mat = glorot(key_a, (hidden_size, hidden_size))
+        self.b_mat = glorot(key_b, (hidden_size, hidden_size))
 
     def forward(self, h: Array, x: Array) -> Array:
         h = self.a_mat @ h + self.b_mat.T @ x
@@ -168,8 +172,8 @@ class DiagSSMBlock(BaseSSMBlock):
 
     def __init__(self, hidden_size: int, *, key: PRNGKeyArray) -> None:
         keys = jax.random.split(key, 2)
-        self.a_mat = jax.nn.initializers.glorot_uniform()(keys[0], (hidden_size,))
-        self.b_mat = jax.nn.initializers.glorot_uniform()(keys[1], (hidden_size, hidden_size))
+        self.a_mat = glorot(keys[0], (hidden_size,))
+        self.b_mat = glorot(keys[1], (hidden_size, hidden_size))
 
     def forward(self, h: Array, x: Array) -> Array:
         h = self.a_mat * h + self.b_mat.T @ x
@@ -224,26 +228,6 @@ class DiagSSMBlock(BaseSSMBlock):
         return h_seq
 
 
-class DPLRSSMBlock(BaseSSMBlock):
-    d: Array  # Diagonal component, analogous to self.a in DiagSSMBlock
-    L: Array  # Left low-rank factor
-    R: Array  # Right low-rank factor
-    B: Array  # Input transformation matrix
-
-    def __init__(self, hidden_size: int, *, key: PRNGKeyArray) -> None:
-        rank = 4
-        self.d = jax.nn.initializers.glorot_uniform()(key, (hidden_size,))
-        self.L = jax.nn.initializers.glorot_uniform()(key, (hidden_size, rank))
-        self.R = jax.nn.initializers.glorot_uniform()(key, (rank, hidden_size))
-        self.B = jax.nn.initializers.glorot_uniform()(key, (hidden_size, hidden_size))
-
-    def forward(self, h: Array, x: Array) -> Array:
-        low_rank_update = self.L @ (self.R @ h)
-        h = self.d * h + low_rank_update + self.B.T @ x
-        h = jax.nn.tanh(h)
-        return h
-
-
 class S4(eqx.Module):
     vocab_embedding: eqx.nn.Embedding
     proj_in: eqx.nn.Linear
@@ -259,7 +243,7 @@ class S4(eqx.Module):
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        block_type: Literal["ssm", "diag", "dplrssm"] = "ssm",
+        block_type: Literal["ssm", "diag"] = "ssm",
         skip_connections: bool = False,
         *,
         key: PRNGKeyArray,
@@ -277,8 +261,6 @@ class S4(eqx.Module):
                     return SSMBlock(hidden_size, key=key)
                 case "diag":
                     return DiagSSMBlock(hidden_size, key=key)
-                case "dplrssm":
-                    return DPLRSSMBlock(hidden_size, key=key)
                 case _:
                     raise ValueError(f"Unknown block type: {block_type}")
 
