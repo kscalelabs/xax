@@ -3,6 +3,7 @@
 from typing import Literal, cast, get_args
 
 import jax.numpy as jnp
+from jaxtyping import Array
 
 NormType = Literal["l1", "l2"]
 
@@ -13,7 +14,7 @@ def cast_norm_type(norm: str) -> NormType:
     return cast(NormType, norm)
 
 
-def get_norm(x: jnp.ndarray, norm: NormType) -> jnp.ndarray:
+def get_norm(x: Array, norm: NormType) -> Array:
     match norm:
         case "l1":
             return jnp.abs(x)

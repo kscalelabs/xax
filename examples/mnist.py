@@ -8,17 +8,11 @@ from typing import Iterator
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import optax
 from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
-
-
-def cross_entropy(y: Array, pred_y: Array) -> Array:
-    pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)
-    return -jnp.mean(pred_y)
 
 
 @dataclass
@@ -91,7 +85,7 @@ class MnistClassification(xax.Task[Config]):
 
     def compute_loss(self, model: Model, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
         (_, y), yhat = batch, output
-        return cross_entropy(y, yhat)
+        return xax.cross_entropy(y, yhat, axis=1)
 
     def compute_metrics(
         self,

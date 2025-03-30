@@ -4,12 +4,13 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array
 
 import xax
 
 
 def test_save_jaxpr_dot(tmpdir: Path) -> None:
-    def loss_fn(x: jnp.ndarray) -> jnp.ndarray:
+    def loss_fn(x: Array) -> Array:
         return jnp.sum(x**2)
 
     jaxpr = jax.make_jaxpr(loss_fn)(jnp.array([1.0, 2.0, 3.0]))
