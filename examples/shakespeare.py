@@ -1,3 +1,4 @@
+# mypy: disable-error-code="import-not-found"
 """Trains a state space model on a character-level tokenized dataset of Shakespeare."""
 
 from dataclasses import dataclass
