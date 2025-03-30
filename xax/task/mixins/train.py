@@ -225,6 +225,7 @@ class TrainMixin(
         Args:
             batch: The batch from the dataloader.
             output: The model output.
+            metrics: The metrics for the current batch.
             state: The current training state.
         """
 
@@ -237,6 +238,7 @@ class TrainMixin(
         Args:
             batch: The batch from the dataloader.
             output: The model output.
+            metrics: The metrics for the current batch.
             state: The current training state.
         """
 
