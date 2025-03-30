@@ -486,9 +486,8 @@ class TrainMixin(
         model_arr: PyTree,
         batch: Batch,
         state: State,
-    ) -> tuple[PyTree, Array, Output]:
-        loss, output = self.get_output_and_loss(model_static, model_arr, batch, state)
-        return loss, output
+    ) -> tuple[Array, Output]:
+        return self.get_output_and_loss(model_static, model_arr, batch, state)
 
     def train_loop(
         self,

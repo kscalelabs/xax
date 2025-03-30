@@ -2,7 +2,7 @@
 
 import time
 from dataclasses import asdict, dataclass
-from typing import Literal, NotRequired, Self, TypedDict, Unpack
+from typing import Any, Literal, NotRequired, TypedDict, Unpack, cast
 
 import jax
 from omegaconf import MISSING
@@ -35,17 +35,7 @@ class State:
 
     @property
     def phase(self) -> Phase:
-        return ["train", "valid"][self._phase]
-
-    @phase.setter
-    def phase(self, value: Phase) -> None:
-        match value:
-            case "train":
-                self._phase = 0
-            case "valid":
-                self._phase = 1
-            case _:
-                raise ValueError(f"Invalid phase: {value}")
+        return cast(Phase, ["train", "valid"][self._phase])
 
     @classmethod
     def init_state(cls) -> "State":
@@ -72,14 +62,15 @@ class State:
             case _:
                 raise ValueError(f"Invalid phase: {phase}")
 
-    def replace(self, **kwargs: Unpack[StateDict]) -> Self:
+    def replace(self, **kwargs: Unpack[StateDict]) -> "State":
+        extra_kwargs: dict[str, Any] = {}  # noqa: ANN401
         if "phase" in kwargs:
             phase = kwargs.pop("phase")
             match phase:
                 case "train":
-                    kwargs["_phase"] = 0
+                    extra_kwargs["_phase"] = 0
                 case "valid":
-                    kwargs["_phase"] = 1
+                    extra_kwargs["_phase"] = 1
                 case _:
                     raise ValueError(f"Invalid phase: {phase}")
-        return State(**{**asdict(self), **kwargs})
+        return State(**{**asdict(self), **kwargs, **extra_kwargs})
