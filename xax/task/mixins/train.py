@@ -216,7 +216,7 @@ class TrainMixin(
         state = super().on_step_end(state)
         return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
-    def log_train_step(self, batch: Batch, output: Output, state: State) -> None:
+    def log_train_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
         """Override this function to do logging during the training phase.
 
         This function is called after the model forward pass and before the
@@ -228,7 +228,7 @@ class TrainMixin(
             state: The current training state.
         """
 
-    def log_valid_step(self, batch: Batch, output: Output, state: State) -> None:
+    def log_valid_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
         """Override this function to do logging during the validation phase.
 
         This function is called after the model forward pass. It is called in
