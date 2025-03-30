@@ -29,6 +29,7 @@ from typing import (
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 import numpy as np
 import optax
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -162,6 +163,7 @@ class TrainConfig(
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
     random_seed: int = field(1337, help="Random seed for the task")
+    global_grad_clip: float = field(value=10.0, help="The maximum gradient norm to clip to.")
 
 
 Config = TypeVar("Config", bound=TrainConfig)
@@ -403,12 +405,12 @@ class TrainMixin(
         model_static: PyTree,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, tuple[Output, FrozenDict[str, Array]]]:
+    ) -> tuple[Array, tuple[Output, dict[str, Array]]]:
         model = eqx.combine(model_arr, model_static)
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
         metrics = self.compute_metrics(model, batch, output, loss, state)
-        return loss, (output, FrozenDict(metrics))
+        return loss, (output, metrics)
 
     def update(
         self,
@@ -418,13 +420,44 @@ class TrainMixin(
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
+    ) -> tuple[PyTree, optax.OptState, Output, dict[str, Array]]:
         grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
         grad_fn = xax_jit(static_argnums=[1])(grad_fn)
         grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
-        updates, opt_state = optimizer.update(grads, opt_state, model_arr)
-        model_arr = eqx.apply_updates(model_arr, updates)
-        return model_arr, opt_state, output, metrics
+        model_arr, opt_state, grad_metrics = self.apply_gradients_with_clipping(model_arr, grads, optimizer, opt_state)
+        return model_arr, opt_state, output, metrics | grad_metrics
+
+    @xax_jit(static_argnames=["self", "optimizer"])
+    def apply_gradients_with_clipping(
+        self,
+        model_arr: PyTree,
+        grads: PyTree,
+        optimizer: optax.GradientTransformation,
+        opt_state: optax.OptState,
+    ) -> tuple[PyTree, optax.OptState, dict[str, Array]]:
+        grad_norm = optax.global_norm(grads)
+        grad_metrics = {"grad_norm": grad_norm}
+
+        def apply(grads: PyTree, grad_norm: Array) -> tuple[PyTree, optax.OptState]:
+            # Clip the global gradient norm to some desired range.
+            grad_factor = self.config.global_grad_clip / jnp.maximum(grad_norm, 1e-6)
+            grads = jax.tree.map(lambda x: x * grad_factor, grads)
+
+            # Apply the gradient updates.
+            updates, new_opt_state = optimizer.update(grads, opt_state, model_arr)
+            new_model_arr = eqx.apply_updates(model_arr, updates)
+            return new_model_arr, new_opt_state
+
+        # Don't apply updates if the gradient is NaN or Inf.
+        new_model_arr, new_opt_state = jax.lax.cond(
+            jnp.isnan(grad_norm) | jnp.isinf(grad_norm),
+            lambda *_: (model_arr, opt_state),
+            apply,
+            grads,
+            grad_norm,
+        )
+
+        return new_model_arr, new_opt_state, grad_metrics
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -512,7 +545,7 @@ class TrainMixin(
         state: State,
     ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
         model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
-        return model_arr, opt_state, output, metrics
+        return model_arr, opt_state, output, FrozenDict(metrics)
 
     @xax_jit(static_argnames=["self", "model_static"])
     def val_step(
