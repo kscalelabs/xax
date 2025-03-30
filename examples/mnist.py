@@ -30,32 +30,42 @@ class Config(xax.Config):
 
 
 class Model(eqx.Module):
-    config: Config
+    num_hidden_layers: int
+    hidden_dim: int
     layers: list
 
-    def __init__(self, config: Config, *, key: PRNGKeyArray) -> None:
+    def __init__(
+        self,
+        num_hidden_layers: int,
+        hidden_dim: int,
+        *,
+        key: PRNGKeyArray,
+    ) -> None:
         super().__init__()
 
-        self.config = config
+        self.num_hidden_layers = num_hidden_layers
+        self.hidden_dim = hidden_dim
 
         # Input and output dimensions
         input_dim = 28 * 28
         output_dim = 10
 
         # Split the PRNG key for all layers
-        keys = jax.random.split(key, self.config.num_hidden_layers + 1)
+        keys = jax.random.split(key, num_hidden_layers + 1)
 
         # Build layers list
-        self.layers = []
+        layers = []
         current_dim = input_dim
 
         # Add hidden layers
-        for i in range(self.config.num_hidden_layers):
-            self.layers.extend([eqx.nn.Linear(current_dim, self.config.hidden_dim, key=keys[i]), jax.nn.relu])
-            current_dim = self.config.hidden_dim
+        for i in range(num_hidden_layers):
+            layers.extend([eqx.nn.Linear(current_dim, hidden_dim, key=keys[i]), jax.nn.relu])
+            current_dim = hidden_dim
 
         # Add output layer
-        self.layers.extend([eqx.nn.Linear(current_dim, output_dim, key=keys[-1]), jax.nn.log_softmax])
+        layers.extend([eqx.nn.Linear(current_dim, output_dim, key=keys[-1]), jax.nn.log_softmax])
+
+        self.layers = layers
 
     def __call__(self, x: Array) -> Array:
         x = x.reshape(28 * 28)
@@ -66,7 +76,11 @@ class Model(eqx.Module):
 
 class MnistClassification(xax.Task[Config]):
     def get_model(self, key: PRNGKeyArray) -> Model:
-        return Model(self.config, key=key)
+        return Model(
+            self.config.num_hidden_layers,
+            self.config.hidden_dim,
+            key=key,
+        )
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
@@ -79,11 +93,11 @@ class MnistClassification(xax.Task[Config]):
         (_, y), yhat = batch, output
         return cross_entropy(y, yhat)
 
-    def log_train_step(self, model: Model, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_train_step(self, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
         (_, y), yhat = batch, output.argmax(axis=1)
         self.logger.log_scalar("acc", (yhat == y).astype(float).mean())
 
-    def log_valid_step(self, model: Model, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_valid_step(self, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
         max_images = 16
         batch = jax.tree_map(lambda x: jax.device_get(x[:max_images]), batch)
         (x, y), yhat = batch, output.argmax(axis=1)

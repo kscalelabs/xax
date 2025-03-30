@@ -23,7 +23,6 @@ __all__ = [
     "get_run_dir",
     "load_user_config",
     "State",
-    "cast_phase",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -180,7 +179,6 @@ NAME_MAP: dict[str, str] = {
     "get_run_dir": "core.conf",
     "load_user_config": "core.conf",
     "State": "core.state",
-    "cast_phase": "core.state",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -329,7 +327,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_run_dir,
         load_user_config,
     )
-    from xax.core.state import Phase, State, cast_phase
+    from xax.core.state import Phase, State
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,

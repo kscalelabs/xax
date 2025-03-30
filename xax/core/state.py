@@ -1,5 +1,6 @@
 """Defines a dataclass for keeping track of the current training state."""
 
+import enum
 import time
 from dataclasses import asdict, dataclass
 from typing import Literal, NotRequired, Self, TypedDict, Unpack, cast, get_args
@@ -12,12 +13,6 @@ from xax.core.conf import field
 Phase = Literal["train", "valid"]
 
 
-def cast_phase(raw_phase: str) -> Phase:
-    args = get_args(Phase)
-    assert raw_phase in args, f"Invalid phase: '{raw_phase}' Valid options are {args}"
-    return cast(Phase, raw_phase)
-
-
 class StateDict(TypedDict, total=False):
     num_steps: NotRequired[int]
     num_samples: NotRequired[int]
@@ -25,7 +20,7 @@ class StateDict(TypedDict, total=False):
     num_valid_samples: NotRequired[int]
     start_time_s: NotRequired[float]
     elapsed_time_s: NotRequired[float]
-    raw_phase: NotRequired[str]
+    phase: NotRequired[Phase]
 
 
 @jax.tree_util.register_dataclass
@@ -37,11 +32,21 @@ class State:
     num_valid_samples: int = field(MISSING, help="Number of validation samples so far")
     start_time_s: float = field(MISSING, help="Start time of training")
     elapsed_time_s: float = field(MISSING, help="Total elapsed time so far")
-    raw_phase: str = field(MISSING, help="Current training phase")
+    _phase: int = field(MISSING, help="Current training phase")
 
     @property
     def phase(self) -> Phase:
-        return cast_phase(self.raw_phase)
+        return ["train", "valid"][self._phase]
+
+    @phase.setter
+    def phase(self, value: Phase) -> None:
+        match value:
+            case "train":
+                self._phase = 0
+            case "valid":
+                self._phase = 1
+            case _:
+                raise ValueError(f"Invalid phase: {value}")
 
     @classmethod
     def init_state(cls) -> "State":
@@ -52,7 +57,7 @@ class State:
             num_valid_samples=0,
             start_time_s=time.time(),
             elapsed_time_s=0.0,
-            raw_phase="train",
+            _phase=0,
         )
 
     @property
@@ -69,4 +74,13 @@ class State:
                 raise ValueError(f"Invalid phase: {phase}")
 
     def replace(self, **kwargs: Unpack[StateDict]) -> Self:
+        if "phase" in kwargs:
+            phase = kwargs.pop("phase")
+            match phase:
+                case "train":
+                    kwargs["_phase"] = 0
+                case "valid":
+                    kwargs["_phase"] = 1
+                case _:
+                    raise ValueError(f"Invalid phase: {phase}")
         return State(**{**asdict(self), **kwargs})
