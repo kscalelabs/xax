@@ -520,7 +520,8 @@ class TrainMixin(
         batch: Batch,
         state: State,
     ) -> tuple[Output, FrozenDict[str, Array]]:
-        return self.get_output_and_loss(model_arr, model_static, batch, state)
+        _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
+        return output, metrics
 
     def train_loop(
         self,
