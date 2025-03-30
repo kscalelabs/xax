@@ -31,7 +31,7 @@ def slice_array(x: Array, start: Array, slice_length: int) -> Array:
 
 def slice_pytree(pytree: PyTree, start: Array, slice_length: int) -> PyTree:
     """Get a slice of a pytree."""
-    return jax.tree_util.tree_map(lambda x: slice_array(x, start, slice_length), pytree)
+    return jax.tree.map(lambda x: slice_array(x, start, slice_length), pytree)
 
 
 def flatten_array(x: Array, flatten_size: int) -> Array:
@@ -43,14 +43,14 @@ def flatten_array(x: Array, flatten_size: int) -> Array:
 
 def flatten_pytree(pytree: PyTree, flatten_size: int) -> PyTree:
     """Flatten a pytree into a (flatten_size, ...) pytree."""
-    return jax.tree_util.tree_map(lambda x: flatten_array(x, flatten_size), pytree)
+    return jax.tree.map(lambda x: flatten_array(x, flatten_size), pytree)
 
 
 def pytree_has_nans(pytree: PyTree) -> Array:
     """Check if a pytree has any NaNs."""
     has_nans = jax.tree_util.tree_reduce(
         lambda a, b: jnp.logical_or(a, b),
-        jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree),
+        jax.tree.map(lambda x: jnp.any(jnp.isnan(x)), pytree),
     )
     return has_nans
 
@@ -58,13 +58,13 @@ def pytree_has_nans(pytree: PyTree) -> Array:
 def update_pytree(cond: Array, new: PyTree, original: PyTree) -> PyTree:
     """Update a pytree based on a condition."""
     # Tricky, need use tree_map because where expects array leafs.
-    return jax.tree_util.tree_map(lambda x, y: jnp.where(cond, x, y), new, original)
+    return jax.tree.map(lambda x, y: jnp.where(cond, x, y), new, original)
 
 
 def compute_nan_ratio(pytree: PyTree) -> Array:
     """Computes the ratio of NaNs vs non-NaNs in a given PyTree."""
-    nan_counts = jax.tree_util.tree_map(lambda x: jnp.sum(jnp.isnan(x)), pytree)
-    total_counts = jax.tree_util.tree_map(lambda x: x.size, pytree)
+    nan_counts = jax.tree.map(lambda x: jnp.sum(jnp.isnan(x)), pytree)
+    total_counts = jax.tree.map(lambda x: x.size, pytree)
 
     total_nans = jax.tree_util.tree_reduce(lambda a, b: a + b, nan_counts, 0)
     total_elements = jax.tree_util.tree_reduce(lambda a, b: a + b, total_counts, 0)
@@ -118,7 +118,7 @@ def reshuffle_pytree(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArr
         # Reshape back to the original shape
         return permuted.reshape(orig_shape)
 
-    return jax.tree_util.tree_map(permute_array, data)
+    return jax.tree.map(permute_array, data)
 
 
 def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArray) -> PyTree:
@@ -133,7 +133,7 @@ def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], r
             return x[tuple(idx_grids)]
         return x
 
-    return jax.tree_util.tree_map(permute_array, data)
+    return jax.tree.map(permute_array, data)
 
 
 TransposeResult = tuple[PyTree, tuple[int, ...], tuple[int, ...]]
@@ -215,7 +215,7 @@ def reshuffle_pytree_along_dims(
                 transpose_info[path] = (transpose_order, original_shape)
         return x
 
-    jax.tree_util.tree_map_with_path(prepare_for_shuffle, data)
+    jax.tree.map_with_path(prepare_for_shuffle, data)
 
     # Create a transposed pytree
     def get_transposed(path: PathType, x: PyTree) -> PyTree:
@@ -223,7 +223,7 @@ def reshuffle_pytree_along_dims(
             return transposed_data[path]
         return x
 
-    transposed_pytree = jax.tree_util.tree_map_with_path(get_transposed, data)
+    transposed_pytree = jax.tree.map_with_path(get_transposed, data)
 
     # Reshuffle the transposed pytree along the leading dimensions
     reshuffled_transposed = reshuffle_pytree(transposed_pytree, shape_dims, rng)
@@ -235,4 +235,4 @@ def reshuffle_pytree_along_dims(
             return transpose_back(x, transpose_order, original_shape)
         return x
 
-    return jax.tree_util.tree_map_with_path(restore_transpose, reshuffled_transposed)
+    return jax.tree.map_with_path(restore_transpose, reshuffled_transposed)
