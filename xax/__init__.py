@@ -41,6 +41,9 @@ __all__ = [
     "load_eqx_mlp",
     "make_eqx_mlp",
     "save_eqx",
+    "export",
+    "export_flax",
+    "export_with_params",
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
@@ -195,6 +198,9 @@ NAME_MAP: dict[str, str] = {
     "load_eqx_mlp": "nn.equinox",
     "make_eqx_mlp": "nn.equinox",
     "save_eqx": "nn.equinox",
+    "export": "nn.export",
+    "export_flax": "nn.export",
+    "export_with_params": "nn.export",
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
@@ -347,6 +353,11 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_eqx_mlp,
         make_eqx_mlp,
         save_eqx,
+    )
+    from xax.nn.export import (
+        export,
+        export_flax,
+        export_with_params,
     )
     from xax.nn.geom import (
         euler_to_quat,
