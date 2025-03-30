@@ -1,19 +1,22 @@
+"""Trains a state space model on a character-level tokenized dataset of Shakespeare."""
+
 from abc import ABC, abstractmethod
+from dataclasses import MISSING, dataclass, replace
+from typing import Iterator
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-import xax
-
-from jaxtyping import Array, PRNGKeyArray
-from dataclasses import MISSING, dataclass, replace
-from typing import Iterator
-
 import tensorflow_datasets as tfds  # for loading tiny_shakespeare
+from jaxtyping import Array, PRNGKeyArray
+
+import xax
 
 # ------------------------------------------------------------------------------
 # Tokenizer and Data Loading for Tiny Shakespeare
 # ------------------------------------------------------------------------------
+
 
 def load_shakespeare_text() -> tuple[str, list[str], dict[str, int], dict[int, str]]:
     """
@@ -40,6 +43,7 @@ def load_shakespeare_text() -> tuple[str, list[str], dict[str, int], dict[int, s
 # Config and Model Definitions (unchanged)
 # ------------------------------------------------------------------------------
 
+
 @dataclass
 class Config(xax.Config):
     input_size: int = xax.field(65)
@@ -52,10 +56,12 @@ class Config(xax.Config):
     sequence_length: int = xax.field(100)
     valid_every_n_seconds: float = xax.field(30.0)
 
+
 class RecurrentModel(ABC):
     @abstractmethod
     def predict_sequence(self, x_seq: Array) -> Array:
         pass
+
 
 class RNN(eqx.Module, RecurrentModel):
     vocab_embedding: eqx.nn.Embedding
@@ -67,11 +73,7 @@ class RNN(eqx.Module, RecurrentModel):
         self.vocab_embedding = eqx.nn.Embedding(config.input_size, config.hidden_size, key=vocab_key)
         keys = jax.random.split(rnn_key, config.num_layers)
         self.rnn_cells = [
-            eqx.nn.GRUCell(
-                input_size=config.hidden_size, 
-                hidden_size=config.hidden_size, 
-                key=keys[i]
-            )
+            eqx.nn.GRUCell(input_size=config.hidden_size, hidden_size=config.hidden_size, key=keys[i])
             for i in range(config.num_layers)
         ]
         self.output_layer = eqx.nn.Linear(config.hidden_size, config.output_size, key=keys[-1])
@@ -96,6 +98,7 @@ class RNN(eqx.Module, RecurrentModel):
         _, y_seq = jax.lax.scan(step, hs, x_seq)
         return y_seq
 
+
 class LSTM(eqx.Module, RecurrentModel):
     vocab_embedding: eqx.nn.Embedding
     rnn_cells: list[eqx.nn.LSTMCell]
@@ -106,11 +109,7 @@ class LSTM(eqx.Module, RecurrentModel):
         self.vocab_embedding = eqx.nn.Embedding(config.input_size, config.hidden_size, key=vocab_key)
         keys = jax.random.split(rnn_key, config.num_layers)
         self.rnn_cells = [
-            eqx.nn.LSTMCell(
-                input_size=config.hidden_size, 
-                hidden_size=config.hidden_size, 
-                key=keys[i]
-            )
+            eqx.nn.LSTMCell(input_size=config.hidden_size, hidden_size=config.hidden_size, key=keys[i])
             for i in range(config.num_layers)
         ]
         self.output_layer = eqx.nn.Linear(config.hidden_size, config.output_size, key=keys[-1])
@@ -135,6 +134,7 @@ class LSTM(eqx.Module, RecurrentModel):
         _, y_seq = jax.lax.scan(step, hs, x_seq)
         return y_seq
 
+
 class SSMBlock(eqx.Module):
     A: Array
     B: Array
@@ -152,6 +152,7 @@ class SSMBlock(eqx.Module):
 
     def get_kernel(self, L: int) -> Array:
         return self.A
+
 
 class DiagSSMBlock(eqx.Module):
     a: Array
@@ -171,24 +172,24 @@ class DiagSSMBlock(eqx.Module):
     def get_kernel(self, L: int) -> Array:
         """Returns the kernel with time as the final dimension."""
         exponents = jnp.arange(L)
-        kernel = jnp.power(self.a[:, None], exponents) # (H, L)
-        kernel = kernel[:, None, :] # (H, 1, L)
+        kernel = jnp.power(self.a[:, None], exponents)  # (H, L)
+        kernel = kernel[:, None, :]  # (H, 1, L)
         return kernel
 
     def forward_accross_time(self, x: Array) -> Array:
         """Convolves x (T, H) across time using the kernel."""
         T, H = x.shape
-        
+
         # Compute s = x @ U.T + b, with shape (N, T, H)
         s = self.B.T @ x
         s = s.T  # (H, T)
 
         kernel = self.get_kernel(T)  # (H, 1, T)
         kernel_flipped = jnp.flip(kernel, axis=-1)
-        
+
         # Pad s on the left along the time axis (pad length T-1)
         s_padded = jnp.pad(s, ((0, 0), (0, 0), (T - 1, 0)))
-        
+
         # Perform depthwise (grouped) 1D convolution.
         # We use input shape (N, H, L) and kernel shape (H, 1, T) with feature_group_count=H.
         # The dimension_numbers are chosen so that the channel dimension is second.
@@ -197,8 +198,8 @@ class DiagSSMBlock(eqx.Module):
             kernel_flipped,
             window_strides=(1,),
             padding="VALID",
-            dimension_numbers=('NCH', 'OIH', 'NCH'),
-            feature_group_count=H
+            dimension_numbers=("NCH", "OIH", "NCH"),
+            feature_group_count=H,
         )
         # conv_out has shape (N, H, T); transpose to (N, T, H)
         conv_out = jnp.transpose(conv_out, (0, 2, 1))
@@ -206,6 +207,7 @@ class DiagSSMBlock(eqx.Module):
 
     def naive_forward_accross_time(self, x: Array) -> Array:
         """Naively forward across time."""
+
         def step(h: Array, x: Array) -> tuple[Array, Array]:
             h = self.forward(h, x)
             return h, h
@@ -214,11 +216,12 @@ class DiagSSMBlock(eqx.Module):
         _, h_seq = jax.lax.scan(step, h_0, x)
         return h_seq
 
+
 class DPLRSSMBlock(eqx.Module):
-    d: Array         # Diagonal component, analogous to self.a in DiagSSMBlock
-    L: Array         # Left low-rank factor
-    R: Array         # Right low-rank factor
-    B: Array         # Input transformation matrix
+    d: Array  # Diagonal component, analogous to self.a in DiagSSMBlock
+    L: Array  # Left low-rank factor
+    R: Array  # Right low-rank factor
+    B: Array  # Input transformation matrix
 
     def __init__(self, config: Config, *, key: PRNGKeyArray):
         self.d = jax.nn.initializers.glorot_uniform()(key, (config.hidden_size,))
@@ -233,6 +236,7 @@ class DPLRSSMBlock(eqx.Module):
         h = self.d * h + low_rank_update + self.B.T @ x
         h = jax.nn.tanh(h)
         return h
+
 
 class S4(eqx.Module, RecurrentModel):
     vocab_embedding: eqx.nn.Embedding
@@ -263,7 +267,7 @@ class S4(eqx.Module, RecurrentModel):
             new_hs.append(h)
             # TODO: maybe add skip connection
             x = jax.nn.gelu(h)
-        
+
         y = self.proj_out(x)
         return new_hs, y
 
@@ -284,10 +288,10 @@ class S4(eqx.Module, RecurrentModel):
         return y_seq
 
 
-
 # ------------------------------------------------------------------------------
 # Shakespeare Prediction Task using Tiny Shakespeare and a character-level tokenizer
 # ------------------------------------------------------------------------------
+
 
 class ShakespearePrediction(xax.Task[Config]):
     def __init__(self, config: Config):
@@ -317,11 +321,15 @@ class ShakespearePrediction(xax.Task[Config]):
         loss = optax.softmax_cross_entropy(logits=output, labels=one_hot_y).mean()
         return loss
 
-    def log_train_step(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_train_step(
+        self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State
+    ) -> None:
         loss = self.compute_loss(model, batch, output)
         self.logger.log_scalar("train_loss", loss)
 
-    def log_valid_step(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_valid_step(
+        self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State
+    ) -> None:
         loss = self.compute_loss(model, batch, output)
         self.logger.log_scalar("valid_loss", loss)
 
@@ -355,6 +363,7 @@ class ShakespearePrediction(xax.Task[Config]):
             batch_y = jnp.stack([token_ids[i + 1 : i + seq_len + 1] for i in idx])
             # One-hot encode the input sequences.
             yield batch_x, batch_y
+
 
 # ------------------------------------------------------------------------------
 # Main

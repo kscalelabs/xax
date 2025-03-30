@@ -46,6 +46,9 @@ __all__ = [
     "cast_norm_type",
     "get_norm",
     "is_master",
+    "DiscreteTimeS4",
+    "S4",
+    "S6",
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
@@ -199,6 +202,9 @@ NAME_MAP: dict[str, str] = {
     "cast_norm_type": "nn.norm",
     "get_norm": "nn.norm",
     "is_master": "nn.parallel",
+    "DiscreteTimeS4": "nn.ssm",
+    "S4": "nn.ssm",
+    "S6": "nn.ssm",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
     "SingleProcessLauncher": "task.launchers.single_process",
@@ -353,6 +359,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     )
     from xax.nn.norm import NormType, cast_norm_type, get_norm
     from xax.nn.parallel import is_master
+    from xax.nn.ssm import S4, S6, DiscreteTimeS4
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
