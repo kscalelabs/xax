@@ -55,11 +55,11 @@ class SimpleTask(xax.Task[SimpleConfig]):
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
 
-    def get_output(self, model: SimpleModel, batch: Tuple[Array, Array]) -> Array:
+    def get_output(self, model: SimpleModel, batch: Tuple[Array, Array], state: xax.State) -> Array:
         x, _ = batch
         return jax.vmap(model)(x)
 
-    def compute_loss(self, model: SimpleModel, batch: Tuple[Array, Array], output: Array) -> Array:
+    def compute_loss(self, model: SimpleModel, batch: Tuple[Array, Array], output: Array, state: xax.State) -> Array:
         _, y = batch
         return -jnp.mean(jnp.sum(output * y, axis=-1))
 
