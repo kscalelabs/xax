@@ -1,9 +1,8 @@
 """Defines a dataclass for keeping track of the current training state."""
 
-import enum
 import time
 from dataclasses import asdict, dataclass
-from typing import Literal, NotRequired, Self, TypedDict, Unpack, cast, get_args
+from typing import Literal, NotRequired, Self, TypedDict, Unpack
 
 import jax
 from omegaconf import MISSING

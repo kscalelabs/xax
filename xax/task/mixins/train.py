@@ -340,6 +340,7 @@ class TrainMixin(
         Args:
             model: The current model.
             batch: The current minibatch of samples.
+            state: The current training state.
         """
         raise NotImplementedError("`get_output` must be implemented by the subclass")
 
@@ -354,6 +355,7 @@ class TrainMixin(
             model: The current model.
             batch: The current minibatch of samples.
             output: The output from the model.
+            state: The current training state.
 
         Returns:
             The computed loss, as a tensor.
