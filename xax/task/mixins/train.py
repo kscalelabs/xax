@@ -261,9 +261,9 @@ class TrainMixin(
         # Delegate to the appropriate logging function based on the phase.
         match phase:
             case "train":
-                self.log_train_step(batch, output, state)
+                self.log_train_step(batch, output, metrics, state)
             case "valid":
-                self.log_valid_step(batch, output, state)
+                self.log_valid_step(batch, output, metrics, state)
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
@@ -377,7 +377,7 @@ class TrainMixin(
         output: Output,
         loss: Array,
         state: State,
-    ) -> FrozenDict[str, Array]:
+    ) -> dict[str, Array]:
         """Computes the metrics for the current batch.
 
         Args:
@@ -390,11 +390,9 @@ class TrainMixin(
         Returns:
             A dictionary of metrics.
         """
-        return FrozenDict(
-            {
-                "loss": loss,
-            }
-        )
+        return {
+            "loss": loss,
+        }
 
     @xax_jit(static_argnames=["self", "model_static"])
     def get_output_and_loss(
@@ -408,7 +406,7 @@ class TrainMixin(
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
         metrics = self.compute_metrics(model, batch, output, loss, state)
-        return loss, (output, metrics)
+        return loss, (output, FrozenDict(metrics))
 
     def update(
         self,

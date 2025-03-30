@@ -93,11 +93,23 @@ class MnistClassification(xax.Task[Config]):
         (_, y), yhat = batch, output
         return cross_entropy(y, yhat)
 
-    def log_train_step(self, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_train_step(
+        self,
+        batch: tuple[Array, Array],
+        output: Array,
+        metrics: xax.FrozenDict[str, Array],
+        state: xax.State,
+    ) -> None:
         (_, y), yhat = batch, output.argmax(axis=1)
         self.logger.log_scalar("acc", (yhat == y).astype(float).mean())
 
-    def log_valid_step(self, batch: tuple[Array, Array], output: Array, state: xax.State) -> None:
+    def log_valid_step(
+        self,
+        batch: tuple[Array, Array],
+        output: Array,
+        metrics: xax.FrozenDict[str, Array],
+        state: xax.State,
+    ) -> None:
         max_images = 16
         batch = jax.tree.map(lambda x: jax.device_get(x[:max_images]), batch)
         (x, y), yhat = batch, output.argmax(axis=1)
