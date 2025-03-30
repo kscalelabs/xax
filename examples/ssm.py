@@ -74,10 +74,21 @@ class SinePrediction(xax.Task[Config]):
     def get_model(self, key: PRNGKeyArray) -> RecurrentModel:
         match self.config.model_type:
             case "rnn":
-                return RNN(self.config, key=key)
+                return RNN(
+                    input_size=self.config.input_size,
+                    hidden_size=self.config.hidden_size,
+                    output_size=self.config.output_size,
+                    key=key,
+                )
 
             case "discrete-s4":
-                return xax.DiscreteTimeS4(self.config, key=key)
+                return xax.DiscreteTimeS4(
+                    hidden_size=self.config.hidden_size,
+                    projection_size=self.config.projection_size,
+                    input_size=self.config.input_size,
+                    output_size=self.config.output_size,
+                    key=key,
+                )
 
             case "s4":
                 return xax.S4Layer(
