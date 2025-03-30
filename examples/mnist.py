@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from dpshdl.impl.mnist import MNIST
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
 
@@ -93,15 +93,20 @@ class MnistClassification(xax.Task[Config]):
         (_, y), yhat = batch, output
         return cross_entropy(y, yhat)
 
-    def log_train_step(
+    def compute_metrics(
         self,
+        model: PyTree,
         batch: tuple[Array, Array],
         output: Array,
-        metrics: xax.FrozenDict[str, Array],
+        loss: Array,
         state: xax.State,
-    ) -> None:
-        (_, y), yhat = batch, output.argmax(axis=1)
-        self.logger.log_scalar("acc", (yhat == y).astype(float).mean())
+    ) -> dict[str, Array]:
+        _, y = batch
+        yhat = output.argmax(axis=1)
+        return {
+            "loss": loss,
+            "acc": (yhat == y).astype(float).mean(),
+        }
 
     def log_valid_step(
         self,
