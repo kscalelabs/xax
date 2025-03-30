@@ -56,6 +56,7 @@ from xax.utils.experiments import (
 from xax.utils.jax import jit as xax_jit
 from xax.utils.logging import LOG_STATUS
 from xax.utils.text import highlight_exception_message, show_info
+from xax.utils.types.frozen_dict import FrozenDict
 
 logger = logging.getLogger(__name__)
 
@@ -246,10 +247,15 @@ class TrainMixin(
             for k, v in d.items():
                 self.logger.log_scalar(k, v, namespace=ns)
 
-    def log_step(self, batch: Batch, output: Output, loss: Array, state: State) -> None:
+    def log_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
         phase = state.phase
 
-        self.logger.log_scalar("loss", loss, namespace="loss")
+        for k, v in metrics.items():
+            if v.size == 1:
+                self.logger.log_scalar(k, v.item())
+            else:
+                self.logger.log_histogram(k, v)
+
         self.log_state_timers(state)
 
         # Delegate to the appropriate logging function based on the phase.
@@ -364,32 +370,61 @@ class TrainMixin(
             raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
         return output
 
+    def compute_metrics(
+        self,
+        model: PyTree,
+        batch: Batch,
+        output: Output,
+        loss: Array,
+        state: State,
+    ) -> FrozenDict[str, Array]:
+        """Computes the metrics for the current batch.
+
+        Args:
+            model: The current model.
+            batch: The current minibatch of samples.
+            output: The output from the model.
+            loss: The loss for the current batch.
+            state: The current training state.
+
+        Returns:
+            A dictionary of metrics.
+        """
+        return FrozenDict(
+            {
+                "loss": loss,
+            }
+        )
+
+    @xax_jit(static_argnames=["self", "model_static"])
     def get_output_and_loss(
         self,
-        model_static: PyTree,
         model_arr: PyTree,
+        model_static: PyTree,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, Output]:
+    ) -> tuple[Array, tuple[Output, FrozenDict[str, Array]]]:
         model = eqx.combine(model_arr, model_static)
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
-        return loss, output
+        metrics = self.compute_metrics(model, batch, output, loss, state)
+        return loss, (output, metrics)
 
     def update(
         self,
-        model_static: PyTree,
         model_arr: PyTree,
+        model_static: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, PyTree, optax.OptState, Output]:
-        grad_fn = eqx.filter_value_and_grad(self.get_output_and_loss, has_aux=True)
-        (loss, output), grads = grad_fn(model_static, model_arr, batch, state)
+    ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
+        grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
+        grad_fn = xax_jit(static_argnums=[1])(grad_fn)
+        grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
         updates, opt_state = optimizer.update(grads, opt_state, model_arr)
         model_arr = eqx.apply_updates(model_arr, updates)
-        return loss, model_arr, opt_state, output
+        return model_arr, opt_state, output, metrics
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -469,25 +504,25 @@ class TrainMixin(
     @xax_jit(static_argnames=["self", "model_static", "optimizer"])
     def train_step(
         self,
-        model_static: PyTree,
         model_arr: PyTree,
+        model_static: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
         batch: Batch,
         state: State,
-    ) -> tuple[PyTree, optax.OptState, Array, Output]:
-        loss, model_arr, opt_state, output = self.update(model_static, model_arr, optimizer, opt_state, batch, state)
-        return model_arr, opt_state, loss, output
+    ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
+        model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
+        return model_arr, opt_state, output, metrics
 
     @xax_jit(static_argnames=["self", "model_static"])
     def val_step(
         self,
-        model_static: PyTree,
         model_arr: PyTree,
+        model_static: PyTree,
         batch: Batch,
         state: State,
-    ) -> tuple[Array, Output]:
-        return self.get_output_and_loss(model_static, model_arr, batch, state)
+    ) -> tuple[Output, FrozenDict[str, Array]]:
+        return self.get_output_and_loss(model_arr, model_static, batch, state)
 
     def train_loop(
         self,
@@ -509,8 +544,8 @@ class TrainMixin(
                     num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
                 )
 
-                loss, output = self.val_step(model_static, model_arr, valid_batch, state)
-                self.log_step(valid_batch, output, loss, state)
+                output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
+                self.log_step(valid_batch, output, metrics, state)
 
             state = self.on_step_start(state)
             train_batch = next(train_pf)
@@ -520,15 +555,15 @@ class TrainMixin(
                 num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
             )
 
-            model_arr, opt_state, loss, output = self.train_step(
-                model_static=model_static,
+            model_arr, opt_state, output, metrics = self.train_step(
                 model_arr=model_arr,
+                model_static=model_static,
                 optimizer=optimizer,
                 opt_state=opt_state,
                 batch=train_batch,
                 state=state,
             )
-            self.log_step(train_batch, output, loss, state)
+            self.log_step(train_batch, output, metrics, state)
 
             state = self.on_step_end(state)
 
