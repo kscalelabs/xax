@@ -49,7 +49,7 @@ class RNN(eqx.Module):
         output_size: int,
         *,
         key: PRNGKeyArray,
-    ):
+    ) -> None:
         rnn_key, out_key = jax.random.split(key)
         self.rnn_cell = eqx.nn.GRUCell(input_size=input_size, hidden_size=hidden_size, key=rnn_key)
         self.output_layer = eqx.nn.Linear(hidden_size, output_size, key=out_key)
@@ -80,7 +80,7 @@ class SinePrediction(xax.Task[Config]):
                 return xax.DiscreteTimeS4(self.config, key=key)
 
             case "s4":
-                return xax.S4(
+                return xax.S4Layer(
                     hidden_size=self.config.hidden_size,
                     projection_size=self.config.projection_size,
                     input_size=self.config.input_size,
@@ -94,27 +94,27 @@ class SinePrediction(xax.Task[Config]):
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
 
-    def get_output(self, model: RecurrentModel, batch: tuple[Array, Array]) -> Array:
+    def get_output(self, model: RecurrentModel, batch: tuple[Array, Array], state: xax.State) -> Array:
         x_batched, _ = batch
         return jax.vmap(model.predict_sequence)(x_batched)
 
-    def compute_loss(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array) -> Array:
+    def compute_loss(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
         _, y = batch
         return jnp.mean((output - y) ** 2)
 
     def get_data_iterator(self, phase: xax.Phase) -> Iterator:
-        X, Y = make_sine_dataset(self.config.num_samples, self.config.sequence_length)
+        x, y = make_sine_dataset(self.config.num_samples, self.config.sequence_length)
         split = int(0.8 * self.config.num_samples)
         if phase == "train":
-            X, Y = X[:split], Y[:split]
+            x, y = x[:split], y[:split]
         else:
-            X, Y = X[split:], Y[split:]
+            x, y = x[split:], y[split:]
 
         key = jax.random.PRNGKey(0)
         while True:
             key, subkey = jax.random.split(key)
-            idx = jax.random.randint(subkey, (self.config.batch_size,), 0, X.shape[0])
-            yield X[idx], Y[idx]
+            idx = jax.random.randint(subkey, (self.config.batch_size,), 0, x.shape[0])
+            yield x[idx], y[idx]
 
 
 if __name__ == "__main__":
