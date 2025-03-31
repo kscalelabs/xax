@@ -2,7 +2,7 @@
 """Trains a state space model on a character-level tokenized dataset of Shakespeare."""
 
 from dataclasses import dataclass
-from typing import Iterator, Literal, Protocol
+from typing import Iterator, Protocol
 
 import equinox as eqx
 import jax
@@ -12,7 +12,6 @@ import tensorflow_datasets as tfds
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
-from xax.nn.ssm import BaseSSMBlock, DiagSSMBlock, DiscreteDiagSSMBlock, SSMBlock
 
 
 @dataclass(frozen=True)
@@ -200,100 +199,6 @@ class LSTM(eqx.Module):
         return sequence
 
 
-class SSM(eqx.Module):
-    vocab_embedding: eqx.nn.Embedding
-    output_layer: eqx.nn.Linear
-    blocks: list[BaseSSMBlock]
-    num_layers: int = eqx.static_field()
-    hidden_size: int = eqx.static_field()
-    skip_connections: bool = eqx.static_field()
-
-    def __init__(
-        self,
-        key: PRNGKeyArray,
-        input_size: int,
-        hidden_size: int,
-        output_size: int,
-        num_layers: int,
-        block_type: Literal["diagonal", "full_rank"] = "full_rank",
-        skip_connections: bool = False,
-        discretize: bool = False,
-    ) -> None:
-        vocab_key, s4_key = jax.random.split(key, 2)
-        self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
-        self.output_layer = eqx.nn.Linear(hidden_size, output_size, key=key)
-
-        block_keys = jax.random.split(s4_key, num_layers)
-
-        def get_block(key: PRNGKeyArray) -> BaseSSMBlock:
-            match block_type:
-                case "diagonal":
-                    return (
-                        DiscreteDiagSSMBlock(hidden_size, key=key, init_delta=0.1)
-                        if discretize
-                        else DiagSSMBlock(hidden_size, key=key)
-                    )
-                case "full_rank":
-                    if discretize:
-                        raise ValueError("Full rank blocks do not support discretization due to instability.")
-                    return SSMBlock(hidden_size, key=key)
-                case _:
-                    raise ValueError(f"Unknown block type: {block_type}")
-
-        self.blocks = [get_block(block_keys[i]) for i in range(num_layers)]
-        self.skip_connections = skip_connections
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-
-    def __call__(self, hs: list[Array], x: Array) -> tuple[list[Array], Array]:
-        new_hs = []
-        for i, block in enumerate(self.blocks):
-            h = block.forward(hs[i], x)
-            new_hs.append(h)
-            xh = jax.nn.gelu(h)
-            x = xh + x if self.skip_connections else xh
-        y = self.output_layer(x)
-        return new_hs, y
-
-    def _embed_input(self, x: Array) -> Array:
-        """U is the input to the S4 cell."""
-        return self.vocab_embedding(x)
-
-    def predict_sequence(self, x_seq: Array) -> Array:
-        x_emb = jax.vmap(self._embed_input)(x_seq)
-        for block in self.blocks:
-            h = block.forward_sequence(x_emb)
-            # h = block.naive_forward_sequence(x_emb)
-            h = jax.nn.gelu(h)
-            x_emb = h + x_emb if self.skip_connections else h
-        y = jax.vmap(self.output_layer)(x_emb)
-        return y
-
-    def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array:
-        hs = [jnp.zeros(self.hidden_size) for _ in range(self.num_layers)]
-        prompt_seq_embedded = jax.vmap(self._embed_input)(prompt_seq)
-
-        def encode_step(hs: list[Array], x: Array) -> tuple[list[Array], Array]:
-            hs, y = self(hs, x)
-            return hs, y
-
-        def decode_step(
-            carry: tuple[list[Array], Array, PRNGKeyArray],
-            _: None,
-        ) -> tuple[tuple[list[Array], Array, PRNGKeyArray], Array]:
-            hs, last_token, rng = carry
-            token_embedded = self._embed_input(last_token)
-            hs, y = self(hs, token_embedded)
-            token = jax.random.categorical(rng, y)
-            rng = jax.random.split(rng)[0]
-            return (hs, token, rng), token
-
-        hs, _ = jax.lax.scan(encode_step, hs, prompt_seq_embedded)
-        _, sequence = jax.lax.scan(decode_step, (hs, prompt_seq[-1], jax.random.PRNGKey(0)), None, length=max_len)
-
-        return sequence
-
-
 class ShakespearePrediction(xax.Task[Config]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
@@ -335,7 +240,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     key=key,
                 )
             case "ssm":
-                return SSM(
+                return xax.SSM(
                     input_size=self.config.input_size,
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
@@ -415,6 +320,7 @@ class ShakespearePrediction(xax.Task[Config]):
 
 if __name__ == "__main__":
     # Launch the training task.
+    #   python -m examples.shakespeare
     ShakespearePrediction.launch(
         Config(
             model_type="ssm",
