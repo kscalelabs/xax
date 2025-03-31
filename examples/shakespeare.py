@@ -2,7 +2,7 @@
 """Trains a state space model on a character-level tokenized dataset of Shakespeare."""
 
 from dataclasses import dataclass
-from typing import Iterator, Literal, Protocol
+from typing import Iterator, Protocol
 
 import equinox as eqx
 import jax
