@@ -369,7 +369,7 @@ class ShakespearePrediction(xax.Task[Config]):
         self.logger.log_string("teacher_forced_output", output_words)
 
         # Using the first few tokens from the batch, generate the rest of the sequence.
-        prompt_seq = batch[0][0, :5]
+        prompt_seq = jnp.array([self.ds.token_to_id[c] for c in "To be"])
         generated_tokens = model.generate_sequence(prompt_seq, max_len=500)
         generated_words = "".join([self.ds.id_to_token[int(token)] for token in generated_tokens])
         self.logger.log_string("prompt", "".join([self.ds.id_to_token[int(token)] for token in prompt_seq]))
