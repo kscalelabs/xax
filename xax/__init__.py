@@ -50,6 +50,7 @@ __all__ = [
     "is_master",
     "BaseSSMBlock",
     "DiagSSMBlock",
+    "SSM",
     "SSMBlock",
     "BaseLauncher",
     "CliLauncher",
@@ -208,6 +209,7 @@ NAME_MAP: dict[str, str] = {
     "is_master": "nn.parallel",
     "BaseSSMBlock": "nn.ssm",
     "DiagSSMBlock": "nn.ssm",
+    "SSM": "nn.ssm",
     "SSMBlock": "nn.ssm",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
@@ -365,7 +367,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.nn.losses import cross_entropy
     from xax.nn.norm import NormType, cast_norm_type, get_norm
     from xax.nn.parallel import is_master
-    from xax.nn.ssm import BaseSSMBlock, DiagSSMBlock, SSMBlock
+    from xax.nn.ssm import SSM, BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
