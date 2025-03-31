@@ -12,7 +12,7 @@ import tensorflow_datasets as tfds
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
-from xax.nn.ssm import BaseSSMBlock, DiagSSMBlock, SSMBlock
+from xax.nn.ssm import BaseSSMBlock, DiagSSMBlock, DiscreteDiagSSMBlock, SSMBlock
 
 
 @dataclass(frozen=True)
@@ -75,11 +75,11 @@ class RNN(eqx.Module):
 
     def __init__(
         self,
+        key: PRNGKeyArray,
         input_size: int,
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        key: PRNGKeyArray,
     ) -> None:
         vocab_key, rnn_key = jax.random.split(key, 2)
         self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
@@ -141,11 +141,11 @@ class LSTM(eqx.Module):
 
     def __init__(
         self,
+        key: PRNGKeyArray,
         input_size: int,
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        key: PRNGKeyArray,
     ) -> None:
         vocab_key, rnn_key = jax.random.split(key, 2)
         self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
@@ -200,7 +200,7 @@ class LSTM(eqx.Module):
         return sequence
 
 
-class S4(eqx.Module):
+class SSM(eqx.Module):
     vocab_embedding: eqx.nn.Embedding
     output_layer: eqx.nn.Linear
     blocks: list[BaseSSMBlock]
@@ -210,14 +210,14 @@ class S4(eqx.Module):
 
     def __init__(
         self,
+        key: PRNGKeyArray,
         input_size: int,
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        block_type: Literal["ssm", "diag"] = "ssm",
+        block_type: Literal["diagonal", "full_rank"] = "full_rank",
         skip_connections: bool = False,
-        *,
-        key: PRNGKeyArray,
+        discretize: bool = False,
     ) -> None:
         vocab_key, s4_key = jax.random.split(key, 2)
         self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
@@ -227,10 +227,16 @@ class S4(eqx.Module):
 
         def get_block(key: PRNGKeyArray) -> BaseSSMBlock:
             match block_type:
-                case "ssm":
+                case "diagonal":
+                    return (
+                        DiscreteDiagSSMBlock(hidden_size, key=key, init_delta=0.1)
+                        if discretize
+                        else DiagSSMBlock(hidden_size, key=key)
+                    )
+                case "full_rank":
+                    if discretize:
+                        raise ValueError("Full rank blocks do not support discretization due to instability.")
                     return SSMBlock(hidden_size, key=key)
-                case "diag":
-                    return DiagSSMBlock(hidden_size, key=key)
                 case _:
                     raise ValueError(f"Unknown block type: {block_type}")
 
@@ -328,14 +334,15 @@ class ShakespearePrediction(xax.Task[Config]):
                     num_layers=self.config.num_layers,
                     key=key,
                 )
-            case "s4":
-                return S4(
+            case "ssm":
+                return SSM(
                     input_size=self.config.input_size,
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
                     num_layers=self.config.num_layers,
-                    block_type="diag",
+                    block_type="full_rank",
                     skip_connections=True,
+                    discretize=True,
                     key=key,
                 )
             case _:
@@ -410,6 +417,6 @@ if __name__ == "__main__":
     # Launch the training task.
     ShakespearePrediction.launch(
         Config(
-            model_type="s4",
+            model_type="ssm",
         )
     )
