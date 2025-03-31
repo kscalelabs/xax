@@ -43,13 +43,14 @@ __all__ = [
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
+    "rotate_vector_by_quat",
     "cross_entropy",
     "cast_norm_type",
     "get_norm",
     "is_master",
     "BaseSSMBlock",
-    "SSMBlock",
     "DiagSSMBlock",
+    "SSMBlock",
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
@@ -200,6 +201,7 @@ NAME_MAP: dict[str, str] = {
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
+    "rotate_vector_by_quat": "nn.geom",
     "cross_entropy": "nn.losses",
     "cast_norm_type": "nn.norm",
     "get_norm": "nn.norm",
@@ -358,6 +360,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         euler_to_quat,
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
+        rotate_vector_by_quat,
     )
     from xax.nn.losses import cross_entropy
     from xax.nn.norm import NormType, cast_norm_type, get_norm
