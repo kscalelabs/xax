@@ -55,9 +55,9 @@ class Config(xax.Config):
     output_size: int = xax.field(65)
     num_layers: int = xax.field(4)
     hidden_size: int = xax.field(256)
-    batch_size: int = xax.field(64)
+    batch_size: int = xax.field(12)
     learning_rate: float = xax.field(1e-3)
-    sequence_length: int = xax.field(100)
+    sequence_length: int = xax.field(1024)
     valid_every_n_seconds: float = xax.field(30.0)
     model_type: str = xax.field("lstm", help="The model to use")
 
@@ -258,6 +258,7 @@ class S4(eqx.Module):
         x_emb = jax.vmap(self._embed_input)(x_seq)
         for block in self.blocks:
             h = block.forward_sequence(x_emb)
+            # h = block.naive_forward_sequence(x_emb)
             h = jax.nn.gelu(h)
             x_emb = h + x_emb if self.skip_connections else h
         y = jax.vmap(self.output_layer)(x_emb)
