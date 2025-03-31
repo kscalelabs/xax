@@ -1,7 +1,6 @@
 """State space models."""
 
 from abc import ABC, abstractmethod
-from typing import Literal
 
 import equinox as eqx
 import jax
@@ -13,140 +12,18 @@ def glorot(key: PRNGKeyArray, shape: tuple[int, ...]) -> Array:
     return jax.random.uniform(key, shape, minval=-1.0, maxval=1.0) * jnp.sqrt(2 / sum(shape))
 
 
-class DiscreteTimeS4(eqx.Module):
-    a: Array
-    B: Array
-    C: Array
-    proj_in: eqx.nn.Linear
-    proj_out: eqx.nn.Linear
-
-    def __init__(
-        self,
-        hidden_size: int,
-        projection_size: int,
-        input_size: int,
-        output_size: int,
-        *,
-        key: PRNGKeyArray,
-    ) -> None:
-        self.a = jax.nn.initializers.glorot_uniform()(key, (hidden_size,))
-        self.B = jax.nn.initializers.glorot_uniform()(key, (projection_size, hidden_size))
-        self.C = jax.nn.initializers.glorot_uniform()(key, (hidden_size, projection_size))
-        self.proj_in = eqx.nn.Linear(input_size, projection_size, key=key)
-        self.proj_out = eqx.nn.Linear(projection_size, output_size, key=key)
-
-    def __call__(self, h: Array, x: Array) -> tuple[Array, Array]:
-        h = self.a * h + self.B.T @ x
-        y = self.C.T @ h
-        return h, y
-
-    def predict_sequence(self, x_seq: Array) -> Array:
-        x_proj = jax.vmap(lambda x: jax.nn.relu(self.proj_in(x)))(x_seq)
-        h = jnp.zeros(self.a.shape[0])
-
-        def scan_fn(h: Array, x: Array) -> tuple[Array, Array]:
-            h = self.a * h + self.B.T @ x
-            y = self.C.T @ h
-            return h, y
-
-        _, y_seq = jax.lax.scan(scan_fn, h, x_proj)
-        y_out = jax.vmap(self.proj_out)(y_seq)
-        return y_out
-
-
-class S4Layer(eqx.Module):
-    a: Array
-    B: Array
-    C: Array
-    proj_in: eqx.nn.Linear
-    proj_out: eqx.nn.Linear
-    delta: Array
-
-    def __init__(
-        self,
-        hidden_size: int,
-        projection_size: int,
-        input_size: int,
-        output_size: int,
-        *,
-        key: PRNGKeyArray,
-    ) -> None:
-        self.a = jax.nn.initializers.glorot_uniform()(key, (hidden_size,))
-        self.B = jax.nn.initializers.glorot_uniform()(key, (projection_size, hidden_size))
-        self.C = jax.nn.initializers.glorot_uniform()(key, (hidden_size, projection_size))
-        self.proj_in = eqx.nn.Linear(input_size, projection_size, key=key)
-        self.proj_out = eqx.nn.Linear(projection_size, output_size, key=key)
-        self.delta = jax.random.uniform(key, (hidden_size,))
-
-    def __call__(self, h: Array, x: Array) -> tuple[Array, Array]:
-        delta_a = self.delta * self.a
-        a_bar = jnp.exp(delta_a)
-        b_bar = jnp.linalg.inv(delta_a) * (a_bar - 1) @ (self.delta * self.B)
-        h = a_bar * h + b_bar.T @ x
-        y = self.C.T @ h
-        return h, y
-
-    def predict_sequence(self, x_seq: Array) -> Array:
-        x_proj = jax.vmap(lambda x: jax.nn.gelu(self.proj_in(x)))(x_seq)
-        h = jnp.zeros(self.a.shape[0])
-
-        def scan_fn(h: Array, x: Array) -> tuple[Array, Array]:
-            h = self.a * h + self.B.T @ x
-            y = self.C.T @ h
-            return h, y
-
-        _, y_seq = jax.lax.scan(scan_fn, h, x_proj)
-        y_out = jax.vmap(self.proj_out)(y_seq)
-        return y_out
-
-
-class S6Layer(eqx.Module):
-    a: Array
-    B: Array
-    C: Array
-    proj_in: eqx.nn.Linear
-    proj_out: eqx.nn.Linear
-    delta: Array
-
-    def __init__(
-        self,
-        hidden_size: int,
-        projection_size: int,
-        input_size: int,
-        output_size: int,
-        *,
-        key: PRNGKeyArray,
-    ) -> None:
-        self.a = jax.nn.initializers.glorot_uniform()(key, (hidden_size,))
-        self.B = jax.nn.initializers.glorot_uniform()(key, (projection_size, hidden_size))
-        self.C = jax.nn.initializers.glorot_uniform()(key, (hidden_size, projection_size))
-        self.proj_in = eqx.nn.Linear(input_size, projection_size, key=key)
-        self.proj_out = eqx.nn.Linear(projection_size, output_size, key=key)
-        self.delta = jax.random.uniform(key, (hidden_size,))
-
-    def __call__(self, h: Array, x: Array) -> tuple[Array, Array]:
-        h = self.a * h + self.B.T @ x
-        y = self.C.T @ h
-        return h, y
-
-    def predict_sequence(self, x_seq: Array) -> Array:
-        x_proj = jax.vmap(lambda x: jax.nn.gelu(self.proj_in(x)))(x_seq)
-        h = jnp.zeros(self.a.shape[0])
-
-        def scan_fn(h: Array, x: Array) -> tuple[Array, Array]:
-            h = self.a * h + self.B.T @ x
-            y = self.C.T @ h
-            return h, y
-
-        _, y_seq = jax.lax.scan(scan_fn, h, x_proj)
-        y_out = jax.vmap(self.proj_out)(y_seq)
-        return y_out
-
-
 class BaseSSMBlock(eqx.Module, ABC):
     @abstractmethod
-    def forward(self, h: Array, x: Array) -> Array:
-        pass
+    def forward(self, h: Array, x: Array) -> Array: ...
+
+    @abstractmethod
+    def forward_sequence(self, x_seq: Array) -> Array: ...
+
+    @abstractmethod
+    def get_a_mat(self, x: Array) -> Array: ...
+
+    @abstractmethod
+    def get_b_mat(self, x: Array) -> Array: ...
 
 
 class SSMBlock(BaseSSMBlock):
@@ -158,139 +35,181 @@ class SSMBlock(BaseSSMBlock):
         self.a_mat = glorot(key_a, (hidden_size, hidden_size))
         self.b_mat = glorot(key_b, (hidden_size, hidden_size))
 
+    def get_a_mat(self, x: Array) -> Array:
+        return self.a_mat
+
+    def get_b_mat(self, x: Array) -> Array:
+        return self.b_mat
+
     def forward(self, h: Array, x: Array) -> Array:
-        h = self.a_mat @ h + self.b_mat.T @ x
+        """Perform a forward pass.
+
+        Args:
+            h: Hidden state of shape (H,).
+            x: Input of shape (H,).
+
+        Returns:
+            Hidden state of shape (H,).
+        """
+        a_mat = self.get_a_mat(x)
+        b_mat = self.get_b_mat(x)
+        h = a_mat @ h + b_mat.T @ x
         return h
 
-    def get_kernel(self, length: int) -> Array:
-        return self.a_mat
+    def forward_sequence(self, x_seq: Array) -> Array:
+        """Perform a forward pass across time.
+
+        Args:
+            x_seq: Input sequence of shape (T, H).
+
+        Returns:
+            Hidden state sequence of shape (T, H).
+        """
+
+        def step(h: Array, x: Array) -> tuple[Array, Array]:
+            h = self.forward(h, x)
+            return h, h
+
+        a_mat = self.get_a_mat(x_seq)
+        h_0 = jnp.zeros(a_mat.shape[0])
+        _, h_seq = jax.lax.scan(step, h_0, x_seq)
+        return h_seq
 
 
 class DiagSSMBlock(BaseSSMBlock):
-    a_mat: Array
+    a_diag: Array
     b_mat: Array
 
     def __init__(self, hidden_size: int, *, key: PRNGKeyArray) -> None:
         keys = jax.random.split(key, 2)
-        self.a_mat = glorot(keys[0], (hidden_size,))
+        self.a_diag = glorot(keys[0], (hidden_size,))
         self.b_mat = glorot(keys[1], (hidden_size, hidden_size))
 
+    def get_a_mat(self, x: Array) -> Array:
+        return self.a_diag
+
+    def get_b_mat(self, x: Array) -> Array:
+        return self.b_mat
+
     def forward(self, h: Array, x: Array) -> Array:
-        h = self.a_mat * h + self.b_mat.T @ x
-        h = jax.nn.tanh(h)
+        """Perform a forward pass.
+
+        Args:
+            h: Hidden state of shape (H,).
+            x: Input of shape (H,).
+
+        Returns:
+            Hidden state of shape (H,).
+        """
+        a_diag = self.get_a_mat(x)
+        b_mat = self.get_b_mat(x)
+        h = a_diag * h + b_mat.T @ x
         return h
 
-    def get_kernel(self, length: int) -> Array:
+    def forward_sequence(self, x_seq: Array, *, use_conv: bool = True, recursive_kernel_calc: bool = False) -> Array:
+        """Perform a potentially parallelized forward pass across time.
+
+        Args:
+            x_seq: Input sequence of shape (T, H).
+            use_conv: Whether to use convolution to compute the sequence.
+            recursive_kernel_calc: Whether to use a recursive kernel calculation.
+
+        Returns:
+            Hidden state sequence of shape (T, H).
+        """
+        if use_conv:
+            return self._forward_sequence_conv(x_seq, recursive_kernel_calc=recursive_kernel_calc)
+        else:
+            return self._forward_sequence_scan(x_seq)
+
+    def _get_kernel(self, x_seq: Array, length: int) -> Array:
         """Returns the kernel with time as the final dimension."""
         exponents = jnp.arange(length)
-        kernel = jnp.power(self.a_mat[:, None], exponents)  # (H, L)
-        kernel = kernel[:, None, :]  # (H, 1, L)
+        a_diag = self.get_a_mat(x_seq)
+        kernel = jnp.power(a_diag[:, None], exponents)  # (H, T)
+        kernel = kernel[:, None, :]  # (H, 1, T)
         return kernel
 
-    def forward_across_time(self, x: Array) -> Array:
+    def _get_kernel_recursive(self, x_seq: Array, length: int) -> Array:
+        """Returns the kernel with time as the final dimension."""
+        assert length % 2 == 0, "Length must be even."
+        a_diag = self.get_a_mat(x_seq)
+
+        def helper(length: int) -> tuple[Array, Array]:
+            """Returns the kernel and the sqrt of the diagonal."""
+            if length == 1:
+                return jnp.ones_like(a_diag)[:, None], a_diag[:, None]
+
+            half_length = length // 2
+            kernel_half, a_half = helper(half_length)
+            kernel = jnp.concatenate([kernel_half, a_half * kernel_half], axis=-1)
+            return kernel, a_half * a_half
+
+        kernel, a_diag = helper(length)
+        return kernel[:, None, :]  # (H, 1, L)
+
+    def _forward_sequence_conv(self, x_seq: Array, *, recursive_kernel_calc: bool = False) -> Array:
         """Convolves x (T, H) across time using the kernel."""
-        tsz, nhid = x.shape
+        seq_len, hidden_size = x_seq.shape
+        b_mat = self.get_b_mat(x_seq)
 
-        # Compute s = x @ U.T + b, with shape (N, T, H)
-        s = self.b_mat.T @ x
-        s = s.T  # (H, T)
+        s = b_mat.T @ x_seq.T  # (H, T)
+        s_padded = jnp.pad(s, ((0, 0), (seq_len - 1, 0)))[None, :, :]  # (1, H, 2T-1)
 
-        kernel = self.get_kernel(tsz)  # (H, 1, T)
-        kernel_flipped = jnp.flip(kernel, axis=-1)
+        if recursive_kernel_calc:
+            kernel = self._get_kernel_recursive(x_seq, seq_len)
+        else:
+            kernel = self._get_kernel(x_seq, seq_len)
 
-        # Pad s on the left along the time axis (pad length T-1)
-        s_padded = jnp.pad(s, ((0, 0), (0, 0), (tsz - 1, 0)))
+        kernel_flipped = jnp.flip(kernel, axis=-1)  # (H, 1, L)
 
-        # Perform depthwise (grouped) 1D convolution.
-        # We use input shape (N, H, L) and kernel shape (H, 1, T) with feature_group_count=H.
-        # The dimension_numbers are chosen so that the channel dimension is second.
         conv_out = jax.lax.conv_general_dilated(
             s_padded,
             kernel_flipped,
             window_strides=(1,),
             padding="VALID",
-            dimension_numbers=("NCH", "OIH", "NCH"),
-            feature_group_count=nhid,
+            dimension_numbers=("NCT", "OIT", "NCT"),  # convolving over time
+            feature_group_count=hidden_size,
         )
-        # conv_out has shape (N, H, T); transpose to (N, T, H)
-        conv_out = jnp.transpose(conv_out, (0, 2, 1))
+        conv_out = conv_out[0].T  # (T, H)
         return conv_out
 
-    def naive_forward_accross_time(self, x: Array) -> Array:
+    def _forward_sequence_scan(self, x_seq: Array) -> Array:
         """Naively forward across time."""
 
         def step(h: Array, x: Array) -> tuple[Array, Array]:
             h = self.forward(h, x)
             return h, h
 
-        h_0 = jnp.zeros(self.a_mat.shape[0])
-        _, h_seq = jax.lax.scan(step, h_0, x)
+        a_diag = self.get_a_mat(x_seq)
+        h_0 = jnp.zeros(a_diag.shape[0])
+        _, h_seq = jax.lax.scan(step, h_0, x_seq)
         return h_seq
 
 
-class S4(eqx.Module):
-    vocab_embedding: eqx.nn.Embedding
-    proj_in: eqx.nn.Linear
-    proj_out: eqx.nn.Linear
-    blocks: list[BaseSSMBlock]
-    num_layers: int = eqx.static_field()
-    hidden_size: int = eqx.static_field()
-    skip_connections: bool = eqx.static_field()
+class DiscreteDiagSSMBlock(DiagSSMBlock):
+    delta: Array
 
     def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        output_size: int,
-        num_layers: int,
-        block_type: Literal["ssm", "diag"] = "ssm",
-        skip_connections: bool = False,
-        *,
-        key: PRNGKeyArray,
+        self, hidden_size: int, *, key: PRNGKeyArray, init_delta: float = 1.0, init_scale: float = 10.0
     ) -> None:
-        vocab_key, s4_key = jax.random.split(key, 2)
-        self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
-        self.proj_in = eqx.nn.Linear(hidden_size, hidden_size, key=key)
-        self.proj_out = eqx.nn.Linear(hidden_size, output_size, key=key)
+        super().__init__(hidden_size, key=key)
+        self.delta = jnp.array(init_delta)
 
-        block_keys = jax.random.split(s4_key, num_layers)
+        # A positive scale helps reduce the gradient at the start.
+        self.a_diag = jax.random.uniform(key, (hidden_size,), minval=-1.0, maxval=0.0) * init_scale
 
-        def get_block(key: PRNGKeyArray) -> BaseSSMBlock:
-            match block_type:
-                case "ssm":
-                    return SSMBlock(hidden_size, key=key)
-                case "diag":
-                    return DiagSSMBlock(hidden_size, key=key)
-                case _:
-                    raise ValueError(f"Unknown block type: {block_type}")
+    def get_a_mat(self, x: Array) -> Array:
+        """Discretize the diagonal matrix using zero-order hold."""
+        a_diag_discrete = jnp.exp(self.a_diag * self.delta)
+        return a_diag_discrete
 
-        self.blocks = [get_block(block_keys[i]) for i in range(num_layers)]
-        self.skip_connections = skip_connections
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
+    def get_b_mat(self, x: Array) -> Array:
+        """Discretize the input matrix using zero-order hold."""
+        delta_a_diag = self.a_diag * self.delta
+        exp_a_diag = jnp.exp(delta_a_diag)
+        delta_a_inv = 1 / delta_a_diag
+        delta_b_mat = self.delta * self.b_mat
 
-    def __call__(self, hs: list[Array], x: Array) -> tuple[list[Array], Array]:
-        new_hs = []
-        for i, block in enumerate(self.blocks):
-            h = block.forward(hs[i], x)
-            new_hs.append(h)
-            xh = jax.nn.gelu(h)
-            x = xh + x if self.skip_connections else xh
-        y = self.proj_out(x)
-        return new_hs, y
-
-    def _embed_input(self, x: Array) -> Array:
-        """U is the input to the S4 cell."""
-        embedded = self.vocab_embedding(x)
-        return jax.nn.gelu(self.proj_in(embedded))
-
-    def predict_sequence(self, x_seq: Array) -> Array:
-        x_emb = jax.vmap(self._embed_input)(x_seq)
-        hs = [jnp.zeros(self.hidden_size) for _ in range(self.num_layers)]
-
-        def step(hs: list[Array], x: Array) -> tuple[list[Array], Array]:
-            hs, y = self(hs, x)
-            return hs, y
-
-        _, y_seq = jax.lax.scan(step, hs, x_emb)
-        return y_seq
+        b_discrete = delta_a_inv * (exp_a_diag - 1) * delta_b_mat
+        return b_discrete

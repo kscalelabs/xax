@@ -218,26 +218,32 @@ class TrainMixin(
         state = super().on_step_end(state)
         return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
-    def log_train_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
+    def log_train_step(
+        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+    ) -> None:
         """Override this function to do logging during the training phase.
 
         This function is called after the model forward pass and before the
         backward pass. It is called in the training phase.
 
         Args:
+            model: The current model.
             batch: The batch from the dataloader.
             output: The model output.
             metrics: The metrics for the current batch.
             state: The current training state.
         """
 
-    def log_valid_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
+    def log_valid_step(
+        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+    ) -> None:
         """Override this function to do logging during the validation phase.
 
         This function is called after the model forward pass. It is called in
         the validation phase.
 
         Args:
+            model: The current model.
             batch: The batch from the dataloader.
             output: The model output.
             metrics: The metrics for the current batch.
@@ -251,7 +257,9 @@ class TrainMixin(
             for k, v in d.items():
                 self.logger.log_scalar(k, v, namespace=ns)
 
-    def log_step(self, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State) -> None:
+    def log_step(
+        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+    ) -> None:
         phase = state.phase
 
         for k, v in metrics.items():
@@ -265,9 +273,9 @@ class TrainMixin(
         # Delegate to the appropriate logging function based on the phase.
         match phase:
             case "train":
-                self.log_train_step(batch, output, metrics, state)
+                self.log_train_step(model, batch, output, metrics, state)
             case "valid":
-                self.log_valid_step(batch, output, metrics, state)
+                self.log_valid_step(model, batch, output, metrics, state)
             case _:
                 raise KeyError(f"Unknown phase: {phase}")
 
@@ -579,7 +587,7 @@ class TrainMixin(
                 )
 
                 output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
-                self.log_step(valid_batch, output, metrics, state)
+                self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
 
             state = self.on_step_start(state)
             train_batch = next(train_pf)
@@ -597,7 +605,7 @@ class TrainMixin(
                 batch=train_batch,
                 state=state,
             )
-            self.log_step(train_batch, output, metrics, state)
+            self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
 
             state = self.on_step_end(state)
 
