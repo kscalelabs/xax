@@ -203,8 +203,7 @@ class LSTM(eqx.Module):
 
 class S4(eqx.Module):
     vocab_embedding: eqx.nn.Embedding
-    proj_in: eqx.nn.Linear
-    proj_out: eqx.nn.Linear
+    output_layer: eqx.nn.Linear
     blocks: list[BaseSSMBlock]
     num_layers: int = eqx.static_field()
     hidden_size: int = eqx.static_field()
@@ -223,8 +222,7 @@ class S4(eqx.Module):
     ) -> None:
         vocab_key, s4_key = jax.random.split(key, 2)
         self.vocab_embedding = eqx.nn.Embedding(input_size, hidden_size, key=vocab_key)
-        self.proj_in = eqx.nn.Linear(hidden_size, hidden_size, key=key)
-        self.proj_out = eqx.nn.Linear(hidden_size, output_size, key=key)
+        self.output_layer = eqx.nn.Linear(hidden_size, output_size, key=key)
 
         block_keys = jax.random.split(s4_key, num_layers)
 
@@ -249,24 +247,21 @@ class S4(eqx.Module):
             new_hs.append(h)
             xh = jax.nn.gelu(h)
             x = xh + x if self.skip_connections else xh
-        y = self.proj_out(x)
+        y = self.output_layer(x)
         return new_hs, y
 
     def _embed_input(self, x: Array) -> Array:
         """U is the input to the S4 cell."""
-        embedded = self.vocab_embedding(x)
-        return jax.nn.gelu(self.proj_in(embedded))
+        return self.vocab_embedding(x)
 
     def predict_sequence(self, x_seq: Array) -> Array:
         x_emb = jax.vmap(self._embed_input)(x_seq)
-        hs = [jnp.zeros(self.hidden_size) for _ in range(self.num_layers)]
-
-        def step(hs: list[Array], x: Array) -> tuple[list[Array], Array]:
-            hs, y = self(hs, x)
-            return hs, y
-
-        _, y_seq = jax.lax.scan(step, hs, x_emb)
-        return y_seq
+        for block in self.blocks:
+            h = block.forward_sequence(x_emb)
+            h = jax.nn.gelu(h)
+            x_emb = h + x_emb if self.skip_connections else h
+        y = jax.vmap(self.output_layer)(x_emb)
+        return y
 
     def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array:
         hs = [jnp.zeros(self.hidden_size) for _ in range(self.num_layers)]
