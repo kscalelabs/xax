@@ -99,3 +99,60 @@ def get_projected_gravity_vector_from_quat(quat: jax.Array, eps: float = 1e-6) -
 
     # Note: We're rotating [0,0,-1], so we negate gz to match the expected direction
     return jnp.concatenate([gx, gy, -gz], axis=-1)
+
+
+def rotate_vector_by_quat(vector: jax.Array, quat: jax.Array, eps: float = 1e-6) -> jax.Array:
+    """Rotates a vector by a quaternion.
+
+    Args:
+        vector: The vector to rotate, shape (*, 3).
+        quat: The quaternion to rotate by, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
+
+    Returns:
+        The rotated vector, shape (*, 3).
+    """
+    # Normalize quaternion
+    quat = quat / (jnp.linalg.norm(quat, axis=-1, keepdims=True) + eps)
+    w, x, y, z = jnp.split(quat, 4, axis=-1)
+
+    # Extract vector components
+    vx, vy, vz = jnp.split(vector, 3, axis=-1)
+
+    # Terms for x component
+    xx = (
+        w * w * vx
+        + 2 * y * w * vz
+        - 2 * z * w * vy
+        + x * x * vx
+        + 2 * y * x * vy
+        + 2 * z * x * vz
+        - z * z * vx
+        - y * y * vx
+    )
+
+    # Terms for y component
+    yy = (
+        2 * x * y * vx
+        + y * y * vy
+        + 2 * z * y * vz
+        + 2 * w * z * vx
+        - z * z * vy
+        + w * w * vy
+        - 2 * w * x * vz
+        - x * x * vy
+    )
+
+    # Terms for z component
+    zz = (
+        2 * x * z * vx
+        + 2 * y * z * vy
+        + z * z * vz
+        - 2 * w * y * vx
+        + w * w * vz
+        + 2 * w * x * vy
+        - y * y * vz
+        - x * x * vz
+    )
+
+    return jnp.concatenate([xx, yy, zz], axis=-1)

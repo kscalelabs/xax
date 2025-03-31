@@ -1,6 +1,7 @@
 """Tests geometry functions."""
 
 import jax
+import pytest
 from jax import numpy as jnp
 
 import xax
@@ -76,6 +77,25 @@ def test_euler_to_quat_batch() -> None:
     )
 
     assert jnp.allclose(batch_quat, expected_quat, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "vector, euler, expected",
+    [
+        (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, 0.0]), jnp.array([1.0, 0.0, 0.0])),
+        (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, jnp.pi / 2]), jnp.array([0.0, 1.0, 0.0])),
+        (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, jnp.pi / 2, 0.0]), jnp.array([0.0, 0.0, -1.0])),
+        (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, jnp.pi / 2]), jnp.array([0.0, 1.0, 0.0])),
+    ],
+)
+def test_rotate_vector_by_quat(
+    vector: jax.Array,
+    euler: jax.Array,
+    expected: jax.Array,
+) -> None:
+    quat = xax.euler_to_quat(euler)
+    rotated_vector = xax.rotate_vector_by_quat(vector, quat)
+    assert jnp.allclose(rotated_vector, expected)
 
 
 def test_get_projected_gravity_vector_from_quat() -> None:
