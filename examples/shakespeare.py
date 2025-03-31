@@ -2,7 +2,7 @@
 """Trains a state space model on a character-level tokenized dataset of Shakespeare."""
 
 from dataclasses import dataclass
-from typing import Any, Iterator, Literal, Protocol
+from typing import Iterator, Literal, Protocol
 
 import equinox as eqx
 import jax
@@ -108,7 +108,7 @@ class RNN(eqx.Module):
 
         _, y_seq = jax.lax.scan(step, hs, x_seq)
         return y_seq
-    
+
     def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array:
         hs = [jnp.zeros(cell.hidden_size) for cell in self.rnn_cells]
         prompt_seq_embedded = jax.vmap(self.vocab_embedding)(prompt_seq)
@@ -119,7 +119,7 @@ class RNN(eqx.Module):
 
         def decode_step(
             carry: tuple[list[Array], Array, PRNGKeyArray],
-            _: Any,
+            _: None,
         ) -> tuple[tuple[list[Array], Array, PRNGKeyArray], Array]:
             hs, last_token, rng = carry
             token_embedded = self.vocab_embedding(last_token)
@@ -127,7 +127,6 @@ class RNN(eqx.Module):
             token = jax.random.categorical(rng, y)
             rng = jax.random.split(rng)[0]
             return (hs, token, rng), token
-
 
         hs, _ = jax.lax.scan(encode_step, hs, prompt_seq_embedded)
         _, sequence = jax.lax.scan(decode_step, (hs, prompt_seq[-1], jax.random.PRNGKey(0)), None, length=max_len)
@@ -186,7 +185,7 @@ class LSTM(eqx.Module):
 
         def decode_step(
             carry: tuple[list[tuple[Array, Array]], Array, PRNGKeyArray],
-            _: Any,
+            _: None,
         ) -> tuple[tuple[list[tuple[Array, Array]], Array, PRNGKeyArray], Array]:
             hs, last_token, rng = carry
             token_embedded = self.vocab_embedding(last_token)
@@ -195,11 +194,11 @@ class LSTM(eqx.Module):
             rng = jax.random.split(rng)[0]
             return (hs, token, rng), token
 
-
         hs, _ = jax.lax.scan(encode_step, hs, prompt_seq_embedded)
         _, sequence = jax.lax.scan(decode_step, (hs, prompt_seq[-1], jax.random.PRNGKey(0)), None, length=max_len)
 
         return sequence
+
 
 class S4(eqx.Module):
     vocab_embedding: eqx.nn.Embedding
@@ -274,7 +273,7 @@ class S4(eqx.Module):
 
         def decode_step(
             carry: tuple[list[Array], Array, PRNGKeyArray],
-            _: Any,
+            _: None,
         ) -> tuple[tuple[list[Array], Array, PRNGKeyArray], Array]:
             hs, last_token, rng = carry
             token_embedded = self._embed_input(last_token)
@@ -368,10 +367,10 @@ class ShakespearePrediction(xax.Task[Config]):
         output_tokens = jnp.argmax(output, axis=-1)[0]
         output_words = "".join([self.ds.id_to_token[int(token)] for token in output_tokens])
         self.logger.log_string("teacher_forced_output", output_words)
-        
-        # using the first few tokens from the batch, generate the rest of the sequence
+
+        # Using the first few tokens from the batch, generate the rest of the sequence.
         prompt_seq = batch[0][0, :5]
-        generated_tokens = model.generate_sequence(prompt_seq, max_len=100)
+        generated_tokens = model.generate_sequence(prompt_seq, max_len=500)
         generated_words = "".join([self.ds.id_to_token[int(token)] for token in generated_tokens])
         self.logger.log_string("prompt", "".join([self.ds.id_to_token[int(token)] for token in prompt_seq]))
         self.logger.log_string("generated_output", generated_words)
@@ -407,12 +406,10 @@ class ShakespearePrediction(xax.Task[Config]):
             yield batch_x, batch_y
 
 
-# ------------------------------------------------------------------------------
-# Main
-# ------------------------------------------------------------------------------
-
 if __name__ == "__main__":
     # Launch the training task.
-    ShakespearePrediction.launch(Config(
-        model_type="s4",
-    ))
+    ShakespearePrediction.launch(
+        Config(
+            model_type="s4",
+        )
+    )

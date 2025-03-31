@@ -63,13 +63,9 @@ class DiagSSMBlock(BaseSSMBlock):
         return kernel
 
     def get_kernel_recursive(self, length: int) -> Array:
-        """Returns the kernel with time as the final dimension.
+        """Returns the kernel with time as the final dimension."""
+        assert length % 2 == 0, "Length must be even."
 
-        Uses recursive relation:
-        $$
-            K_{2L} = [K_L * \\sqrt{A_{diag}} | K_L]
-        $$
-        """
         def helper(length: int) -> tuple[Array, Array]:
             """Returns the kernel and the sqrt of the diagonal."""
             if length == 1:
@@ -102,7 +98,7 @@ class DiagSSMBlock(BaseSSMBlock):
             kernel_flipped,
             window_strides=(1,),
             padding="VALID",
-            dimension_numbers=("NCT", "OIT", "NCT"), # convolving over time
+            dimension_numbers=("NCT", "OIT", "NCT"),  # convolving over time
             feature_group_count=hidden_size,
         )
         conv_out = conv_out[0].T  # (T, H)
@@ -118,6 +114,3 @@ class DiagSSMBlock(BaseSSMBlock):
         h_0 = jnp.zeros(self.a_diag.shape[0])
         _, h_seq = jax.lax.scan(step, h_0, x_seq)
         return h_seq
-
-
-

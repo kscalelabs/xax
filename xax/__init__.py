@@ -47,12 +47,9 @@ __all__ = [
     "cast_norm_type",
     "get_norm",
     "is_master",
-    "DiagSSMBlock",
-    "DiscreteTimeS4",
-    "S4",
-    "S4Layer",
-    "S6Layer",
+    "BaseSSMBlock",
     "SSMBlock",
+    "DiagSSMBlock",
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
@@ -207,11 +204,8 @@ NAME_MAP: dict[str, str] = {
     "cast_norm_type": "nn.norm",
     "get_norm": "nn.norm",
     "is_master": "nn.parallel",
+    "BaseSSMBlock": "nn.ssm",
     "DiagSSMBlock": "nn.ssm",
-    "DiscreteTimeS4": "nn.ssm",
-    "S4": "nn.ssm",
-    "S4Layer": "nn.ssm",
-    "S6Layer": "nn.ssm",
     "SSMBlock": "nn.ssm",
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
@@ -368,7 +362,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.nn.losses import cross_entropy
     from xax.nn.norm import NormType, cast_norm_type, get_norm
     from xax.nn.parallel import is_master
-    from xax.nn.ssm import S4, DiagSSMBlock, DiscreteTimeS4, S4Layer, S6Layer, SSMBlock
+    from xax.nn.ssm import BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
