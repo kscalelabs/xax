@@ -340,9 +340,9 @@ class ShakespearePrediction(xax.Task[Config]):
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
                     num_layers=self.config.num_layers,
-                    block_type="full_rank",
+                    block_type="diagonal",
                     skip_connections=True,
-                    discretize=True,
+                    discretize=False,
                     key=key,
                 )
             case _:
