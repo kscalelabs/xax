@@ -2,7 +2,7 @@
 """Trains a state space model on a character-level tokenized dataset of Shakespeare."""
 
 from dataclasses import dataclass
-from typing import Iterator, Protocol
+from typing import Any, Iterator, Protocol
 
 import equinox as eqx
 import jax
@@ -12,11 +12,6 @@ import tensorflow_datasets as tfds
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
-
-
-def cross_entropy(y: Array, pred_y: Array) -> Array:
-    pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)
-    return -jnp.mean(pred_y)
 
 
 @dataclass(frozen=True)
@@ -57,17 +52,19 @@ def load_shakespeare_text() -> ShakespeareDataset:
 class Config(xax.Config):
     input_size: int = xax.field(65)
     output_size: int = xax.field(65)
-    num_layers: int = xax.field(3)
-    hidden_size: int = xax.field(512)
-    batch_size: int = xax.field(128)
+    num_layers: int = xax.field(4)
+    hidden_size: int = xax.field(256)
+    batch_size: int = xax.field(64)
     learning_rate: float = xax.field(1e-3)
     sequence_length: int = xax.field(100)
     valid_every_n_seconds: float = xax.field(30.0)
-    model_type: str = xax.field("s4", help="The model to use")
+    model_type: str = xax.field("lstm", help="The model to use")
 
 
-class RecurrentModel(Protocol):
+class SequenceModel(Protocol):
     def predict_sequence(self, x_seq: Array) -> Array: ...
+
+    def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array: ...
 
 
 class RNN(eqx.Module):
@@ -81,7 +78,6 @@ class RNN(eqx.Module):
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        *,
         key: PRNGKeyArray,
     ) -> None:
         vocab_key, rnn_key = jax.random.split(key, 2)
@@ -111,6 +107,31 @@ class RNN(eqx.Module):
 
         _, y_seq = jax.lax.scan(step, hs, x_seq)
         return y_seq
+    
+    def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array:
+        hs = [jnp.zeros(cell.hidden_size) for cell in self.rnn_cells]
+        prompt_seq_embedded = jax.vmap(self.vocab_embedding)(prompt_seq)
+
+        def encode_step(hs: list[Array], x: Array) -> tuple[list[Array], Array]:
+            hs, y = self(hs, x)
+            return hs, y
+
+        def decode_step(
+            carry: tuple[list[Array], Array, PRNGKeyArray],
+            _: Any,
+        ) -> tuple[tuple[list[Array], Array, PRNGKeyArray], Array]:
+            hs, last_token, rng = carry
+            token_embedded = self.vocab_embedding(last_token)
+            hs, y = self(hs, token_embedded)
+            token = jax.random.categorical(rng, y)
+            rng = jax.random.split(rng)[0]
+            return (hs, token, rng), token
+
+
+        hs, _ = jax.lax.scan(encode_step, hs, prompt_seq_embedded)
+        _, sequence = jax.lax.scan(decode_step, (hs, prompt_seq[-1], jax.random.PRNGKey(0)), None, length=max_len)
+
+        return sequence
 
 
 class LSTM(eqx.Module):
@@ -124,7 +145,6 @@ class LSTM(eqx.Module):
         hidden_size: int,
         output_size: int,
         num_layers: int,
-        *,
         key: PRNGKeyArray,
     ) -> None:
         vocab_key, rnn_key = jax.random.split(key, 2)
@@ -155,6 +175,31 @@ class LSTM(eqx.Module):
         _, y_seq = jax.lax.scan(step, hs, x_seq)
         return y_seq
 
+    def generate_sequence(self, prompt_seq: Array, max_len: int) -> Array:
+        hs = [(jnp.zeros(cell.hidden_size), jnp.zeros(cell.hidden_size)) for cell in self.rnn_cells]
+        prompt_seq_embedded = jax.vmap(self.vocab_embedding)(prompt_seq)
+
+        def encode_step(hs: list[tuple[Array, Array]], x: Array) -> tuple[list[tuple[Array, Array]], Array]:
+            hs, y = self(hs, x)
+            return hs, y
+
+        def decode_step(
+            carry: tuple[list[tuple[Array, Array]], Array, PRNGKeyArray],
+            _: Any,
+        ) -> tuple[tuple[list[tuple[Array, Array]], Array, PRNGKeyArray], Array]:
+            hs, last_token, rng = carry
+            token_embedded = self.vocab_embedding(last_token)
+            hs, y = self(hs, token_embedded)
+            token = jax.random.categorical(rng, y)
+            rng = jax.random.split(rng)[0]
+            return (hs, token, rng), token
+
+
+        hs, _ = jax.lax.scan(encode_step, hs, prompt_seq_embedded)
+        _, sequence = jax.lax.scan(decode_step, (hs, prompt_seq[-1], jax.random.PRNGKey(0)), None, length=max_len)
+
+        return sequence
+
 
 class ShakespearePrediction(xax.Task[Config]):
     def __init__(self, config: Config) -> None:
@@ -178,7 +223,7 @@ class ShakespearePrediction(xax.Task[Config]):
             "acc": (yhat == y).astype(float).mean(),
         }
 
-    def get_model(self, key: PRNGKeyArray) -> RecurrentModel:
+    def get_model(self, key: PRNGKeyArray) -> SequenceModel:
         match self.config.model_type:
             case "rnn":
                 return RNN(
@@ -210,18 +255,23 @@ class ShakespearePrediction(xax.Task[Config]):
                 raise ValueError(f"Unknown model type: {self.config.model_type}")
 
     def get_optimizer(self) -> optax.GradientTransformation:
-        return optax.adam(self.config.learning_rate)
+        return optax.adamw(
+            learning_rate=self.config.learning_rate,
+            weight_decay=0.01,
+        )
 
-    def get_output(self, model: RecurrentModel, batch: tuple[Array, Array], state: xax.State) -> Array:
+    def get_output(self, model: SequenceModel, batch: tuple[Array, Array], state: xax.State) -> Array:
         x_batched, _ = batch
         return jax.vmap(model.predict_sequence)(x_batched)
 
-    def compute_loss(self, model: RecurrentModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
+    def compute_loss(self, model: SequenceModel, batch: tuple[Array, Array], output: Array, state: xax.State) -> Array:
         (_, y), yhat = batch, output
-        return xax.cross_entropy(y, yhat, axis=-1).mean()
+        labels = jax.nn.one_hot(y, yhat.shape[-1])
+        return optax.softmax_cross_entropy(logits=yhat, labels=labels).mean()
 
     def log_valid_step(
         self,
+        model: SequenceModel,
         batch: tuple[Array, Array],
         output: Array,
         metrics: xax.FrozenDict[str, Array],
@@ -229,7 +279,14 @@ class ShakespearePrediction(xax.Task[Config]):
     ) -> None:
         output_tokens = jnp.argmax(output, axis=-1)[0]
         output_words = "".join([self.ds.id_to_token[int(token)] for token in output_tokens])
-        self.logger.log_string("output", output_words)
+        self.logger.log_string("teacher_forced_output", output_words)
+        
+        # using the first few tokens from the batch, generate the rest of the sequence
+        prompt_seq = batch[0][0, :5]
+        generated_tokens = model.generate_sequence(prompt_seq, max_len=100)
+        generated_words = "".join([self.ds.id_to_token[int(token)] for token in generated_tokens])
+        self.logger.log_string("prompt", "".join([self.ds.id_to_token[int(token)] for token in prompt_seq]))
+        self.logger.log_string("generated_output", generated_words)
 
     def get_data_iterator(self, phase: xax.Phase) -> Iterator[tuple[Array, Array]]:
         """Returns an iterator over batches of tokenized Shakespeare text.
@@ -245,9 +302,9 @@ class ShakespearePrediction(xax.Task[Config]):
         seq_len = self.config.sequence_length
         # Split the token_ids into training and validation sets.
         if phase == "train":
-            token_ids = self.token_ids[: int(0.8 * len(self.token_ids))]
+            token_ids = self.token_ids[: int(0.95 * len(self.token_ids))]
         else:
-            token_ids = self.token_ids[int(0.8 * len(self.token_ids)) :]
+            token_ids = self.token_ids[int(0.95 * len(self.token_ids)) :]
         n_tokens = token_ids.shape[0]
 
         key = jax.random.PRNGKey(0)
@@ -268,4 +325,6 @@ class ShakespearePrediction(xax.Task[Config]):
 
 if __name__ == "__main__":
     # Launch the training task.
-    ShakespearePrediction.launch(Config())
+    ShakespearePrediction.launch(Config(
+        model_type="lstm",
+    ))
