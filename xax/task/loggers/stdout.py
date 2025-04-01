@@ -14,7 +14,7 @@ from xax.utils.text import Color, colored, format_timedelta
 
 def format_number(value: int | float, precision: int) -> str:
     if isinstance(value, int):
-        return str(value)
+        return f"{value:,}"  # Add commas to the number
     return f"{value:.{precision}g}"
 
 
