@@ -80,11 +80,10 @@ class StdoutLogger(LoggerImpl):
         self.write_fp.write("\033[2J\033[H")
 
     def write_state_window(self, line: LogLine) -> None:
-        elapsed_time = format_timedelta(datetime.timedelta(seconds=line.state.elapsed_time_s), short=True)
-        state_info = {
-            "Steps": f"{line.state.num_steps}",
-            "Samples": f"{line.state.num_samples}",
-            "Elapsed Time": f"{elapsed_time}",
+        state_info: dict[str, str] = {
+            "Steps": format_number(line.state.num_steps, 0),
+            "Samples": format_number(line.state.num_samples, 0),
+            "Elapsed Time": format_timedelta(datetime.timedelta(seconds=line.state.elapsed_time_s), short=True),
         }
 
         colored_prefix = colored("Phase: ", "grey", bold=True)
