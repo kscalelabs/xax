@@ -32,6 +32,10 @@ def get_cache_dir() -> str | None:
 @dataclass
 class CompileOptions:
     # JAX compilation options
+    debug_nans: bool = field(
+        value=False,
+        help="If True, breaks on NaNs",
+    )
     disable_jit: bool = field(
         value=False,
         help="If True, disables JIT compilation",
@@ -89,6 +93,10 @@ class CompileMixin(BaseTask[Config], Generic[Config]):
         cc = self.config.compile
 
         # Set basic compilation flags
+        if cc.debug_nans:
+            logger.info("Enabling NaNs debugging")
+            jax.config.update("jax_debug_nans", True)
+
         if cc.disable_jit:
             logger.info("Disabling JIT compilation")
             jax.config.update("jax_disable_jit", True)
