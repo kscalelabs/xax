@@ -4,6 +4,8 @@ from collections import deque
 from collections.abc import Iterable, Mapping
 from typing import Any, Callable, Deque
 
+import jax
+import jax.numpy as jnp
 from jaxtyping import Array
 
 
@@ -47,3 +49,7 @@ def get_named_leaves(
                     q.append((depth + 1, gname, cnode))
 
     return ret
+
+
+def breakpoint_if_nan(x: Array) -> None:
+    jax.lax.cond(jnp.any(jnp.isnan(x)), lambda: jax.debug.breakpoint(), lambda: None)
