@@ -53,3 +53,7 @@ def get_named_leaves(
 
 def breakpoint_if_nan(x: Array) -> None:
     jax.lax.cond(jnp.any(jnp.isnan(x)), lambda: jax.debug.breakpoint(), lambda: None)
+
+
+def log_if_nan(x: Array, loc: str) -> None:
+    jax.lax.cond(jnp.any(jnp.isnan(x)), lambda: jax.debug.print("=== NaNs: {loc} ===", loc=loc), lambda: None)
