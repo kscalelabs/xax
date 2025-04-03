@@ -40,6 +40,7 @@ __all__ = [
     "load_eqx_mlp",
     "make_eqx_mlp",
     "save_eqx",
+    "cubic_bezier_interpolation",
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "quat_to_euler",
@@ -201,6 +202,7 @@ NAME_MAP: dict[str, str] = {
     "load_eqx_mlp": "nn.equinox",
     "make_eqx_mlp": "nn.equinox",
     "save_eqx": "nn.equinox",
+    "cubic_bezier_interpolation": "nn.geom",
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "quat_to_euler": "nn.geom",
@@ -363,6 +365,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         save_eqx,
     )
     from xax.nn.geom import (
+        cubic_bezier_interpolation,
         euler_to_quat,
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
