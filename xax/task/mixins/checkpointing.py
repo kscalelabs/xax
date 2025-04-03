@@ -98,28 +98,42 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> tuple[PyTree, State, DictConfig]: ...
 
     @overload
-    @classmethod
-    def load_checkpoint(cls, path: Path, part: Literal["model"]) -> PyTree: ...
-
-    @overload
-    @classmethod
-    def load_checkpoint(cls, path: Path, part: Literal["opt"]) -> optax.GradientTransformation: ...
-
-    @overload
-    @classmethod
-    def load_checkpoint(cls, path: Path, part: Literal["opt_state"]) -> optax.OptState: ...
-
-    @overload
-    @classmethod
-    def load_checkpoint(cls, path: Path, part: Literal["state"]) -> State: ...
-
-    @overload
-    @classmethod
-    def load_checkpoint(cls, path: Path, part: Literal["config"]) -> DictConfig: ...
-
-    @classmethod
     def load_checkpoint(
-        cls,
+        self,
+        path: Path,
+        part: Literal["model"],
+    ) -> PyTree: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["opt"],
+    ) -> optax.GradientTransformation: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["opt_state"],
+    ) -> optax.OptState: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["state"],
+    ) -> State: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["config"],
+    ) -> DictConfig: ...
+
+    def load_checkpoint(
+        self,
         path: Path,
         part: CheckpointPart = "all",
     ) -> (
