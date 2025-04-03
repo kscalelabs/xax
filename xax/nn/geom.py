@@ -1,10 +1,10 @@
 """Defines geometry functions."""
 
-import jax
 from jax import numpy as jnp
+from jaxtyping import Array
 
 
-def quat_to_euler(quat_4: jax.Array, eps: float = 1e-6) -> jax.Array:
+def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
     """Normalizes and converts a quaternion (w, x, y, z) to roll, pitch, yaw.
 
     Args:
@@ -40,7 +40,7 @@ def quat_to_euler(quat_4: jax.Array, eps: float = 1e-6) -> jax.Array:
     return jnp.concatenate([roll, pitch, yaw], axis=-1)
 
 
-def euler_to_quat(euler_3: jax.Array) -> jax.Array:
+def euler_to_quat(euler_3: Array) -> Array:
     """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
 
     Args:
@@ -75,7 +75,7 @@ def euler_to_quat(euler_3: jax.Array) -> jax.Array:
     return quat
 
 
-def get_projected_gravity_vector_from_quat(quat: jax.Array, eps: float = 1e-6) -> jax.Array:
+def get_projected_gravity_vector_from_quat(quat: Array, eps: float = 1e-6) -> Array:
     """Calculates the gravity vector projected onto the local frame given a quaternion orientation.
 
     Args:
@@ -101,7 +101,7 @@ def get_projected_gravity_vector_from_quat(quat: jax.Array, eps: float = 1e-6) -
     return jnp.concatenate([gx, gy, -gz], axis=-1)
 
 
-def rotate_vector_by_quat(vector: jax.Array, quat: jax.Array, eps: float = 1e-6) -> jax.Array:
+def rotate_vector_by_quat(vector: Array, quat: Array, eps: float = 1e-6) -> Array:
     """Rotates a vector by a quaternion.
 
     Args:
@@ -156,3 +156,24 @@ def rotate_vector_by_quat(vector: jax.Array, quat: jax.Array, eps: float = 1e-6)
     )
 
     return jnp.concatenate([xx, yy, zz], axis=-1)
+
+
+def cubic_bezier_interpolation(y_start: Array, y_end: Array, x: Array) -> Array:
+    """Cubic bezier interpolation.
+
+    This is a cubic bezier curve that starts at y_start and ends at y_end,
+    and is controlled by the parameter x. The curve is defined by the following formula:
+
+    y(x) = y_start + (y_end - y_start) * (x**3 + 3 * (x**2 * (1 - x)))
+
+    Args:
+        y_start: The start value, shape (*).
+        y_end: The end value, shape (*).
+        x: The interpolation parameter, shape (*).
+
+    Returns:
+        The interpolated value, shape (*).
+    """
+    y_diff = y_end - y_start
+    bezier = x**3 + 3 * (x**2 * (1 - x))
+    return y_start + y_diff * bezier
