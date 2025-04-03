@@ -98,19 +98,39 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> tuple[PyTree, State, DictConfig]: ...
 
     @overload
-    def load_checkpoint(self, path: Path, part: Literal["model"]) -> PyTree: ...
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["model"],
+    ) -> PyTree: ...
 
     @overload
-    def load_checkpoint(self, path: Path, part: Literal["opt"]) -> optax.GradientTransformation: ...
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["opt"],
+    ) -> optax.GradientTransformation: ...
 
     @overload
-    def load_checkpoint(self, path: Path, part: Literal["opt_state"]) -> optax.OptState: ...
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["opt_state"],
+    ) -> optax.OptState: ...
 
     @overload
-    def load_checkpoint(self, path: Path, part: Literal["state"]) -> State: ...
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["state"],
+    ) -> State: ...
 
     @overload
-    def load_checkpoint(self, path: Path, part: Literal["config"]) -> DictConfig: ...
+    def load_checkpoint(
+        self,
+        path: Path,
+        part: Literal["config"],
+    ) -> DictConfig: ...
 
     def load_checkpoint(
         self,
@@ -125,9 +145,6 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         | State
         | DictConfig
     ):
-        # Calls the base callback.
-        self.on_before_checkpoint_load(path)
-
         with tarfile.open(path, "r:gz") as tar:
 
             def get_model() -> PyTree:
