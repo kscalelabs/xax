@@ -112,8 +112,9 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     @overload
     def load_checkpoint(self, path: Path, part: Literal["config"]) -> DictConfig: ...
 
+    @classmethod
     def load_checkpoint(
-        self,
+        cls,
         path: Path,
         part: CheckpointPart = "all",
     ) -> (
@@ -125,9 +126,6 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         | State
         | DictConfig
     ):
-        # Calls the base callback.
-        self.on_before_checkpoint_load(path)
-
         with tarfile.open(path, "r:gz") as tar:
 
             def get_model() -> PyTree:
