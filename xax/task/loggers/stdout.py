@@ -4,11 +4,20 @@ import datetime
 import logging
 import sys
 from collections import deque
-from typing import Any, Deque, TextIO
+from typing import Any, Deque, Mapping, TextIO
 
 from jaxtyping import Array
 
-from xax.task.logger import LogError, LogErrorSummary, LoggerImpl, LogLine, LogPing, LogStatus
+from xax.task.logger import (
+    LogError,
+    LogErrorSummary,
+    LoggerImpl,
+    LogLine,
+    LogPing,
+    LogScalar,
+    LogStatus,
+    LogString,
+)
 from xax.utils.text import Color, colored, format_timedelta
 
 
@@ -95,20 +104,17 @@ class StdoutLogger(LoggerImpl):
     def write_log_window(self, line: LogLine) -> None:
         namespace_to_lines: dict[str, dict[str, str]] = {}
 
-        def add_logs(log: dict[str, dict[str, Any]], namespace_to_lines: dict[str, dict[str, str]]) -> None:
+        def add_logs(
+            log: Mapping[str, Mapping[str, LogScalar | LogString]],
+            namespace_to_lines: dict[str, dict[str, str]],
+        ) -> None:
             for namespace, values in log.items():
-                if not self.log_timers and namespace.startswith("⌛"):
-                    continue
-                if not self.log_perf and namespace.startswith("🔧"):
-                    continue
-                if not self.log_optim and namespace.startswith("📉"):
-                    continue
-                if not self.log_fp and namespace.startswith("⚖️"):
-                    continue
-                if namespace not in namespace_to_lines:
-                    namespace_to_lines[namespace] = {}
                 for k, v in values.items():
-                    v_str = as_str(v, self.precision)
+                    if v.secondary:
+                        continue
+                    if namespace not in namespace_to_lines:
+                        namespace_to_lines[namespace] = {}
+                    v_str = as_str(v.value, self.precision)
                     namespace_to_lines[namespace][k] = v_str
 
         add_logs(line.scalars, namespace_to_lines)
@@ -116,9 +122,8 @@ class StdoutLogger(LoggerImpl):
         if not namespace_to_lines:
             return
 
-        self.write_fp.write("\n")
         for namespace, lines in sorted(namespace_to_lines.items()):
-            self.write_fp.write(f"{colored(namespace, 'cyan', bold=True)}\n")
+            self.write_fp.write(f"\n{colored(namespace, 'cyan', bold=True)}\n")
             for k, v in lines.items():
                 self.write_fp.write(f" ↪ {k}: {v}\n")
 

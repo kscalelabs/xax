@@ -206,6 +206,12 @@ def as_numpy(array: Array) -> np.ndarray:
 
 
 @dataclass(kw_only=True)
+class LogString:
+    value: str
+    secondary: bool
+
+
+@dataclass(kw_only=True)
 class LogImage:
     image: PILImage
 
@@ -221,6 +227,12 @@ class LogVideo:
 
     frames: np.ndarray
     fps: int
+
+
+@dataclass(kw_only=True)
+class LogScalar:
+    value: Number
+    secondary: bool
 
 
 @dataclass(kw_only=True)
@@ -243,10 +255,10 @@ class LogHistogram:
 @dataclass(kw_only=True)
 class LogLine:
     state: State
-    scalars: dict[str, dict[str, Number]]
+    scalars: dict[str, dict[str, LogScalar]]
     distributions: dict[str, dict[str, LogDistribution]]
     histograms: dict[str, dict[str, LogHistogram]]
-    strings: dict[str, dict[str, str]]
+    strings: dict[str, dict[str, LogString]]
     images: dict[str, dict[str, LogImage]]
     videos: dict[str, dict[str, LogVideo]]
 
@@ -515,10 +527,10 @@ class Logger:
     """Defines an intermediate container which holds values to log somewhere else."""
 
     def __init__(self, default_namespace: str = DEFAULT_NAMESPACE) -> None:
-        self.scalars: dict[str, dict[str, Callable[[], Number]]] = defaultdict(dict)
+        self.scalars: dict[str, dict[str, Callable[[], LogScalar]]] = defaultdict(dict)
         self.distributions: dict[str, dict[str, Callable[[], LogDistribution]]] = defaultdict(dict)
         self.histograms: dict[str, dict[str, Callable[[], LogHistogram]]] = defaultdict(dict)
-        self.strings: dict[str, dict[str, Callable[[], str]]] = defaultdict(dict)
+        self.strings: dict[str, dict[str, Callable[[], LogString]]] = defaultdict(dict)
         self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
         self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
         self.default_namespace = default_namespace
@@ -616,13 +628,23 @@ class Logger:
     def resolve_namespace(self, namespace: str | None = None) -> str:
         return "_".join([self.default_namespace if namespace is None else namespace] + NAMESPACE_STACK)
 
-    def log_scalar(self, key: str, value: Callable[[], Number] | Number, *, namespace: str | None = None) -> None:
+    def log_scalar(
+        self,
+        key: str,
+        value: Callable[[], Number] | Number,
+        *,
+        namespace: str | None = None,
+        secondary: bool = False,
+    ) -> None:
         """Logs a scalar value.
 
         Args:
             key: The key being logged
             value: The scalar value being logged
             namespace: An optional logging namespace
+            secondary: If set, treat this as a secondary value (meaning, it is
+                less important than other values, and some downstream loggers
+                will not display it)
         """
         if not self.active:
             raise RuntimeError("The logger is not active")
@@ -632,11 +654,11 @@ class Logger:
             assert value.ndim == 0, f"Scalar must be a 0D array, got shape {value.shape}"
 
         @functools.lru_cache(maxsize=None)
-        def scalar_future() -> Number:
+        def scalar_future() -> LogScalar:
             with ContextTimer() as timer:
                 value_concrete = value() if callable(value) else value
             logger.debug("Scalar Key: %s, Time: %s", key, timer.elapsed_time)
-            return value_concrete
+            return LogScalar(value=value_concrete, secondary=secondary)
 
         self.scalars[namespace][key] = scalar_future
 
@@ -770,21 +792,31 @@ class Logger:
 
         self.histograms[namespace][key] = histogram_future
 
-    def log_string(self, key: str, value: Callable[[], str] | str, *, namespace: str | None = None) -> None:
+    def log_string(
+        self,
+        key: str,
+        value: Callable[[], str] | str,
+        *,
+        namespace: str | None = None,
+        secondary: bool = False,
+    ) -> None:
         """Logs a string value.
 
         Args:
             key: The key being logged
             value: The string value being logged
             namespace: An optional logging namespace
+            secondary: If set, treat this as a secondary value (meaning, it is
+                less important than other values, and some downstream loggers
+                will not display it)
         """
         if not self.active:
             raise RuntimeError("The logger is not active")
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def value_future() -> str:
-            return value() if callable(value) else value
+        def value_future() -> LogString:
+            return LogString(value=value() if callable(value) else value, secondary=secondary)
 
         self.strings[namespace][key] = value_future
 

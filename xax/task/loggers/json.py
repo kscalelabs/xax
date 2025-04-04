@@ -3,11 +3,19 @@
 import json
 import sys
 from dataclasses import asdict
-from typing import Any, Literal, TextIO
+from typing import Any, Literal, Mapping, TextIO
 
 from jaxtyping import Array
 
-from xax.task.logger import LogError, LoggerImpl, LogLine, LogPing, LogStatus
+from xax.task.logger import (
+    LogError,
+    LoggerImpl,
+    LogLine,
+    LogPing,
+    LogScalar,
+    LogStatus,
+    LogString,
+)
 
 
 def get_json_value(value: Any) -> Any:  # noqa: ANN401
@@ -61,14 +69,14 @@ class JsonLogger(LoggerImpl):
     def get_json(self, line: LogLine) -> str:
         data: dict = {"state": asdict(line.state)}
 
-        def add_logs(log: dict[str, dict[str, Any]], data: dict) -> None:
+        def add_logs(log: Mapping[str, Mapping[str, LogScalar | LogString]], data: dict) -> None:
             for namespace, values in log.items():
                 if self.remove_unicode_from_namespaces:
                     namespace = namespace.encode("ascii", errors="ignore").decode("ascii").strip()
                 if namespace not in data:
                     data[namespace] = {}
                 for k, v in values.items():
-                    data[namespace][k] = get_json_value(v)
+                    data[namespace][k] = get_json_value(v.value)
 
         add_logs(line.scalars, data)
         add_logs(line.strings, data)
