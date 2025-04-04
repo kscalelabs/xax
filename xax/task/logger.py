@@ -208,6 +208,7 @@ def as_numpy(array: Array) -> np.ndarray:
 @dataclass(kw_only=True)
 class LogString:
     value: str
+    secondary: bool
 
 
 @dataclass(kw_only=True)
@@ -231,6 +232,7 @@ class LogVideo:
 @dataclass(kw_only=True)
 class LogScalar:
     value: Number
+    secondary: bool
 
 
 @dataclass(kw_only=True)
@@ -626,13 +628,23 @@ class Logger:
     def resolve_namespace(self, namespace: str | None = None) -> str:
         return "_".join([self.default_namespace if namespace is None else namespace] + NAMESPACE_STACK)
 
-    def log_scalar(self, key: str, value: Callable[[], Number] | Number, *, namespace: str | None = None) -> None:
+    def log_scalar(
+        self,
+        key: str,
+        value: Callable[[], Number] | Number,
+        *,
+        namespace: str | None = None,
+        secondary: bool = False,
+    ) -> None:
         """Logs a scalar value.
 
         Args:
             key: The key being logged
             value: The scalar value being logged
             namespace: An optional logging namespace
+            secondary: If set, treat this as a secondary value (meaning, it is
+                less important than other values, and some downstream loggers
+                will not display it)
         """
         if not self.active:
             raise RuntimeError("The logger is not active")
@@ -646,7 +658,7 @@ class Logger:
             with ContextTimer() as timer:
                 value_concrete = value() if callable(value) else value
             logger.debug("Scalar Key: %s, Time: %s", key, timer.elapsed_time)
-            return LogScalar(value=value_concrete)
+            return LogScalar(value=value_concrete, secondary=secondary)
 
         self.scalars[namespace][key] = scalar_future
 
@@ -780,13 +792,23 @@ class Logger:
 
         self.histograms[namespace][key] = histogram_future
 
-    def log_string(self, key: str, value: Callable[[], str] | str, *, namespace: str | None = None) -> None:
+    def log_string(
+        self,
+        key: str,
+        value: Callable[[], str] | str,
+        *,
+        namespace: str | None = None,
+        secondary: bool = False,
+    ) -> None:
         """Logs a string value.
 
         Args:
             key: The key being logged
             value: The string value being logged
             namespace: An optional logging namespace
+            secondary: If set, treat this as a secondary value (meaning, it is
+                less important than other values, and some downstream loggers
+                will not display it)
         """
         if not self.active:
             raise RuntimeError("The logger is not active")
@@ -794,7 +816,7 @@ class Logger:
 
         @functools.lru_cache(maxsize=None)
         def value_future() -> LogString:
-            return LogString(value=value() if callable(value) else value)
+            return LogString(value=value() if callable(value) else value, secondary=secondary)
 
         self.strings[namespace][key] = value_future
 

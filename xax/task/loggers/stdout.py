@@ -109,14 +109,6 @@ class StdoutLogger(LoggerImpl):
             namespace_to_lines: dict[str, dict[str, str]],
         ) -> None:
             for namespace, values in log.items():
-                if not self.log_timers and namespace.startswith("⌛"):
-                    continue
-                if not self.log_perf and namespace.startswith("🔧"):
-                    continue
-                if not self.log_optim and namespace.startswith("📉"):
-                    continue
-                if not self.log_fp and namespace.startswith("⚖️"):
-                    continue
                 if namespace not in namespace_to_lines:
                     namespace_to_lines[namespace] = {}
                 for k, v in values.items():

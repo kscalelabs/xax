@@ -254,7 +254,7 @@ class TrainMixin(
         timer.step(state)
         for ns, d in timer.log_dict().items():
             for k, v in d.items():
-                self.logger.log_scalar(k, v, namespace=ns)
+                self.logger.log_scalar(k, v, namespace=ns, secondary=True)
 
     def log_step(
         self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
