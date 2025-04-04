@@ -158,7 +158,7 @@ class TensorboardLogger(LoggerImpl):
             for scalar_key, scalar_value in scalars.items():
                 writer.add_scalar(
                     f"{namespace}/{scalar_key}",
-                    as_float(scalar_value),
+                    as_float(scalar_value.value),
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )
@@ -192,7 +192,7 @@ class TensorboardLogger(LoggerImpl):
             for string_key, string_value in strings.items():
                 writer.add_text(
                     f"{namespace}/{string_key}",
-                    string_value,
+                    string_value.value,
                     global_step=line.state.num_steps,
                     walltime=walltime,
                 )

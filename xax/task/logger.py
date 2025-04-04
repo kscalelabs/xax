@@ -206,6 +206,11 @@ def as_numpy(array: Array) -> np.ndarray:
 
 
 @dataclass(kw_only=True)
+class LogString:
+    value: str
+
+
+@dataclass(kw_only=True)
 class LogImage:
     image: PILImage
 
@@ -221,6 +226,11 @@ class LogVideo:
 
     frames: np.ndarray
     fps: int
+
+
+@dataclass(kw_only=True)
+class LogScalar:
+    value: Number
 
 
 @dataclass(kw_only=True)
@@ -243,10 +253,10 @@ class LogHistogram:
 @dataclass(kw_only=True)
 class LogLine:
     state: State
-    scalars: dict[str, dict[str, Number]]
+    scalars: dict[str, dict[str, LogScalar]]
     distributions: dict[str, dict[str, LogDistribution]]
     histograms: dict[str, dict[str, LogHistogram]]
-    strings: dict[str, dict[str, str]]
+    strings: dict[str, dict[str, LogString]]
     images: dict[str, dict[str, LogImage]]
     videos: dict[str, dict[str, LogVideo]]
 
@@ -515,10 +525,10 @@ class Logger:
     """Defines an intermediate container which holds values to log somewhere else."""
 
     def __init__(self, default_namespace: str = DEFAULT_NAMESPACE) -> None:
-        self.scalars: dict[str, dict[str, Callable[[], Number]]] = defaultdict(dict)
+        self.scalars: dict[str, dict[str, Callable[[], LogScalar]]] = defaultdict(dict)
         self.distributions: dict[str, dict[str, Callable[[], LogDistribution]]] = defaultdict(dict)
         self.histograms: dict[str, dict[str, Callable[[], LogHistogram]]] = defaultdict(dict)
-        self.strings: dict[str, dict[str, Callable[[], str]]] = defaultdict(dict)
+        self.strings: dict[str, dict[str, Callable[[], LogString]]] = defaultdict(dict)
         self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
         self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
         self.default_namespace = default_namespace
@@ -632,11 +642,11 @@ class Logger:
             assert value.ndim == 0, f"Scalar must be a 0D array, got shape {value.shape}"
 
         @functools.lru_cache(maxsize=None)
-        def scalar_future() -> Number:
+        def scalar_future() -> LogScalar:
             with ContextTimer() as timer:
                 value_concrete = value() if callable(value) else value
             logger.debug("Scalar Key: %s, Time: %s", key, timer.elapsed_time)
-            return value_concrete
+            return LogScalar(value=value_concrete)
 
         self.scalars[namespace][key] = scalar_future
 
@@ -783,8 +793,8 @@ class Logger:
         namespace = self.resolve_namespace(namespace)
 
         @functools.lru_cache(maxsize=None)
-        def value_future() -> str:
-            return value() if callable(value) else value
+        def value_future() -> LogString:
+            return LogString(value=value() if callable(value) else value)
 
         self.strings[namespace][key] = value_future
 
