@@ -50,6 +50,7 @@ from xax.utils.experiments import (
     TrainingFinishedError,
     diff_configs,
     get_diff_string,
+    get_info_json,
     get_state_file_string,
     get_training_code,
 )
@@ -554,6 +555,7 @@ class TrainMixin(
         self.logger.log_file("state.txt", get_state_file_string(self))
         self.logger.log_file("training_code.py", get_training_code(self))
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
+        self.logger.log_file("info.json", get_info_json())
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
