@@ -7,6 +7,7 @@ import functools
 import hashlib
 import inspect
 import itertools
+import json
 import logging
 import math
 import os
@@ -468,13 +469,27 @@ def get_command_line_string() -> str:
     return " ".join(sys.argv)
 
 
+def get_environment_variables() -> str:
+    return "\n".join([f"{key}={value}" for key, value in sorted(os.environ.items())])
+
+
 def get_state_file_string(obj: object) -> str:
     return "\n\n".join(
         [
             f"=== Command Line ===\n\n{get_command_line_string()}",
             f"=== Git State ===\n\n{get_git_state(obj)}",
             f"=== Packages ===\n\n{get_packages_with_versions()}",
+            f"=== Environment Variables ===\n\n{get_environment_variables()}",
         ]
+    )
+
+
+def get_info_json() -> str:
+    return json.dumps(
+        {
+            "process_id": os.getpid(),
+        },
+        indent=2,
     )
 
 
