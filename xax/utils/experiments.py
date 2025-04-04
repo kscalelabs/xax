@@ -489,7 +489,7 @@ def get_info_json() -> str:
         {
             "process_id": os.getpid(),
             "job": {
-                "start_time": time.time(),
+                "start_time": datetime.datetime.now().isoformat(),
             },
         },
         indent=2,
