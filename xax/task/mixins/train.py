@@ -50,8 +50,7 @@ from xax.utils.experiments import (
     TrainingFinishedError,
     diff_configs,
     get_diff_string,
-    get_git_state,
-    get_packages_with_versions,
+    get_state_file_string,
     get_training_code,
 )
 from xax.utils.jax import jit as xax_jit
@@ -534,9 +533,8 @@ class TrainMixin(
         logger.log(LOG_STATUS, self.task_path)
         logger.log(LOG_STATUS, self.task_name)
         logger.log(LOG_STATUS, "JAX devices: %s", jax.devices())
-        self.logger.log_file("git_state.txt", get_git_state(self))
-        self.logger.log_file("packages.txt", get_packages_with_versions())
-        self.logger.log_file("training_code.txt", get_training_code(self))
+        self.logger.log_file("state.txt", get_state_file_string(self))
+        self.logger.log_file("training_code.py", get_training_code(self))
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401

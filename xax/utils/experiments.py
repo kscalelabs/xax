@@ -479,6 +479,20 @@ def get_packages_with_versions() -> str:
     return "\n".join([f"{key}=={version}" for key, version in sorted(packages)])
 
 
+def get_command_line_string() -> str:
+    return " ".join(sys.argv)
+
+
+def get_state_file_string(obj: object) -> str:
+    return "\n\n".join(
+        [
+            f"=== Command Line ===\n\n{get_command_line_string()}",
+            f"=== Git State ===\n\n{get_git_state(obj)}",
+            f"=== Packages ===\n\n{get_packages_with_versions()}",
+        ]
+    )
+
+
 def get_training_code(obj: object) -> str:
     """Gets the text from the file containing the provided object.
 
