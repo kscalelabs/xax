@@ -70,6 +70,9 @@ class TensorboardLogger(LoggerImpl):
         self._started = True
 
     def worker_thread(self) -> None:
+        if os.environ.get("DISABLE_TENSORBOARD", "0") == "1":
+            return
+
         time.sleep(self.wait_seconds)
 
         port = int(os.environ.get("TENSORBOARD_PORT", DEFAULT_TENSORBOARD_PORT))
