@@ -109,9 +109,11 @@ class StdoutLogger(LoggerImpl):
             namespace_to_lines: dict[str, dict[str, str]],
         ) -> None:
             for namespace, values in log.items():
-                if namespace not in namespace_to_lines:
-                    namespace_to_lines[namespace] = {}
                 for k, v in values.items():
+                    if v.secondary:
+                        continue
+                    if namespace not in namespace_to_lines:
+                        namespace_to_lines[namespace] = {}
                     v_str = as_str(v.value, self.precision)
                     namespace_to_lines[namespace][k] = v_str
 
@@ -120,9 +122,8 @@ class StdoutLogger(LoggerImpl):
         if not namespace_to_lines:
             return
 
-        self.write_fp.write("\n")
         for namespace, lines in sorted(namespace_to_lines.items()):
-            self.write_fp.write(f"{colored(namespace, 'cyan', bold=True)}\n")
+            self.write_fp.write(f"\n{colored(namespace, 'cyan', bold=True)}\n")
             for k, v in lines.items():
                 self.write_fp.write(f" ↪ {k}: {v}\n")
 
