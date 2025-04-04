@@ -488,6 +488,9 @@ def get_info_json() -> str:
     return json.dumps(
         {
             "process_id": os.getpid(),
+            "job": {
+                "start_time": time.time(),
+            },
         },
         indent=2,
     )
