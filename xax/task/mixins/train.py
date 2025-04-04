@@ -218,7 +218,12 @@ class TrainMixin(
         return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
     def log_train_step(
-        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+        self,
+        model: PyTree,
+        batch: Batch,
+        output: Output,
+        metrics: FrozenDict[str, Array],
+        state: State,
     ) -> None:
         """Override this function to do logging during the training phase.
 
@@ -234,7 +239,12 @@ class TrainMixin(
         """
 
     def log_valid_step(
-        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+        self,
+        model: PyTree,
+        batch: Batch,
+        output: Output,
+        metrics: FrozenDict[str, Array],
+        state: State,
     ) -> None:
         """Override this function to do logging during the validation phase.
 
@@ -252,12 +262,20 @@ class TrainMixin(
     def log_state_timers(self, state: State) -> None:
         timer = self.state_timers[state.phase]
         timer.step(state)
-        for ns, d in timer.log_dict().items():
-            for k, v in d.items():
-                self.logger.log_scalar(k, v, namespace=ns)
+        for k, v in timer.log_dict().items():
+            if isinstance(v, tuple):
+                v, secondary = v
+            else:
+                secondary = False
+            self.logger.log_scalar(k, v, namespace="⌛ timers", secondary=secondary)
 
     def log_step(
-        self, model: PyTree, batch: Batch, output: Output, metrics: FrozenDict[str, Array], state: State
+        self,
+        model: PyTree,
+        batch: Batch,
+        output: Output,
+        metrics: FrozenDict[str, Array],
+        state: State,
     ) -> None:
         phase = state.phase
 

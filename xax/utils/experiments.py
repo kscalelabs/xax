@@ -114,27 +114,14 @@ class StateTimer:
         self.sample_timer.step(state.num_samples if state.phase == "train" else state.num_valid_samples, cur_time)
         self.iter_timer.step(cur_time)
 
-    def log_dict(self) -> dict[str, dict[str, int | float]]:
-        logs: dict[str, dict[str, int | float]] = {}
-
-        # Logs step statistics.
-        logs["⌛ steps"] = {
-            "total": self.step_timer.steps,
-            "per-second": self.step_timer.steps_per_second,
+    def log_dict(self) -> dict[str, int | float | tuple[int | float, bool]]:
+        return {
+            "steps": (self.step_timer.steps, True),
+            "steps/second": self.step_timer.steps_per_second,
+            "samples": (self.sample_timer.steps, True),
+            "samples/second": (self.sample_timer.steps_per_second, True),
+            "dt": self.iter_timer.iter_seconds,
         }
-
-        # Logs sample statistics.
-        logs["⌛ samples"] = {
-            "total": self.sample_timer.steps,
-            "per-second": self.sample_timer.steps_per_second,
-        }
-
-        # Logs full iteration statistics.
-        logs["⌛ dt"] = {
-            "iter": self.iter_timer.iter_seconds,
-        }
-
-        return logs
 
 
 class IntervalTicker:
