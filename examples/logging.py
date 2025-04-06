@@ -8,7 +8,6 @@ import equinox as eqx
 import jax
 import numpy as np
 import optax
-from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, PRNGKeyArray
 
 import xax

@@ -11,7 +11,6 @@ from typing import Any, Literal, TypedDict
 
 import numpy as np
 import PIL.Image
-from jax._src.core import ClosedJaxpr
 from PIL.Image import Image as PILImage
 from tensorboard.compat.proto.config_pb2 import RunMetadata
 from tensorboard.compat.proto.event_pb2 import Event, TaggedRunMetadata

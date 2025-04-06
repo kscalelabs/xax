@@ -34,7 +34,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax._src.core import ClosedJaxpr
-from jaxlib.xla_extension import XlaComputation
 from jaxtyping import Array
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as PILImage

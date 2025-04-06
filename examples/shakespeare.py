@@ -292,6 +292,7 @@ class ShakespearePrediction(xax.Task[Config]):
 
         Args:
             phase: The phase of the data iterator to return.
+            key: The PRNG key to use for the data iterator.
 
         Returns:
             An iterator over batches of tokenized Shakespeare text, with
