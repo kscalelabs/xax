@@ -287,7 +287,7 @@ class ShakespearePrediction(xax.Task[Config]):
         self.logger.log_string("prompt", "".join([self.ds.id_to_token[int(token)] for token in prompt_seq]))
         self.logger.log_string("generated_output", generated_words)
 
-    def get_data_iterator(self, phase: xax.Phase) -> Iterator[tuple[Array, Array]]:
+    def get_data_iterator(self, phase: xax.Phase, key: PRNGKeyArray) -> Iterator[tuple[Array, Array]]:
         """Returns an iterator over batches of tokenized Shakespeare text.
 
         Args:
@@ -306,7 +306,6 @@ class ShakespearePrediction(xax.Task[Config]):
             token_ids = self.token_ids[int(0.95 * len(self.token_ids)) :]
         n_tokens = token_ids.shape[0]
 
-        key = jax.random.PRNGKey(0)
         while True:
             key, subkey = jax.random.split(key)
             # Sample starting indices for each sequence in the batch.

@@ -2,21 +2,29 @@
 
 import functools
 import io
+import json
 import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 import numpy as np
 import PIL.Image
+from jax._src.core import ClosedJaxpr
 from PIL.Image import Image as PILImage
 from tensorboard.compat.proto.config_pb2 import RunMetadata
 from tensorboard.compat.proto.event_pb2 import Event, TaggedRunMetadata
 from tensorboard.compat.proto.graph_pb2 import GraphDef
-from tensorboard.compat.proto.summary_pb2 import HistogramProto, Summary, SummaryMetadata
+from tensorboard.compat.proto.summary_pb2 import (
+    HistogramProto,
+    Summary,
+    SummaryMetadata,
+)
 from tensorboard.compat.proto.tensor_pb2 import TensorProto
 from tensorboard.compat.proto.tensor_shape_pb2 import TensorShapeProto
+from tensorboard.plugins.mesh import metadata as mesh_metadata
+from tensorboard.plugins.mesh.plugin_data_pb2 import MeshPluginData
 from tensorboard.plugins.text.plugin_data_pb2 import TextPluginData
 from tensorboard.summary.writer.event_file_writer import EventFileWriter
 
@@ -82,6 +90,67 @@ def make_histogram(values: np.ndarray, bins: str | np.ndarray, max_bins: int | N
         bucket_limit=limits.tolist(),
         bucket=counts.tolist(),
     )
+
+
+def _get_json_config(config_dict: dict[str, Any] | None) -> str:
+    json_config = "{}"
+    if config_dict is not None:
+        json_config = json.dumps(config_dict, sort_keys=True)
+    return json_config
+
+
+def make_mesh_summary(
+    tag: str,
+    vertices: np.ndarray,
+    colors: np.ndarray | None,
+    faces: np.ndarray | None,
+    config_dict: dict[str, Any] | None,
+    display_name: str | None = None,
+    description: str | None = None,
+) -> Summary:
+    json_config = _get_json_config(config_dict)
+
+    summaries = []
+    tensors = [
+        (vertices, MeshPluginData.VERTEX),
+        (faces, MeshPluginData.FACE),
+        (colors, MeshPluginData.COLOR),
+    ]
+    tensors = [tensor for tensor in tensors if tensor[0] is not None]
+    components = mesh_metadata.get_components_bitmask([content_type for (tensor, content_type) in tensors])
+
+    for tensor, content_type in tensors:
+        tensor_metadata = mesh_metadata.create_summary_metadata(
+            tag,
+            display_name,
+            content_type,
+            components,
+            tensor.shape,
+            description,
+            json_config=json_config,
+        )
+
+        tensor = TensorProto(
+            dtype="DT_FLOAT",
+            float_val=tensor.reshape(-1).tolist(),
+            tensor_shape=TensorShapeProto(
+                dim=[
+                    TensorShapeProto.Dim(size=tensor.shape[0]),
+                    TensorShapeProto.Dim(size=tensor.shape[1]),
+                    TensorShapeProto.Dim(size=tensor.shape[2]),
+                ]
+            ),
+        )
+
+        tensor_summary = Summary.Value(
+            tag=mesh_metadata.get_instance_name(tag, content_type),
+            tensor=tensor,
+            metadata=tensor_metadata,
+        )
+
+        summaries.append(tensor_summary)
+
+    return Summary(value=summaries)
 
 
 class TensorboardProtobufWriter:
@@ -463,6 +532,22 @@ class TensorboardWriter:
             sum_squares=weighted_sum_squares,
             bucket_limits=bin_edges[1:].tolist(),  # TensorBoard expects right bin edges
             bucket_counts=bucket_counts.tolist(),
+            global_step=global_step,
+            walltime=walltime,
+        )
+
+    def add_mesh(
+        self,
+        tag: str,
+        vertices: np.ndarray,
+        colors: np.ndarray | None,
+        faces: np.ndarray | None,
+        config_dict: dict[str, Any] | None,
+        global_step: int | None = None,
+        walltime: float | None = None,
+    ) -> None:
+        self.pb_writer.add_summary(
+            make_mesh_summary(tag, vertices, colors, faces, config_dict),
             global_step=global_step,
             walltime=walltime,
         )

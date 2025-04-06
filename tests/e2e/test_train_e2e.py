@@ -63,9 +63,7 @@ class SimpleTask(xax.Task[SimpleConfig]):
         _, y = batch
         return -jnp.mean(jnp.sum(output * y, axis=-1))
 
-    def get_data_iterator(self, phase: xax.Phase) -> Iterator[Tuple[Array, Array]]:
-        key = jax.random.PRNGKey(0)
-
+    def get_data_iterator(self, phase: xax.Phase, key: PRNGKeyArray) -> Iterator[Tuple[Array, Array]]:
         while True:
             key, batch_key = jax.random.split(key)
             x = jax.random.normal(batch_key, (self.config.batch_size, 4))
