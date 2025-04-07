@@ -79,7 +79,7 @@ class BaseTask(Generic[Config]):
     def on_training_end(self, state: State) -> State:
         return state
 
-    def on_after_checkpoint_save(self, ckpt_path: Path, state: State) -> State:
+    def on_after_checkpoint_save(self, ckpt_path: Path, state: State | None) -> State | None:
         return state
 
     @functools.cached_property
