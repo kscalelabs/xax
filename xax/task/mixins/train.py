@@ -353,7 +353,11 @@ class TrainMixin(
             if not load_optimizer:
                 return model, state
 
-            optimizer = self.load_checkpoint(init_ckpt_path, part="opt")
+            # Loads the optimizer.
+            optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
+            optimizer = self.load_checkpoint(init_ckpt_path, part="opt", optimizer_template=optimizer_spec)
+
+            # Loads the optimizer state.
             opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
             opt_state = self.load_checkpoint(init_ckpt_path, part="opt_state", opt_state_template=opt_state_spec)
 

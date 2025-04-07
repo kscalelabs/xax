@@ -4,11 +4,11 @@ import io
 import json
 import logging
 import tarfile
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Generic, Literal, TypeVar, cast, overload
 
-import cloudpickle
 import equinox as eqx
 import jax
 import optax
@@ -93,6 +93,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         *,
         part: Literal["all"],
         model_template: PyTree,
+        optimizer_template: PyTree,
         opt_state_template: PyTree,
     ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
 
@@ -120,6 +121,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         path: Path,
         *,
         part: Literal["opt"],
+        optimizer_template: PyTree,
     ) -> optax.GradientTransformation: ...
 
     @overload
@@ -153,6 +155,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         *,
         part: CheckpointPart = "all",
         model_template: PyTree | None = None,
+        optimizer_template: PyTree | None = None,
         opt_state_template: PyTree | None = None,
     ) -> (
         tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]
@@ -169,12 +172,13 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             path: Path to the checkpoint directory
             part: Which part of the checkpoint to load
             model_template: Template model with correct structure but uninitialized weights
+            optimizer_template: Template optimizer with correct structure but uninitialized weights
             opt_state_template: Template optimizer state with correct structure but uninitialized weights
 
         Returns:
             The requested checkpoint components
         """
-        with tarfile.open(path, "r:gz") as tar:
+        with tarfile.open(path, "r:gz") as tar, tempfile.TemporaryDirectory() as tempdir:
 
             def get_model() -> PyTree:
                 if model_template is None:
@@ -182,15 +186,21 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 if (model := tar.extractfile("model.eqx")) is None:
                     raise ValueError(f"Checkpoint does not contain a model file: {path}")
                 # Create a temporary file to store the model data
-                with Path("temp_model.eqx").open("wb") as f:
+                with (Path(tempdir) / "model.eqx").open("wb") as f:
                     f.write(model.read())
                 # Use Equinox to deserialize the model
-                return eqx.tree_deserialise_leaves("temp_model.eqx", model_template)
+                return eqx.tree_deserialise_leaves(Path(tempdir) / "model.eqx", model_template)
 
             def get_opt() -> optax.GradientTransformation:
-                if (opt := tar.extractfile("optimizer.pkl")) is None:
+                if optimizer_template is None:
+                    raise ValueError("optimizer_template must be provided to load optimizer")
+                if (opt := tar.extractfile("optimizer.eqx")) is None:
                     raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
-                return cloudpickle.loads(opt.read())
+                # Create a temporary file to store the optimizer data
+                with (Path(tempdir) / "optimizer.eqx").open("wb") as f:
+                    f.write(opt.read())
+                # Use Equinox to deserialize the optimizer
+                return eqx.tree_deserialise_leaves(Path(tempdir) / "optimizer.eqx", optimizer_template)
 
             def get_opt_state() -> optax.OptState:
                 if opt_state_template is None:
@@ -198,9 +208,9 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 if (opt_state := tar.extractfile("opt_state.eqx")) is None:
                     raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
                 # Create a temporary file to store the optimizer state data
-                with Path("temp_opt_state.eqx").open("wb") as f:
+                with (Path(tempdir) / "opt_state.eqx").open("wb") as f:
                     f.write(opt_state.read())
-                return eqx.tree_deserialise_leaves("temp_opt_state.eqx", opt_state_template)
+                return eqx.tree_deserialise_leaves(Path(tempdir) / "opt_state.eqx", opt_state_template)
 
             def get_state() -> State:
                 if (state := tar.extractfile("state")) is None:
@@ -264,22 +274,21 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 base_ckpt.unlink()
 
         # Save the checkpoint components
-        with tarfile.open(ckpt_path, "w:gz") as tar:
+        with tarfile.open(ckpt_path, "w:gz") as tar, tempfile.TemporaryDirectory() as tempdir:
             # Save model using Equinox
-            eqx.tree_serialise_leaves("temp_model.eqx", model)
-            tar.add("temp_model.eqx", "model.eqx")
-            Path("temp_model.eqx").unlink()
+            eqx.tree_serialise_leaves(Path(tempdir) / "model.eqx", model)
+            tar.add(Path(tempdir) / "model.eqx", "model.eqx")
+            (Path(tempdir) / "model.eqx").unlink()
 
             # Save optimizer using cloudpickle
-            optimizer_bytes = cloudpickle.dumps(optimizer)
-            info = tarfile.TarInfo(name="optimizer.pkl")
-            info.size = len(optimizer_bytes)
-            tar.addfile(info, io.BytesIO(optimizer_bytes))
+            eqx.tree_serialise_leaves(Path(tempdir) / "optimizer.eqx", optimizer)
+            tar.add(Path(tempdir) / "optimizer.eqx", "optimizer.eqx")
+            (Path(tempdir) / "optimizer.eqx").unlink()
 
             # Save optimizer state using Equinox
-            eqx.tree_serialise_leaves("temp_opt_state.eqx", opt_state)
-            tar.add("temp_opt_state.eqx", "opt_state.eqx")
-            Path("temp_opt_state.eqx").unlink()
+            eqx.tree_serialise_leaves(Path(tempdir) / "opt_state.eqx", opt_state)
+            tar.add(Path(tempdir) / "opt_state.eqx", "opt_state.eqx")
+            (Path(tempdir) / "opt_state.eqx").unlink()
 
             # Save state and config as JSON
             def add_file(name: str, data: bytes) -> None:  # noqa: ANN401
