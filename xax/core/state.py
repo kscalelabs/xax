@@ -12,6 +12,14 @@ from xax.core.conf import field
 Phase = Literal["train", "valid"]
 
 
+def _phase_to_int(phase: Phase) -> int:
+    return {"train": 0, "valid": 1}[phase]
+
+
+def _int_to_phase(i: int) -> Phase:
+    return cast(Phase, ["train", "valid"][i])
+
+
 class StateDict(TypedDict, total=False):
     num_steps: NotRequired[int]
     num_samples: NotRequired[int]
@@ -35,7 +43,7 @@ class State:
 
     @property
     def phase(self) -> Phase:
-        return cast(Phase, ["train", "valid"][self._phase])
+        return _int_to_phase(self._phase)
 
     @classmethod
     def init_state(cls) -> "State":
@@ -74,3 +82,20 @@ class State:
                 case _:
                     raise ValueError(f"Invalid phase: {phase}")
         return State(**{**asdict(self), **kwargs, **extra_kwargs})
+
+    def to_dict(self) -> dict[str, int | float | str]:
+        return {
+            "num_steps": int(self.num_steps),
+            "num_samples": int(self.num_samples),
+            "num_valid_steps": int(self.num_valid_steps),
+            "num_valid_samples": int(self.num_valid_samples),
+            "start_time_s": float(self.start_time_s),
+            "elapsed_time_s": float(self.elapsed_time_s),
+            "phase": str(self.phase),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, int | float | str]) -> "State":
+        if "phase" in d:
+            d["_phase"] = _phase_to_int(cast(Phase, d.pop("phase")))
+        return cls(**d)  # type: ignore[arg-type]

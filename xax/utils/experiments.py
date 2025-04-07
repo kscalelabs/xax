@@ -25,7 +25,7 @@ import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Iterator, Self, TypeVar, cast
+from typing import Any, Iterator, Mapping, Self, Sequence, TypeVar, cast
 from urllib.parse import urlparse
 
 import git
@@ -203,8 +203,8 @@ class MinGradScaleError(TrainingFinishedError):
 
 
 def diff_configs(
-    first: ListConfig | DictConfig,
-    second: ListConfig | DictConfig,
+    first: Mapping | Sequence,
+    second: Mapping | Sequence,
     prefix: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """Returns the difference between two configs.
@@ -231,7 +231,7 @@ def diff_configs(
 
     any_config = (ListConfig, DictConfig)
 
-    if isinstance(first, DictConfig) and isinstance(second, DictConfig):
+    if isinstance(first, Mapping) and isinstance(second, Mapping):
         first_keys, second_keys = cast(set[str], set(first.keys())), cast(set[str], set(second.keys()))
 
         # Gets the new keys in each config.
@@ -241,11 +241,12 @@ def diff_configs(
         # Gets the new sub-keys in each config.
         for key in first_keys.intersection(second_keys):
             sub_prefix = key if prefix is None else f"{prefix}.{key}"
-            if OmegaConf.is_missing(first, key) or OmegaConf.is_missing(second, key):
-                if not OmegaConf.is_missing(first, key):
-                    new_first += [get_diff_string(sub_prefix, first[key])]
-                if not OmegaConf.is_missing(second, key):
-                    new_second += [get_diff_string(sub_prefix, second[key])]
+            if isinstance(first, DictConfig) and isinstance(second, DictConfig):
+                if OmegaConf.is_missing(first, key) or OmegaConf.is_missing(second, key):
+                    if not OmegaConf.is_missing(first, key):
+                        new_first += [get_diff_string(sub_prefix, first[key])]
+                    if not OmegaConf.is_missing(second, key):
+                        new_second += [get_diff_string(sub_prefix, second[key])]
             elif isinstance(first[key], any_config) and isinstance(second[key], any_config):
                 sub_new_first, sub_new_second = diff_configs(first[key], second[key], prefix=sub_prefix)
                 new_first, new_second = new_first + sub_new_first, new_second + sub_new_second
@@ -254,7 +255,7 @@ def diff_configs(
                 new_first += [get_diff_string(sub_prefix, first_val)]
                 new_second += [get_diff_string(sub_prefix, second_val)]
 
-    elif isinstance(first, ListConfig) and isinstance(second, ListConfig):
+    elif isinstance(first, Sequence) and isinstance(second, Sequence):
         if len(first) > len(second):
             for i in range(len(second), len(first)):
                 new_first += [get_diff_string(prefix, first[i])]

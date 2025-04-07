@@ -2,16 +2,16 @@
 
 # Core ML/JAX dependencies
 attrs
+chex
+dpshdl
+equinox
+importlib-resources
 jax
 jaxtyping
-equinox
 optax
-dpshdl
-chex
-importlib-resources
+orbax-checkpoint
 
 # Data processing and serialization
-cloudpickle
 pillow
 
 # Configuration and project management
