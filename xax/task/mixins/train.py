@@ -11,7 +11,7 @@ import textwrap
 import time
 import traceback
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from threading import Thread
 from typing import (
     Any,
@@ -33,7 +33,6 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from jaxtyping import Array, PRNGKeyArray, PyTree
-from omegaconf import DictConfig
 
 from xax.core.conf import field
 from xax.core.state import Phase, State
@@ -341,19 +340,28 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            if load_optimizer:
-                model, optimizer, opt_state, state, config = self.load_checkpoint(init_ckpt_path)
-                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
-                if config_diff:
-                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
-                return model, optimizer, opt_state, state
+            model_spec = eqx.filter_eval_shape(self.get_model, key)
+            model, state, config = self.load_checkpoint(
+                init_ckpt_path,
+                part="model_state_config",
+                model_template=model_spec,
+            )
+            config_diff = get_diff_string(diff_configs(asdict(config), asdict(self.config)))
+            if config_diff:
+                logger.warning("Loaded config differs from current config:\n%s", config_diff)
 
-            else:
-                model, state, config = self.load_checkpoint(init_ckpt_path, "model_state_config")
-                config_diff = get_diff_string(diff_configs(config, cast(DictConfig, self.config)))
-                if config_diff:
-                    logger.warning("Loaded config differs from current config:\n%s", config_diff)
+            if not load_optimizer:
                 return model, state
+
+            # Loads the optimizer.
+            optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
+            optimizer = self.load_checkpoint(init_ckpt_path, part="opt", optimizer_template=optimizer_spec)
+
+            # Loads the optimizer state.
+            opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
+            opt_state = self.load_checkpoint(init_ckpt_path, part="opt_state", opt_state_template=opt_state_spec)
+
+            return model, optimizer, opt_state, state
 
         logger.info("No checkpoint found. Initializing a new model.")
         model = self.get_model(key)
