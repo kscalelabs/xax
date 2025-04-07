@@ -369,6 +369,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         euler_to_quat,
         get_projected_gravity_vector_from_quat,
         quat_to_euler,
+        quat_to_rotmat,
         rotate_vector_by_quat,
     )
     from xax.nn.losses import cross_entropy

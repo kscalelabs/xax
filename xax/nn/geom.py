@@ -177,3 +177,36 @@ def cubic_bezier_interpolation(y_start: Array, y_end: Array, x: Array) -> Array:
     y_diff = y_end - y_start
     bezier = x**3 + 3 * (x**2 * (1 - x))
     return y_start + y_diff * bezier
+
+
+def quat_to_rotmat(quat: Array, eps: float = 1e-6) -> Array:
+    """Converts a quaternion to a rotation matrix.
+
+    Args:
+        quat: The quaternion to convert, shape (*, 4).
+
+    Returns:
+        The rotation matrix, shape (*, 3, 3).
+    """
+    quat = quat / (jnp.linalg.norm(quat, axis=-1, keepdims=True) + eps)
+    w, x, y, z = jnp.split(quat, 4, axis=-1)
+
+    xx = 1 - 2 * (y * y + z * z)
+    xy = 2 * (x * y - z * w)
+    xz = 2 * (x * z + y * w)
+    yx = 2 * (x * y + z * w)
+    yy = 1 - 2 * (x * x + z * z)
+    yz = 2 * (y * z - x * w)
+    zx = 2 * (x * z - y * w)
+    zy = 2 * (y * z + x * w)
+    zz = 1 - 2 * (x * x + y * y)
+
+    # Corrected stacking: row-major order
+    return jnp.concatenate(
+        [
+            jnp.concatenate([xx, xy, xz], axis=-1)[..., None, :],
+            jnp.concatenate([yx, yy, yz], axis=-1)[..., None, :],
+            jnp.concatenate([zx, zy, zz], axis=-1)[..., None, :],
+        ],
+        axis=-2,
+    )
