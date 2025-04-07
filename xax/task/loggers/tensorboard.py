@@ -216,6 +216,19 @@ class TensorboardLogger(LoggerImpl):
                     video_value.frames,
                     fps=video_value.fps,
                     global_step=line.state.num_steps,
+                    walltime=walltime,
+                )
+
+        for namespace, meshes in line.meshes.items():
+            for mesh_key, mesh_value in meshes.items():
+                writer.add_mesh(
+                    f"{namespace}/{mesh_key}",
+                    vertices=mesh_value.vertices,
+                    faces=mesh_value.faces,
+                    colors=mesh_value.colors,
+                    config_dict=mesh_value.config_dict,
+                    global_step=line.state.num_steps,
+                    walltime=walltime,
                 )
 
         for name, contents in self.files.items():
