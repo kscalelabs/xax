@@ -355,6 +355,7 @@ class TrainMixin(
                     logger.warning("Loaded config differs from current config:\n%s", config_diff)
                 return model, state
 
+        logger.info("No checkpoint found. Initializing a new model.")
         model = self.get_model(key)
         state = State.init_state()
 
