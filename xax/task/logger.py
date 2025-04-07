@@ -205,7 +205,10 @@ def tile_images(images: list[PILImage], sep: int = 0) -> PILImage:
     return tiled
 
 
-def as_numpy(array: Array) -> np.ndarray:
+def as_numpy(array: Array | np.ndarray) -> np.ndarray:
+    """Convert a JAX array or numpy array to numpy array."""
+    if isinstance(array, np.ndarray):
+        return array
     array = jax.device_get(array)
     if jax.dtypes.issubdtype(array.dtype, jnp.floating):
         array = array.astype(jnp.float32)
@@ -216,7 +219,8 @@ def as_numpy(array: Array) -> np.ndarray:
     return np.array(array)
 
 
-def as_numpy_opt(array: Array | None) -> np.ndarray | None:
+def as_numpy_opt(array: Array | np.ndarray | None) -> np.ndarray | None:
+    """Convert an optional JAX array or numpy array to numpy array."""
     if array is None:
         return None
     return as_numpy(array)
@@ -1102,39 +1106,45 @@ class Logger:
         @functools.lru_cache(maxsize=None)
         def mesh_future() -> LogMesh:
             with ContextTimer() as timer:
-                vertices_np = as_numpy(vertices() if callable(vertices) else vertices)
-                colors_np = as_numpy_opt(colors() if callable(colors) else colors)
-                faces_np = as_numpy_opt(faces() if callable(faces) else faces)
+                # Get the raw values
+                vertices_val = vertices() if callable(vertices) else vertices
+                colors_val = colors() if callable(colors) else colors
+                faces_val = faces() if callable(faces) else faces
 
-            # Checks vertices shape.
-            if vertices_np.ndim == 2:
-                vertices_np = vertices_np[None]
-            if vertices_np.shape[-1] != 3 or vertices_np.ndim != 3:
-                raise ValueError("Vertices must have shape (N, 3) or (B, N, 3)")
+                # Convert to numpy arrays with proper type handling
+                vertices_np = as_numpy(vertices_val)
+                colors_np = as_numpy_opt(colors_val)
+                faces_np = as_numpy_opt(faces_val)
 
-            # Checks colors shape.
-            if colors_np is not None:
-                if colors_np.ndim == 2:
-                    colors_np = colors_np[None]
-                if colors_np.shape[-1] != 3 or colors_np.ndim != 3:
-                    raise ValueError("Colors must have shape (N, 3) or (B, N, 3)")
+                # Checks vertices shape.
+                if vertices_np.ndim == 2:
+                    vertices_np = vertices_np[None]
+                if vertices_np.shape[-1] != 3 or vertices_np.ndim != 3:
+                    raise ValueError("Vertices must have shape (N, 3) or (B, N, 3)")
 
-            # Checks faces shape.
-            if faces_np is not None:
-                if faces_np.ndim == 2:
-                    faces_np = faces_np[None]
-                if faces_np.shape[-1] != 3 or faces_np.ndim != 3:
-                    raise ValueError("Faces must have shape (N, 3) or (B, N, 3)")
+                # Checks colors shape.
+                if colors_np is not None:
+                    if colors_np.ndim == 2:
+                        colors_np = colors_np[None]
+                    if colors_np.shape[-1] != 3 or colors_np.ndim != 3:
+                        raise ValueError("Colors must have shape (N, 3) or (B, N, 3)")
 
-            # Ensures colors dtype is uint8.
-            if colors_np is not None:
-                if colors_np.dtype != np.uint8:
-                    colors_np = (colors_np * 255).astype(np.uint8)
+                # Checks faces shape.
+                if faces_np is not None:
+                    if faces_np.ndim == 2:
+                        faces_np = faces_np[None]
+                    if faces_np.shape[-1] != 3 or faces_np.ndim != 3:
+                        raise ValueError("Faces must have shape (N, 3) or (B, N, 3)")
 
-            # Ensures faces dtype is int32.
-            if faces_np is not None:
-                if faces_np.dtype != np.int32:
-                    faces_np = faces_np.astype(np.int32)
+                # Ensures colors dtype is uint8.
+                if colors_np is not None:
+                    if colors_np.dtype != np.uint8:
+                        colors_np = (colors_np * 255).astype(np.uint8)
+
+                # Ensures faces dtype is int32.
+                if faces_np is not None:
+                    if faces_np.dtype != np.int32:
+                        faces_np = faces_np.astype(np.int32)
 
             logger.debug("Mesh Key: %s, Time: %s", key, timer.elapsed_time)
             return LogMesh(

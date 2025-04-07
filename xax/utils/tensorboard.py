@@ -523,6 +523,9 @@ class TensorboardWriter:
         weighted_sum = float((bin_centers * bucket_counts).sum())
         weighted_sum_squares = float((bin_centers**2 * bucket_counts).sum())
 
+        # Convert bin edges to list of floats explicitly
+        bucket_limits: list[float | np.ndarray] = [float(x) for x in bin_edges[1:]]
+
         self.add_histogram_raw(
             tag=tag,
             min=float(bin_edges[0]),
@@ -530,7 +533,7 @@ class TensorboardWriter:
             num=int(total_counts),
             sum=weighted_sum,
             sum_squares=weighted_sum_squares,
-            bucket_limits=bin_edges[1:].tolist(),  # TensorBoard expects right bin edges
+            bucket_limits=bucket_limits,  # Now properly typed
             bucket_counts=bucket_counts.tolist(),
             global_step=global_step,
             walltime=walltime,
