@@ -363,7 +363,7 @@ class TrainMixin(
 
             return model, optimizer, opt_state, state
 
-        logger.info("No checkpoint found. Initializing a new model.")
+        logger.info("Starting a new training run")
         model = self.get_model(key)
         state = State.init_state()
 
