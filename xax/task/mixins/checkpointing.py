@@ -90,14 +90,14 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         self,
         path: Path,
         part: Literal["all"] = "all",
-    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]: ...
+    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
 
     @overload
     def load_checkpoint(
         self,
         path: Path,
         part: Literal["model_state_config"] = "model_state_config",
-    ) -> tuple[PyTree, State, DictConfig]: ...
+    ) -> tuple[PyTree, State, Config]: ...
 
     @overload
     def load_checkpoint(
@@ -132,20 +132,20 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         self,
         path: Path,
         part: Literal["config"],
-    ) -> DictConfig: ...
+    ) -> Config: ...
 
     def load_checkpoint(
         self,
         path: Path,
         part: CheckpointPart = "all",
     ) -> (
-        tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]
-        | tuple[PyTree, State, DictConfig]
+        tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]
+        | tuple[PyTree, State, Config]
         | PyTree
         | optax.GradientTransformation
         | optax.OptState
         | State
-        | DictConfig
+        | Config
     ):
         with tarfile.open(path, "r:gz") as tar:
 
@@ -169,10 +169,10 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                     raise ValueError(f"Checkpoint does not contain a state file: {path}")
                 return State(**json.loads(state.read().decode()))
 
-            def get_config() -> DictConfig:
+            def get_config() -> Config:
                 if (config := tar.extractfile("config")) is None:
                     raise ValueError(f"Checkpoint does not contain a config file: {path}")
-                return cast(DictConfig, OmegaConf.load(config))
+                return self.get_config(cast(DictConfig, OmegaConf.load(config)))
 
             match part:
                 case "model":
