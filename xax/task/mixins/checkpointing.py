@@ -233,6 +233,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         model: PyTree | None = None,
         optimizer: optax.GradientTransformation | None = None,
         opt_state: optax.OptState | None = None,
+        aux_data: PyTree | None = None,
         state: State | None = None,
     ) -> Path:
         """Save a checkpoint.
@@ -241,6 +242,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             model: The model to save
             state: The current training state
             optimizer: The optimizer to save
+            aux_data: Additional data to save
             opt_state: The optimizer state to save
 
         Returns:
@@ -276,7 +278,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                     eqx.tree_serialise_leaves(buf, model)
                     add_file("model", buf)
 
-            # Save optimizer using cloudpickle
+            # Save optimizer using Equinox
             if optimizer is not None:
                 with io.BytesIO() as buf:
                     eqx.tree_serialise_leaves(buf, optimizer)
@@ -287,6 +289,12 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 with io.BytesIO() as buf:
                     eqx.tree_serialise_leaves(buf, opt_state)
                     add_file("opt_state", buf)
+
+            # Save aux data using Equinox.
+            if aux_data is not None:
+                with io.BytesIO() as buf:
+                    eqx.tree_serialise_leaves(buf, aux_data)
+                    add_file("aux_data", buf)
 
             # Save state and config as JSON
             def add_file_bytes(name: str, data: bytes) -> None:  # noqa: ANN401

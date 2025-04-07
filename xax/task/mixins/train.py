@@ -638,11 +638,11 @@ class TrainMixin(
 
             if self.should_checkpoint(state):
                 model = eqx.combine(model_arr, model_static)
-                self.save_checkpoint(model, optimizer, opt_state, state)
+                self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
         # After finishing training, save the final checkpoint.
         model = eqx.combine(model_arr, model_static)
-        self.save_checkpoint(model, optimizer, opt_state, state)
+        self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
     @contextlib.contextmanager
     def get_train_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
@@ -710,7 +710,7 @@ class TrainMixin(
             state = self.on_training_start(state)
 
             def on_exit() -> None:
-                self.save_checkpoint(model, optimizer, opt_state, state)
+                self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
             # Handle user-defined interrupts during the training loop.
             self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
@@ -733,7 +733,7 @@ class TrainMixin(
                             f"Finished training after {state.num_steps} steps, {state.num_samples} samples",
                             important=True,
                         )
-                    self.save_checkpoint(model, optimizer, opt_state, state)
+                    self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
                 except (KeyboardInterrupt, bdb.BdbQuit):
                     if is_master():
@@ -743,7 +743,7 @@ class TrainMixin(
                     exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
                     sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
                     sys.stdout.flush()
-                    self.save_checkpoint(model, optimizer, opt_state, state)
+                    self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
                 finally:
                     state = self.on_training_end(state)
