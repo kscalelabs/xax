@@ -1,16 +1,14 @@
 """Defines a mixin for handling model checkpointing."""
 
-import io
 import json
 import logging
-import tarfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Literal, TypeVar, cast, overload
+from typing import Generic, Literal, TypeVar, cast, overload
 
-import cloudpickle
 import jax
 import optax
+import orbax.checkpoint as ocp
 from jaxtyping import PyTree
 from omegaconf import DictConfig, OmegaConf
 
@@ -147,50 +145,52 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         | State
         | Config
     ):
-        with tarfile.open(path, "r:gz") as tar:
+        checkpointer = ocp.Checkpointer(ocp.CompositeCheckpointHandler())
 
-            def get_model() -> PyTree:
-                if (model := tar.extractfile("model")) is None:
-                    raise ValueError(f"Checkpoint does not contain a model file: {path}")
-                return cloudpickle.load(model)
+        breakpoint()
 
-            def get_opt() -> optax.GradientTransformation:
-                if (opt := tar.extractfile("opt")) is None:
-                    raise ValueError(f"Checkpoint does not contain an opt file: {path}")
-                return cloudpickle.load(opt)
+        def get_model() -> PyTree:
+            if (model := tar.extractfile("model")) is None:
+                raise ValueError(f"Checkpoint does not contain a model file: {path}")
+            return cloudpickle.load(model)
 
-            def get_opt_state() -> optax.OptState:
-                if (opt_state := tar.extractfile("opt_state")) is None:
-                    raise ValueError(f"Checkpoint does not contain an opt_state file: {path}")
-                return cloudpickle.load(opt_state)
+        def get_opt() -> optax.GradientTransformation:
+            if (opt := tar.extractfile("opt")) is None:
+                raise ValueError(f"Checkpoint does not contain an opt file: {path}")
+            return cloudpickle.load(opt)
 
-            def get_state() -> State:
-                if (state := tar.extractfile("state")) is None:
-                    raise ValueError(f"Checkpoint does not contain a state file: {path}")
-                return State(**json.loads(state.read().decode()))
+        def get_opt_state() -> optax.OptState:
+            if (opt_state := tar.extractfile("opt_state")) is None:
+                raise ValueError(f"Checkpoint does not contain an opt_state file: {path}")
+            return cloudpickle.load(opt_state)
 
-            def get_config() -> Config:
-                if (config := tar.extractfile("config")) is None:
-                    raise ValueError(f"Checkpoint does not contain a config file: {path}")
-                return self.get_config(cast(DictConfig, OmegaConf.load(config)))
+        def get_state() -> State:
+            if (state := tar.extractfile("state")) is None:
+                raise ValueError(f"Checkpoint does not contain a state file: {path}")
+            return State(**json.loads(state.read().decode()))
 
-            match part:
-                case "model":
-                    return get_model()
-                case "opt":
-                    return get_opt()
-                case "opt_state":
-                    return get_opt_state()
-                case "state":
-                    return get_state()
-                case "config":
-                    return get_config()
-                case "model_state_config":
-                    return get_model(), get_state(), get_config()
-                case "all":
-                    return get_model(), get_opt(), get_opt_state(), get_state(), get_config()
-                case _:
-                    raise ValueError(f"Invalid checkpoint part: {part}")
+        def get_config() -> Config:
+            if (config := tar.extractfile("config")) is None:
+                raise ValueError(f"Checkpoint does not contain a config file: {path}")
+            return self.get_config(cast(DictConfig, OmegaConf.load(config)))
+
+        match part:
+            case "model":
+                return get_model()
+            case "opt":
+                return get_opt()
+            case "opt_state":
+                return get_opt_state()
+            case "state":
+                return get_state()
+            case "config":
+                return get_config()
+            case "model_state_config":
+                return get_model(), get_state(), get_config()
+            case "all":
+                return get_model(), get_opt(), get_opt_state(), get_state(), get_config()
+            case _:
+                raise ValueError(f"Invalid checkpoint part: {part}")
 
     def save_checkpoint(
         self,
@@ -214,22 +214,18 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             if (base_ckpt := last_ckpt_path.resolve()).is_file():
                 base_ckpt.unlink()
 
-        # Combines all temporary files into a single checkpoint TAR file.
-        with tarfile.open(ckpt_path, "w:gz") as tar:
-
-            def add_file(name: str, write_fn: Callable[[io.BytesIO], Any]) -> None:
-                with io.BytesIO() as buf:
-                    write_fn(buf)
-                    tarinfo = tarfile.TarInfo(name)
-                    tarinfo.size = buf.tell()
-                    buf.seek(0)
-                    tar.addfile(tarinfo, buf)
-
-            add_file("model", lambda buf: cloudpickle.dump(model, buf))
-            add_file("opt", lambda buf: cloudpickle.dump(optimizer, buf))
-            add_file("opt_state", lambda buf: cloudpickle.dump(opt_state, buf))
-            add_file("state", lambda buf: buf.write(json.dumps(asdict(state), indent=2).encode()))
-            add_file("config", lambda buf: buf.write(OmegaConf.to_yaml(self.config).encode()))
+        # Uses Orbax to save the checkpoint.
+        checkpointer = ocp.Checkpointer(ocp.CompositeCheckpointHandler())
+        checkpointer.save(
+            ckpt_path,
+            args=ocp.args.Composite(
+                model=ocp.args.StandardSave(model),
+                # optimizer=ocp.args.StandardSave(optimizer),
+                # opt_state=ocp.args.StandardSave(opt_state),
+                state=ocp.args.JsonSave(state.to_dict()),
+                config=ocp.args.JsonSave(asdict(self.config)),
+            ),
+        )
 
         # Updates the symlink to the new checkpoint.
         last_ckpt_path.unlink(missing_ok=True)
