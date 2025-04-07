@@ -184,6 +184,7 @@ def quat_to_rotmat(quat: Array, eps: float = 1e-6) -> Array:
 
     Args:
         quat: The quaternion to convert, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
 
     Returns:
         The rotation matrix, shape (*, 3, 3).
