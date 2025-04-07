@@ -4,7 +4,6 @@ import io
 import json
 import logging
 import tarfile
-import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Generic, Literal, TypeVar, cast, overload
@@ -178,39 +177,28 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         Returns:
             The requested checkpoint components
         """
-        with tarfile.open(path, "r:gz") as tar, tempfile.TemporaryDirectory() as tempdir:
+        with tarfile.open(path, "r:gz") as tar:
 
             def get_model() -> PyTree:
                 if model_template is None:
                     raise ValueError("model_template must be provided to load model weights")
-                if (model := tar.extractfile("model.eqx")) is None:
+                if (model := tar.extractfile("model")) is None:
                     raise ValueError(f"Checkpoint does not contain a model file: {path}")
-                # Create a temporary file to store the model data
-                with (Path(tempdir) / "model.eqx").open("wb") as f:
-                    f.write(model.read())
-                # Use Equinox to deserialize the model
-                return eqx.tree_deserialise_leaves(Path(tempdir) / "model.eqx", model_template)
+                return eqx.tree_deserialise_leaves(io.BytesIO(model.read()), model_template)
 
             def get_opt() -> optax.GradientTransformation:
                 if optimizer_template is None:
                     raise ValueError("optimizer_template must be provided to load optimizer")
-                if (opt := tar.extractfile("optimizer.eqx")) is None:
+                if (opt := tar.extractfile("optimizer")) is None:
                     raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
-                # Create a temporary file to store the optimizer data
-                with (Path(tempdir) / "optimizer.eqx").open("wb") as f:
-                    f.write(opt.read())
-                # Use Equinox to deserialize the optimizer
-                return eqx.tree_deserialise_leaves(Path(tempdir) / "optimizer.eqx", optimizer_template)
+                return eqx.tree_deserialise_leaves(io.BytesIO(opt.read()), optimizer_template)
 
             def get_opt_state() -> optax.OptState:
                 if opt_state_template is None:
                     raise ValueError("opt_state_template must be provided to load optimizer state")
-                if (opt_state := tar.extractfile("opt_state.eqx")) is None:
+                if (opt_state := tar.extractfile("opt_state")) is None:
                     raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
-                # Create a temporary file to store the optimizer state data
-                with (Path(tempdir) / "opt_state.eqx").open("wb") as f:
-                    f.write(opt_state.read())
-                return eqx.tree_deserialise_leaves(Path(tempdir) / "opt_state.eqx", opt_state_template)
+                return eqx.tree_deserialise_leaves(io.BytesIO(opt_state.read()), opt_state_template)
 
             def get_state() -> State:
                 if (state := tar.extractfile("state")) is None:
@@ -242,18 +230,18 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
 
     def save_checkpoint(
         self,
-        model: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
-        state: State,
+        model: PyTree | None = None,
+        optimizer: optax.GradientTransformation | None = None,
+        opt_state: optax.OptState | None = None,
+        state: State | None = None,
     ) -> Path:
         """Save a checkpoint.
 
         Args:
             model: The model to save
+            state: The current training state
             optimizer: The optimizer to save
             opt_state: The optimizer state to save
-            state: The current training state
 
         Returns:
             Path to the saved checkpoint
@@ -274,30 +262,41 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 base_ckpt.unlink()
 
         # Save the checkpoint components
-        with tarfile.open(ckpt_path, "w:gz") as tar, tempfile.TemporaryDirectory() as tempdir:
+        with tarfile.open(ckpt_path, "w:gz") as tar:
+
+            def add_file(name: str, buf: io.BytesIO) -> None:
+                tarinfo = tarfile.TarInfo(name)
+                tarinfo.size = buf.tell()
+                buf.seek(0)
+                tar.addfile(tarinfo, buf)
+
             # Save model using Equinox
-            eqx.tree_serialise_leaves(Path(tempdir) / "model.eqx", model)
-            tar.add(Path(tempdir) / "model.eqx", "model.eqx")
-            (Path(tempdir) / "model.eqx").unlink()
+            if model is not None:
+                with io.BytesIO() as buf:
+                    eqx.tree_serialise_leaves(buf, model)
+                    add_file("model", buf)
 
             # Save optimizer using cloudpickle
-            eqx.tree_serialise_leaves(Path(tempdir) / "optimizer.eqx", optimizer)
-            tar.add(Path(tempdir) / "optimizer.eqx", "optimizer.eqx")
-            (Path(tempdir) / "optimizer.eqx").unlink()
+            if optimizer is not None:
+                with io.BytesIO() as buf:
+                    eqx.tree_serialise_leaves(buf, optimizer)
+                    add_file("optimizer", buf)
 
             # Save optimizer state using Equinox
-            eqx.tree_serialise_leaves(Path(tempdir) / "opt_state.eqx", opt_state)
-            tar.add(Path(tempdir) / "opt_state.eqx", "opt_state.eqx")
-            (Path(tempdir) / "opt_state.eqx").unlink()
+            if opt_state is not None:
+                with io.BytesIO() as buf:
+                    eqx.tree_serialise_leaves(buf, opt_state)
+                    add_file("opt_state", buf)
 
             # Save state and config as JSON
-            def add_file(name: str, data: bytes) -> None:  # noqa: ANN401
+            def add_file_bytes(name: str, data: bytes) -> None:  # noqa: ANN401
                 info = tarfile.TarInfo(name=name)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
 
-            add_file("state", json.dumps(asdict(state), indent=2).encode())
-            add_file("config", OmegaConf.to_yaml(self.config).encode())
+            if state is not None:
+                add_file_bytes("state", json.dumps(asdict(state), indent=2).encode())
+            add_file_bytes("config", OmegaConf.to_yaml(self.config).encode())
 
         # Updates the symlink to the new checkpoint
         last_ckpt_path.unlink(missing_ok=True)
