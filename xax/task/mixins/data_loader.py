@@ -9,6 +9,7 @@ import jax
 from dpshdl.dataloader import CollatedDataloaderItem, Dataloader
 from dpshdl.dataset import Dataset, ErrorHandlingDataset
 from dpshdl.prefetcher import Prefetcher
+from jaxtyping import PRNGKeyArray
 from omegaconf import II, MISSING
 
 from xax.core.conf import field, is_missing
@@ -103,7 +104,7 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             "or `get_data_iterator` to return an iterator for the given dataset."
         )
 
-    def get_data_iterator(self, phase: Phase) -> Iterator:
+    def get_data_iterator(self, phase: Phase, key: PRNGKeyArray) -> Iterator:
         raise NotImplementedError(
             "You must implement either the `get_dataset` method to return the dataset for the given phase, "
             "or `get_data_iterator` to return an iterator for the given dataset."

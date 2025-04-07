@@ -636,9 +636,9 @@ class TrainMixin(
         self.save_checkpoint(model, optimizer, opt_state, state)
 
     @contextlib.contextmanager
-    def get_train_iterator(self) -> Generator[Iterator[Batch], None, None]:
+    def get_train_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
         try:
-            train_iterator: Iterator[Batch] = self.get_data_iterator("train")
+            train_iterator: Iterator[Batch] = self.get_data_iterator("train", key=key)
             yield train_iterator
             return
         except NotImplementedError:
@@ -655,9 +655,9 @@ class TrainMixin(
             logger.info("Closing train prefetcher")
 
     @contextlib.contextmanager
-    def get_valid_iterator(self) -> Generator[Iterator[Batch], None, None]:
+    def get_valid_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
         try:
-            valid_iterator: Iterator[Batch] = self.get_data_iterator("valid")
+            valid_iterator: Iterator[Batch] = self.get_data_iterator("valid", key=key)
             yield valid_iterator
             return
         except NotImplementedError:
@@ -706,7 +706,8 @@ class TrainMixin(
             # Handle user-defined interrupts during the training loop.
             self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
 
-            with self.get_train_iterator() as train_pf, self.get_valid_iterator() as valid_pf:
+            key, tkey, vkey = jax.random.split(key, 3)
+            with self.get_train_iterator(tkey) as train_pf, self.get_valid_iterator(vkey) as valid_pf:
                 try:
                     self.train_loop(
                         model=model,

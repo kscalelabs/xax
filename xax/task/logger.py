@@ -18,11 +18,22 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Callable, Iterator, Literal, Self, Sequence, TypeVar, cast, get_args
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    Self,
+    Sequence,
+    TypeVar,
+    cast,
+    get_args,
+)
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax._src.core import ClosedJaxpr
 from jaxtyping import Array
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as PILImage
@@ -194,7 +205,10 @@ def tile_images(images: list[PILImage], sep: int = 0) -> PILImage:
     return tiled
 
 
-def as_numpy(array: Array) -> np.ndarray:
+def as_numpy(array: Array | np.ndarray) -> np.ndarray:
+    """Convert a JAX array or numpy array to numpy array."""
+    if isinstance(array, np.ndarray):
+        return array
     array = jax.device_get(array)
     if jax.dtypes.issubdtype(array.dtype, jnp.floating):
         array = array.astype(jnp.float32)
@@ -203,6 +217,13 @@ def as_numpy(array: Array) -> np.ndarray:
     elif jax.dtypes.issubdtype(array.dtype, jnp.bool_):
         array = array.astype(jnp.bool_)
     return np.array(array)
+
+
+def as_numpy_opt(array: Array | np.ndarray | None) -> np.ndarray | None:
+    """Convert an optional JAX array or numpy array to numpy array."""
+    if array is None:
+        return None
+    return as_numpy(array)
 
 
 @dataclass(kw_only=True)
@@ -253,6 +274,19 @@ class LogHistogram:
 
 
 @dataclass(kw_only=True)
+class LogMesh:
+    vertices: np.ndarray
+    colors: np.ndarray | None
+    faces: np.ndarray | None
+    config_dict: dict[str, Any] | None  # noqa: ANN401
+
+
+@dataclass(kw_only=True)
+class LogGraph:
+    computation: ClosedJaxpr
+
+
+@dataclass(kw_only=True)
 class LogLine:
     state: State
     scalars: dict[str, dict[str, LogScalar]]
@@ -261,6 +295,7 @@ class LogLine:
     strings: dict[str, dict[str, LogString]]
     images: dict[str, dict[str, LogImage]]
     videos: dict[str, dict[str, LogVideo]]
+    meshes: dict[str, dict[str, LogMesh]]
 
 
 @dataclass(kw_only=True)
@@ -533,6 +568,7 @@ class Logger:
         self.strings: dict[str, dict[str, Callable[[], LogString]]] = defaultdict(dict)
         self.images: dict[str, dict[str, Callable[[], LogImage]]] = defaultdict(dict)
         self.videos: dict[str, dict[str, Callable[[], LogVideo]]] = defaultdict(dict)
+        self.meshes: dict[str, dict[str, Callable[[], LogMesh]]] = defaultdict(dict)
         self.default_namespace = default_namespace
         self.loggers: list[LoggerImpl] = []
 
@@ -560,6 +596,7 @@ class Logger:
             strings={k: {kk: v() for kk, v in v.items()} for k, v in self.strings.items()},
             images={k: {kk: v() for kk, v in v.items()} for k, v in self.images.items()},
             videos={k: {kk: v() for kk, v in v.items()} for k, v in self.videos.items()},
+            meshes={k: {kk: v() for kk, v in v.items()} for k, v in self.meshes.items()},
         )
 
     def clear(self) -> None:
@@ -569,6 +606,7 @@ class Logger:
         self.strings.clear()
         self.images.clear()
         self.videos.clear()
+        self.meshes.clear()
 
     def write(self, state: State) -> None:
         """Writes the current step's logging information.
@@ -1050,6 +1088,73 @@ class Logger:
             return video
 
         self.videos[namespace][key] = video_future
+
+    def log_mesh(
+        self,
+        key: str,
+        vertices: np.ndarray | Array | Callable[[], np.ndarray | Array],
+        colors: np.ndarray | Array | None | Callable[[], np.ndarray | Array | None] = None,
+        faces: np.ndarray | Array | None | Callable[[], np.ndarray | Array | None] = None,
+        config_dict: dict[str, Any] | None = None,
+        *,
+        namespace: str | None = None,
+    ) -> None:
+        if not self.active:
+            raise RuntimeError("The logger is not active")
+        namespace = self.resolve_namespace(namespace)
+
+        @functools.lru_cache(maxsize=None)
+        def mesh_future() -> LogMesh:
+            with ContextTimer() as timer:
+                # Get the raw values
+                vertices_val = vertices() if callable(vertices) else vertices
+                colors_val = colors() if callable(colors) else colors
+                faces_val = faces() if callable(faces) else faces
+
+                # Convert to numpy arrays with proper type handling
+                vertices_np = as_numpy(vertices_val)
+                colors_np = as_numpy_opt(colors_val)
+                faces_np = as_numpy_opt(faces_val)
+
+                # Checks vertices shape.
+                if vertices_np.ndim == 2:
+                    vertices_np = vertices_np[None]
+                if vertices_np.shape[-1] != 3 or vertices_np.ndim != 3:
+                    raise ValueError("Vertices must have shape (N, 3) or (B, N, 3)")
+
+                # Checks colors shape.
+                if colors_np is not None:
+                    if colors_np.ndim == 2:
+                        colors_np = colors_np[None]
+                    if colors_np.shape[-1] != 3 or colors_np.ndim != 3:
+                        raise ValueError("Colors must have shape (N, 3) or (B, N, 3)")
+
+                # Checks faces shape.
+                if faces_np is not None:
+                    if faces_np.ndim == 2:
+                        faces_np = faces_np[None]
+                    if faces_np.shape[-1] != 3 or faces_np.ndim != 3:
+                        raise ValueError("Faces must have shape (N, 3) or (B, N, 3)")
+
+                # Ensures colors dtype is uint8.
+                if colors_np is not None:
+                    if colors_np.dtype != np.uint8:
+                        colors_np = (colors_np * 255).astype(np.uint8)
+
+                # Ensures faces dtype is int32.
+                if faces_np is not None:
+                    if faces_np.dtype != np.int32:
+                        faces_np = faces_np.astype(np.int32)
+
+            logger.debug("Mesh Key: %s, Time: %s", key, timer.elapsed_time)
+            return LogMesh(
+                vertices=vertices_np,
+                colors=colors_np,
+                faces=faces_np,
+                config_dict=config_dict,
+            )
+
+        self.meshes[namespace][key] = mesh_future
 
     def __enter__(self) -> Self:
         self.active = True
