@@ -1,3 +1,4 @@
+# mypy: disable-error-code="import-not-found"
 """This example demonstrates the logging features of Xax."""
 
 from dataclasses import dataclass
@@ -62,7 +63,7 @@ class LoggingExample(xax.Task[Config]):
         state: xax.State,
     ) -> None:
         # Tests logging a 3D mesh.
-        mesh = trimesh.load(Path(__file__).parent / "assets" / "teapot.stl")
+        mesh = trimesh.load_mesh(Path(__file__).parent / "assets" / "teapot.stl")
         self.logger.log_mesh("test_mesh", vertices=np.array(mesh.vertices), faces=np.array(mesh.faces))
 
     def get_data_iterator(self, phase: xax.Phase, key: PRNGKeyArray) -> Iterator[tuple[Array, Array]]:

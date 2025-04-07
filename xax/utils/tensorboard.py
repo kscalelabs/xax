@@ -115,26 +115,27 @@ def make_mesh_summary(
         (faces, MeshPluginData.FACE),
         (colors, MeshPluginData.COLOR),
     ]
-    tensors = [tensor for tensor in tensors if tensor[0] is not None]
-    components = mesh_metadata.get_components_bitmask([content_type for (tensor, content_type) in tensors])
+    # Filter out None tensors and explicitly type the list
+    valid_tensors = [(t, content_type) for t, content_type in tensors if t is not None]
+    components = mesh_metadata.get_components_bitmask([content_type for (_, content_type) in valid_tensors])
 
-    for tensor, content_type in tensors:
+    for tensor, content_type in valid_tensors:  # Now we know tensor is not None
         tensor_metadata = mesh_metadata.create_summary_metadata(
             tag,
             display_name,
             content_type,
             components,
-            tensor.shape,
+            tensor.shape,  # Safe now since tensor is not None
             description,
             json_config=json_config,
         )
 
-        tensor = TensorProto(
+        tensor_proto = TensorProto(
             dtype="DT_FLOAT",
-            float_val=tensor.reshape(-1).tolist(),
+            float_val=tensor.reshape(-1).tolist(),  # Safe now since tensor is not None
             tensor_shape=TensorShapeProto(
                 dim=[
-                    TensorShapeProto.Dim(size=tensor.shape[0]),
+                    TensorShapeProto.Dim(size=tensor.shape[0]),  # Safe now since tensor is not None
                     TensorShapeProto.Dim(size=tensor.shape[1]),
                     TensorShapeProto.Dim(size=tensor.shape[2]),
                 ]
@@ -143,7 +144,7 @@ def make_mesh_summary(
 
         tensor_summary = Summary.Value(
             tag=mesh_metadata.get_instance_name(tag, content_type),
-            tensor=tensor,
+            tensor=tensor_proto,
             metadata=tensor_metadata,
         )
 
