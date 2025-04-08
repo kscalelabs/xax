@@ -341,7 +341,7 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            model, state, config = self.load_checkpoint(init_ckpt_path, part="model_state_config")
+            model, state, config = self.load_ckpt(init_ckpt_path, part="model_state_config")
             config_diff = get_diff_string(diff_configs(asdict(config), asdict(self.config)))
             if config_diff:
                 logger.warning("Loaded config differs from current config:\n%s", config_diff)
@@ -349,8 +349,8 @@ class TrainMixin(
             if not load_optimizer:
                 return model, state
 
-            optimizer = self.load_checkpoint(init_ckpt_path, part="opt")
-            opt_state = self.load_checkpoint(init_ckpt_path, part="opt_state", model=model, optimizer=optimizer)
+            optimizer = self.load_ckpt(init_ckpt_path, part="opt")
+            opt_state = self.load_ckpt(init_ckpt_path, part="opt_state", model=model, optimizer=optimizer)
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
@@ -366,7 +366,7 @@ class TrainMixin(
         return model, optimizer, opt_state, state
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -374,7 +374,7 @@ class TrainMixin(
     ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -382,7 +382,7 @@ class TrainMixin(
     ) -> tuple[PyTree, State, Config]: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -390,7 +390,7 @@ class TrainMixin(
     ) -> PyTree: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -398,7 +398,7 @@ class TrainMixin(
     ) -> optax.GradientTransformation: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -408,7 +408,7 @@ class TrainMixin(
     ) -> optax.OptState: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
@@ -416,14 +416,14 @@ class TrainMixin(
     ) -> State: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: Path,
         *,
         part: Literal["config"],
     ) -> Config: ...
 
-    def load_checkpoint(
+    def load_ckpt(
         self,
         path: str | Path,
         *,
@@ -447,44 +447,44 @@ class TrainMixin(
         match part:
             case "model_state_config":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return super().load_checkpoint(path, part="model_state_config", model_template=model_spec)
+                return self.load_ckpt_with_template(path, part="model_state_config", model_template=model_spec)
 
             case "model":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return super().load_checkpoint(path, part="model", model_template=model_spec)
+                return self.load_ckpt_with_template(path, part="model", model_template=model_spec)
 
             case "config":
-                return super().load_checkpoint(path, part="config")
+                return self.load_ckpt_with_template(path, part="config")
 
             case "opt":
                 optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                return super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+                return self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
 
             case "opt_state":
                 if model is None:
                     model_spec = eqx.filter_eval_shape(self.get_model, key)
-                    model = super().load_checkpoint(path, part="model", model_template=model_spec)
+                    model = self.load_ckpt_with_template(path, part="model", model_template=model_spec)
                 if optimizer is None:
                     optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                    optimizer = super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+                    optimizer = self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
                 opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                return super().load_checkpoint(path, part="opt_state", opt_state_template=opt_state_spec)
+                return self.load_ckpt_with_template(path, part="opt_state", opt_state_template=opt_state_spec)
 
             case "state":
-                return super().load_checkpoint(path, part="state")
+                return self.load_ckpt_with_template(path, part="state")
 
             case "config":
-                return super().load_checkpoint(path, part="config")
+                return self.load_ckpt_with_template(path, part="config")
 
             case "all":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                model = super().load_checkpoint(path, part="model", model_template=model_spec)
+                model = self.load_ckpt_with_template(path, part="model", model_template=model_spec)
                 optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                optimizer = super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+                optimizer = self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
                 opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                opt_state = super().load_checkpoint(path, part="opt_state", opt_state_template=opt_state_spec)
-                state = super().load_checkpoint(path, part="state")
-                config = super().load_checkpoint(path, part="config")
+                opt_state = self.load_ckpt_with_template(path, part="opt_state", opt_state_template=opt_state_spec)
+                state = self.load_ckpt_with_template(path, part="state")
+                config = self.load_ckpt_with_template(path, part="config")
                 return model, optimizer, opt_state, state, config
 
             case _:
