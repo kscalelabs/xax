@@ -54,7 +54,7 @@ from xax.utils.experiments import (
     get_training_code,
 )
 from xax.utils.jax import jit as xax_jit
-from xax.utils.logging import LOG_STATUS
+from xax.utils.logging import LOG_PING, LOG_STATUS
 from xax.utils.text import highlight_exception_message, show_info
 from xax.utils.types.frozen_dict import FrozenDict
 
@@ -529,8 +529,7 @@ class TrainMixin(
         self._last_printed_remaining_time = state.elapsed_time_s
         remaining_seconds = remaining_percent * state.elapsed_time_s / (1 - remaining_percent)
         termination_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + remaining_seconds))
-        # logger.info("Estimated finish time: %s", termination_time)
-        jax.debug.print("Estimated finish time: {}", termination_time)
+        logger.log(LOG_PING, "Estimated finish time: %s", termination_time)
 
     def get_remaining_percent(self, state: State) -> float | None:
         if self.config.max_steps is None:
