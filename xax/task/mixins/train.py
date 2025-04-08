@@ -12,6 +12,7 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, is_dataclass
+from pathlib import Path
 from threading import Thread
 from typing import (
     Any,
@@ -39,7 +40,7 @@ from xax.core.state import Phase, State
 from xax.nn.functions import set_random_seed
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin
+from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
@@ -340,12 +341,7 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            model_spec = eqx.filter_eval_shape(self.get_model, key)
-            model, state, config = self.load_checkpoint(
-                init_ckpt_path,
-                part="model_state_config",
-                model_template=model_spec,
-            )
+            model, state, config = self.load_checkpoint(init_ckpt_path, part="model_state_config")
             config_diff = get_diff_string(diff_configs(asdict(config), asdict(self.config)))
             if config_diff:
                 logger.warning("Loaded config differs from current config:\n%s", config_diff)
@@ -353,14 +349,8 @@ class TrainMixin(
             if not load_optimizer:
                 return model, state
 
-            # Loads the optimizer.
-            optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-            optimizer = self.load_checkpoint(init_ckpt_path, part="opt", optimizer_template=optimizer_spec)
-
-            # Loads the optimizer state.
-            opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-            opt_state = self.load_checkpoint(init_ckpt_path, part="opt_state", opt_state_template=opt_state_spec)
-
+            optimizer = self.load_checkpoint(init_ckpt_path, part="opt")
+            opt_state = self.load_checkpoint(init_ckpt_path, part="opt_state", model=model, optimizer=optimizer)
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
@@ -374,6 +364,131 @@ class TrainMixin(
         opt_state = self.get_initial_opt_state(model, optimizer)
 
         return model, optimizer, opt_state, state
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["all"],
+    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["model_state_config"],
+    ) -> tuple[PyTree, State, Config]: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["model"],
+    ) -> PyTree: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["opt"],
+    ) -> optax.GradientTransformation: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["opt_state"],
+        model: PyTree | None = None,
+        optimizer: optax.GradientTransformation | None = None,
+    ) -> optax.OptState: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["state"],
+    ) -> State: ...
+
+    @overload
+    def load_checkpoint(
+        self,
+        path: Path,
+        *,
+        part: Literal["config"],
+    ) -> Config: ...
+
+    def load_checkpoint(
+        self,
+        path: str | Path,
+        *,
+        part: CheckpointPart = "all",
+        model: PyTree | None = None,
+        optimizer: optax.GradientTransformation | None = None,
+    ) -> (
+        tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]
+        | tuple[PyTree, State, Config]
+        | PyTree
+        | optax.GradientTransformation
+        | optax.OptState
+        | State
+        | Config
+    ):
+        path = Path(path)
+
+        # This key isn't used for anything, it's just a required argument.
+        key = jax.random.PRNGKey(0)
+
+        match part:
+            case "model_state_config":
+                model_spec = eqx.filter_eval_shape(self.get_model, key)
+                return super().load_checkpoint(path, part="model_state_config", model_template=model_spec)
+
+            case "model":
+                model_spec = eqx.filter_eval_shape(self.get_model, key)
+                return super().load_checkpoint(path, part="model", model_template=model_spec)
+
+            case "config":
+                return super().load_checkpoint(path, part="config")
+
+            case "opt":
+                optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
+                return super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+
+            case "opt_state":
+                if model is None:
+                    model_spec = eqx.filter_eval_shape(self.get_model, key)
+                    model = super().load_checkpoint(path, part="model", model_template=model_spec)
+                if optimizer is None:
+                    optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
+                    optimizer = super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+                opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
+                return super().load_checkpoint(path, part="opt_state", opt_state_template=opt_state_spec)
+
+            case "state":
+                return super().load_checkpoint(path, part="state")
+
+            case "config":
+                return super().load_checkpoint(path, part="config")
+
+            case "all":
+                model_spec = eqx.filter_eval_shape(self.get_model, key)
+                model = super().load_checkpoint(path, part="model", model_template=model_spec)
+                optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
+                optimizer = super().load_checkpoint(path, part="opt", optimizer_template=optimizer_spec)
+                opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
+                opt_state = super().load_checkpoint(path, part="opt_state", opt_state_template=opt_state_spec)
+                state = super().load_checkpoint(path, part="state")
+                config = super().load_checkpoint(path, part="config")
+                return model, optimizer, opt_state, state, config
+
+            case _:
+                raise ValueError(f"Unknown checkpoint part: {part}")
 
     def get_output(self, model: PyTree, batch: Batch, state: State) -> Output:
         """Gets the output from the model.
