@@ -83,7 +83,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         return False
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -94,7 +94,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -103,7 +103,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> tuple[PyTree, State, Config]: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -112,7 +112,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> PyTree: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -121,7 +121,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> optax.GradientTransformation: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -130,7 +130,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> optax.OptState: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
@@ -138,14 +138,14 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     ) -> State: ...
 
     @overload
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
         part: Literal["config"],
     ) -> Config: ...
 
-    def load_checkpoint(
+    def load_ckpt_with_template(
         self,
         path: Path,
         *,
