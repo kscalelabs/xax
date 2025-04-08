@@ -234,24 +234,27 @@ class GPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-        self._gpu_stats_monitor = None
-        if shutil.which("nvidia-smi") is not None:
-            self._gpu_stats_monitor = GPUStatsMonitor(
-                config.gpu_stats.ping_interval,
-                self._mp_ctx,
-                self._mp_manager,
-            )
+        if (
+            shutil.which("nvidia-smi") is not None
+            and (ctx := self.multiprocessing_context) is not None
+            and (mgr := self.multiprocessing_manager) is not None
+        ):
+            self._gpu_stats_monitor = GPUStatsMonitor(config.gpu_stats.ping_interval, ctx, mgr)
+        else:
+            self._gpu_stats_monitor = None
 
     def on_training_start(self, state: State) -> State:
         state = super().on_training_start(state)
-        if self._gpu_stats_monitor is not None:
-            self._gpu_stats_monitor.start()
+
+        if (monitor := self._gpu_stats_monitor) is not None:
+            monitor.start()
         return state
 
     def on_training_end(self, state: State) -> State:
         state = super().on_training_end(state)
-        if self._gpu_stats_monitor is not None:
-            self._gpu_stats_monitor.stop()
+
+        if (monitor := self._gpu_stats_monitor) is not None:
+            monitor.stop()
         return state
 
     def on_step_start(self, state: State) -> State:

@@ -218,33 +218,36 @@ class CPUStatsMonitor:
 class CPUStatsMixin(ProcessMixin[Config], LoggerMixin[Config], Generic[Config]):
     """Defines a task mixin for getting CPU statistics."""
 
-    _cpu_stats_monitor: CPUStatsMonitor
+    _cpu_stats_monitor: CPUStatsMonitor | None
 
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-        self._cpu_stats_monitor = CPUStatsMonitor(
-            ping_interval=self.config.cpu_stats.ping_interval,
-            context=self._mp_ctx,
-            manager=self._mp_manager,
-        )
+        if (ctx := self.multiprocessing_context) is not None and (mgr := self.multiprocessing_manager) is not None:
+            self._cpu_stats_monitor = CPUStatsMonitor(self.config.cpu_stats.ping_interval, ctx, mgr)
+        else:
+            self._cpu_stats_monitor = None
 
     def on_training_start(self, state: State) -> State:
         state = super().on_training_start(state)
 
-        self._cpu_stats_monitor.start()
+        if (monitor := self._cpu_stats_monitor) is not None:
+            monitor.start()
         return state
 
     def on_training_end(self, state: State) -> State:
         state = super().on_training_end(state)
 
-        self._cpu_stats_monitor.stop()
+        if (monitor := self._cpu_stats_monitor) is not None:
+            monitor.stop()
         return state
 
     def on_step_start(self, state: State) -> State:
         state = super().on_step_start(state)
 
-        monitor = self._cpu_stats_monitor
+        if (monitor := self._cpu_stats_monitor) is None:
+            return state
+
         stats = monitor.get_if_set() if self.config.cpu_stats.only_log_once else monitor.get()
 
         if stats is not None:
