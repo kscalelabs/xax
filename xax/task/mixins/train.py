@@ -663,9 +663,9 @@ class TrainMixin(
     def get_step(self, state: State) -> int:
         match self._step_kind:
             case "step":
-                return state.num_steps.item()
+                return int(state.num_steps.item())
             case "sample":
-                return state.num_samples.item()
+                return int(state.num_samples.item())
             case "second":
                 return int(state.elapsed_time_s.item())
             case _:
@@ -846,10 +846,8 @@ class TrainMixin(
 
                 except TrainingFinishedError:
                     if is_master():
-                        show_info(
-                            f"Finished training after {state.num_steps} steps, {state.num_samples} samples",
-                            important=True,
-                        )
+                        num_steps, num_samples = int(state.num_steps), int(state.num_samples)
+                        show_info(f"Finished training after {num_steps} steps, {num_samples} samples", important=True)
                     self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
                 except (KeyboardInterrupt, bdb.BdbQuit):
