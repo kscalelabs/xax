@@ -15,12 +15,9 @@ with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
 requirements_export: list[str] = [
+    "flax",
     "orbax-export",
     "tensorflow",
-]
-
-requirements_flax: list[str] = [
-    "flax",
 ]
 
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
@@ -42,9 +39,8 @@ setup(
     tests_require=requirements_dev,
     extras_require={
         "dev": requirements_dev,
-        "export": requirements_export,
-        "flax": requirements_flax,
-        "all": requirements_dev + requirements_export + requirements_flax,
+        "exportable": requirements_export,
+        "all": requirements_dev + requirements_export,
     },
     package_data={
         "xax": [
