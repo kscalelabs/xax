@@ -46,6 +46,7 @@ from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
+    ContextTimer,
     StateTimer,
     TrainingFinishedError,
     diff_configs,
@@ -216,10 +217,6 @@ class TrainMixin(
 
     def prng_key(self) -> PRNGKeyArray:
         return jax.random.PRNGKey(self.config.random_seed)
-
-    def on_step_end(self, state: State) -> State:
-        state = super().on_step_end(state)
-        return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
     def log_train_step(
         self,
@@ -735,21 +732,24 @@ class TrainMixin(
 
             state = self.on_step_start(state)
             train_batch = next(train_pf)
+
+            with ContextTimer() as timer:
+                model_arr, opt_state, output, metrics = self.train_step(
+                    model_arr=model_arr,
+                    model_static=model_static,
+                    optimizer=optimizer,
+                    opt_state=opt_state,
+                    batch=train_batch,
+                    state=state,
+                )
+                self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
+
             state = state.replace(
                 phase="train",
                 num_steps=state.num_steps + 1,
                 num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
+                elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
             )
-
-            model_arr, opt_state, output, metrics = self.train_step(
-                model_arr=model_arr,
-                model_static=model_static,
-                optimizer=optimizer,
-                opt_state=opt_state,
-                batch=train_batch,
-                state=state,
-            )
-            self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
 
             state = self.on_step_end(state)
 

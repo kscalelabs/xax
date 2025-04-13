@@ -14,10 +14,6 @@ from xax.core.conf import field
 Phase = Literal["train", "valid"]
 
 
-def _clip_int(i: int) -> int:
-    return max(min(i, 2**31 - 1), -(2**31))
-
-
 def _phase_to_int(phase: Phase) -> int:
     return {"train": 0, "valid": 1}[phase]
 
@@ -87,23 +83,23 @@ class State:
         float32_arr = self._float32_arr
 
         if "num_steps" in kwargs:
-            int32_arr.at[0].set(_clip_int(kwargs["num_steps"]))
+            int32_arr = int32_arr.at[0].set(kwargs["num_steps"])
         if "num_samples" in kwargs:
-            int32_arr.at[1].set(_clip_int(kwargs["num_samples"]))
+            int32_arr = int32_arr.at[1].set(kwargs["num_samples"])
         if "num_valid_steps" in kwargs:
-            int32_arr.at[2].set(_clip_int(kwargs["num_valid_steps"]))
+            int32_arr = int32_arr.at[2].set(kwargs["num_valid_steps"])
         if "num_valid_samples" in kwargs:
-            int32_arr.at[3].set(_clip_int(kwargs["num_valid_samples"]))
+            int32_arr = int32_arr.at[3].set(kwargs["num_valid_samples"])
 
         if "phase" in kwargs:
-            int32_arr.at[6].set(_phase_to_int(kwargs["phase"]))
+            int32_arr = int32_arr.at[6].set(_phase_to_int(kwargs["phase"]))
         if "_phase" in kwargs:
-            int32_arr.at[6].set(kwargs["_phase"])
+            int32_arr = int32_arr.at[6].set(kwargs["_phase"])
 
         if "start_time_s" in kwargs:
-            float32_arr.at[0].set(kwargs["start_time_s"])
+            float32_arr = float32_arr.at[0].set(kwargs["start_time_s"])
         if "elapsed_time_s" in kwargs:
-            float32_arr.at[1].set(kwargs["elapsed_time_s"])
+            float32_arr = float32_arr.at[1].set(kwargs["elapsed_time_s"])
 
         return State(
             _int32_arr=int32_arr,
@@ -128,11 +124,11 @@ class State:
 
         int32_arr = jnp.array(
             [
-                _clip_int(d.get("num_steps", 0)),
-                _clip_int(d.get("num_samples", 0)),
-                _clip_int(d.get("num_valid_steps", 0)),
-                _clip_int(d.get("num_valid_samples", 0)),
-                _clip_int(d.get("_phase", 0)),
+                d.get("num_steps", 0),
+                d.get("num_samples", 0),
+                d.get("num_valid_steps", 0),
+                d.get("num_valid_samples", 0),
+                d.get("_phase", 0),
             ],
             dtype=jnp.int32,
         )
