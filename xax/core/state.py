@@ -89,9 +89,9 @@ class State:
             int32_arr = int32_arr.at[1].set(kwargs["num_valid_steps"])
 
         if "phase" in kwargs:
-            int32_arr = int32_arr.at[3].set(_phase_to_int(kwargs["phase"]))
+            int32_arr = int32_arr.at[2].set(_phase_to_int(kwargs["phase"]))
         if "_phase" in kwargs:
-            int32_arr = int32_arr.at[3].set(kwargs["_phase"])
+            int32_arr = int32_arr.at[2].set(kwargs["_phase"])
 
         if "num_samples" in kwargs:
             float32_arr = float32_arr.at[0].set(kwargs["num_samples"])
