@@ -46,6 +46,7 @@ from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
+    ContextTimer,
     StateTimer,
     TrainingFinishedError,
     diff_configs,
@@ -119,27 +120,30 @@ class ValidStepTimer:
             return True
 
         if self.last_valid_time is None or self.last_valid_step is None:
-            self.last_valid_time = state.elapsed_time_s
-            self.last_valid_step = state.num_steps
+            self.last_valid_time = state.elapsed_time_s.item()
+            self.last_valid_step = state.num_steps.item()
             return False
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
         if valid_every_n_steps is not None and state.num_steps >= valid_every_n_steps + self.last_valid_step:
-            self.last_valid_step = state.num_steps
+            self.last_valid_step = state.num_steps.item()
             return True
 
         # Time-based validation.
         valid_every_n_seconds = self.valid_every_n_seconds
-        if valid_every_n_seconds is not None and state.elapsed_time_s - self.last_valid_time >= valid_every_n_seconds:
-            self.last_valid_time = state.elapsed_time_s
+        if (
+            valid_every_n_seconds is not None
+            and state.elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
+        ):
+            self.last_valid_time = state.elapsed_time_s.item()
             return True
 
         # Time-based validation for first validation step.
         if self.first_valid_step_flag:
             valid_first_n_seconds = self.valid_first_n_seconds
-            if valid_first_n_seconds is not None and state.elapsed_time_s >= valid_first_n_seconds:
-                self.last_valid_time = state.elapsed_time_s
+            if valid_first_n_seconds is not None and state.elapsed_time_s.item() >= valid_first_n_seconds:
+                self.last_valid_time = state.elapsed_time_s.item()
                 self.first_valid_step_flag = False
                 return True
 
@@ -213,10 +217,6 @@ class TrainMixin(
 
     def prng_key(self) -> PRNGKeyArray:
         return jax.random.PRNGKey(self.config.random_seed)
-
-    def on_step_end(self, state: State) -> State:
-        state = super().on_step_end(state)
-        return state.replace(elapsed_time_s=time.time() - state.start_time_s)
 
     def log_train_step(
         self,
@@ -641,8 +641,8 @@ class TrainMixin(
     def maybe_log_termination_time(self, remaining_percent: float, state: State) -> None:
         if self._last_printed_remaining_time + PRINT_FINISH_TIME_EVERY_N_SECONDS > state.elapsed_time_s:
             return
-        self._last_printed_remaining_time = state.elapsed_time_s
-        remaining_seconds = remaining_percent * state.elapsed_time_s / (1 - remaining_percent)
+        self._last_printed_remaining_time = state.elapsed_time_s.item()
+        remaining_seconds = remaining_percent * state.elapsed_time_s.item() / (1 - remaining_percent)
         termination_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + remaining_seconds))
         logger.log(LOG_PING, "Estimated finish time: %s", termination_time)
 
@@ -663,11 +663,11 @@ class TrainMixin(
     def get_step(self, state: State) -> int:
         match self._step_kind:
             case "step":
-                return state.num_steps
+                return int(state.num_steps.item())
             case "sample":
-                return state.num_samples
+                return int(state.num_samples.item())
             case "second":
-                return int(state.elapsed_time_s)
+                return int(state.elapsed_time_s.item())
             case _:
                 raise ValueError(f"Invalid step kind {self._step_kind}")
 
@@ -732,21 +732,24 @@ class TrainMixin(
 
             state = self.on_step_start(state)
             train_batch = next(train_pf)
+
+            with ContextTimer() as timer:
+                model_arr, opt_state, output, metrics = self.train_step(
+                    model_arr=model_arr,
+                    model_static=model_static,
+                    optimizer=optimizer,
+                    opt_state=opt_state,
+                    batch=train_batch,
+                    state=state,
+                )
+                self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
+
             state = state.replace(
                 phase="train",
                 num_steps=state.num_steps + 1,
                 num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
+                elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
             )
-
-            model_arr, opt_state, output, metrics = self.train_step(
-                model_arr=model_arr,
-                model_static=model_static,
-                optimizer=optimizer,
-                opt_state=opt_state,
-                batch=train_batch,
-                state=state,
-            )
-            self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
 
             state = self.on_step_end(state)
 
@@ -843,10 +846,8 @@ class TrainMixin(
 
                 except TrainingFinishedError:
                     if is_master():
-                        show_info(
-                            f"Finished training after {state.num_steps} steps, {state.num_samples} samples",
-                            important=True,
-                        )
+                        num_steps, num_samples = int(state.num_steps), int(state.num_samples)
+                        show_info(f"Finished training after {num_steps} steps, {num_samples} samples", important=True)
                     self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
 
                 except (KeyboardInterrupt, bdb.BdbQuit):

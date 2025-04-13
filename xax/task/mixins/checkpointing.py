@@ -4,7 +4,7 @@ import io
 import json
 import logging
 import tarfile
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, Literal, TypeVar, cast, overload
 
@@ -76,7 +76,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             if state.num_steps % self.config.save_every_n_steps == 0:
                 return True
         if self.config.save_every_n_seconds is not None:
-            last_time, cur_time = self.__last_ckpt_time, state.elapsed_time_s
+            last_time, cur_time = self.__last_ckpt_time, state.elapsed_time_s.item()
             if cur_time - last_time >= self.config.save_every_n_seconds:
                 self.__last_ckpt_time = cur_time
                 return True
@@ -200,7 +200,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             def get_state() -> State:
                 if (state := tar.extractfile("state")) is None:
                     raise ValueError(f"Checkpoint does not contain a state file: {path}")
-                return State(**json.loads(state.read().decode()))
+                return State.from_dict(**json.loads(state.read().decode()))
 
             def get_config() -> Config:
                 if (config := tar.extractfile("config")) is None:
@@ -300,7 +300,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 tar.addfile(info, io.BytesIO(data))
 
             if state is not None:
-                add_file_bytes("state", json.dumps(asdict(state), indent=2).encode())
+                add_file_bytes("state", json.dumps(state.to_dict(), indent=2).encode())
             add_file_bytes("config", OmegaConf.to_yaml(self.config).encode())
 
         # Updates the symlink to the new checkpoint
