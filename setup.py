@@ -39,6 +39,7 @@ setup(
     tests_require=requirements_dev,
     extras_require={
         "dev": requirements_dev,
+        "exportable": requirements_export,
         "all": requirements_dev + requirements_export,
     },
     package_data={
