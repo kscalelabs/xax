@@ -15,6 +15,7 @@ with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
 requirements_export: list[str] = [
+    "flax",
     "orbax-export",
     "tensorflow",
 ]
