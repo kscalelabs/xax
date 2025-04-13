@@ -20,10 +20,6 @@ requirements_export: list[str] = [
     "tensorflow",
 ]
 
-requirements_flax: list[str] = [
-    "flax",
-]
-
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
     version_re = re.search(r"^__version__ = \"([^\"]*)\"", fh.read(), re.MULTILINE)
 assert version_re is not None, "Could not find version in xax/__init__.py"
@@ -44,8 +40,7 @@ setup(
     extras_require={
         "dev": requirements_dev,
         "export": requirements_export,
-        "flax": requirements_flax,
-        "all": requirements_dev + requirements_export + requirements_flax,
+        "all": requirements_dev + requirements_export,
     },
     package_data={
         "xax": [
