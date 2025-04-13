@@ -720,20 +720,21 @@ class TrainMixin(
 
         while not self.is_training_over(state):
             if self.valid_step_timer.is_valid_step(state):
-                valid_batch = next(valid_pf)
+                with ContextTimer() as timer:
+                    valid_batch = next(valid_pf)
+                    output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
+                    self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
+
                 state = state.replace(
                     phase="valid",
                     num_valid_steps=state.num_valid_steps + 1,
                     num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
+                    valid_elapsed_time_s=state.valid_elapsed_time_s + timer.elapsed_time,
                 )
 
-                output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
-                self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
-
-            state = self.on_step_start(state)
-            train_batch = next(train_pf)
-
             with ContextTimer() as timer:
+                state = self.on_step_start(state)
+                train_batch = next(train_pf)
                 model_arr, opt_state, output, metrics = self.train_step(
                     model_arr=model_arr,
                     model_static=model_static,

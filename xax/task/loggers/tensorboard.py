@@ -157,7 +157,7 @@ class TensorboardLogger(LoggerImpl):
         writer = self.get_writer(line.state.phase)
 
         global_step = line.state.num_steps.item()
-        walltime = (line.state.start_time_s + line.state.elapsed_time_s).item()
+        walltime = line.state.elapsed_time_s.item()
 
         for namespace, scalars in line.scalars.items():
             for scalar_key, scalar_value in scalars.items():

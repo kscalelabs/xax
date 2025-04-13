@@ -1,6 +1,5 @@
 """Defines a dataclass for keeping track of the current training state."""
 
-import time
 from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, Unpack, cast
 
@@ -19,6 +18,8 @@ def _phase_to_int(phase: Phase) -> int:
 
 
 def _int_to_phase(i: int) -> Phase:
+    if i < 0 or i > 1:
+        raise ValueError(f"Invalid phase: {i}")
     return cast(Phase, ["train", "valid"][i])
 
 
@@ -27,8 +28,8 @@ class StateDict(TypedDict, total=False):
     num_samples: NotRequired[int | Array]
     num_valid_steps: NotRequired[int | Array]
     num_valid_samples: NotRequired[int | Array]
-    start_time_s: NotRequired[float | Array]
     elapsed_time_s: NotRequired[float | Array]
+    valid_elapsed_time_s: NotRequired[float | Array]
     phase: NotRequired[Phase]
     _phase: NotRequired[int | Array]
 
@@ -44,23 +45,23 @@ class State:
         return self._int32_arr[0]
 
     @property
-    def num_samples(self) -> Array:
-        return self._float32_arr[0]
-
-    @property
     def num_valid_steps(self) -> Array:
         return self._int32_arr[1]
+
+    @property
+    def num_samples(self) -> Array:
+        return self._float32_arr[0]
 
     @property
     def num_valid_samples(self) -> Array:
         return self._float32_arr[1]
 
     @property
-    def start_time_s(self) -> Array:
+    def elapsed_time_s(self) -> Array:
         return self._float32_arr[2]
 
     @property
-    def elapsed_time_s(self) -> Array:
+    def valid_elapsed_time_s(self) -> Array:
         return self._float32_arr[3]
 
     @property
@@ -71,7 +72,7 @@ class State:
     def init_state(cls) -> "State":
         return cls(
             _int32_arr=jnp.array([0, 0, 0], dtype=jnp.int32),
-            _float32_arr=jnp.array([0.0, 0.0, time.time(), 0.0], dtype=jnp.float32),
+            _float32_arr=jnp.array([0.0, 0.0, 0.0, 0.0], dtype=jnp.float32),
         )
 
     @property
@@ -97,10 +98,10 @@ class State:
         if "num_valid_samples" in kwargs:
             float32_arr = float32_arr.at[1].set(kwargs["num_valid_samples"])
 
-        if "start_time_s" in kwargs:
-            float32_arr = float32_arr.at[2].set(kwargs["start_time_s"])
         if "elapsed_time_s" in kwargs:
-            float32_arr = float32_arr.at[3].set(kwargs["elapsed_time_s"])
+            float32_arr = float32_arr.at[2].set(kwargs["elapsed_time_s"])
+        if "valid_elapsed_time_s" in kwargs:
+            float32_arr = float32_arr.at[3].set(kwargs["valid_elapsed_time_s"])
 
         return State(
             _int32_arr=int32_arr,
@@ -110,11 +111,11 @@ class State:
     def to_dict(self) -> dict[str, int | float | str]:
         return {
             "num_steps": int(self.num_steps),
-            "num_samples": int(self.num_samples),
             "num_valid_steps": int(self.num_valid_steps),
+            "num_samples": int(self.num_samples),
             "num_valid_samples": int(self.num_valid_samples),
-            "start_time_s": float(self.start_time_s),
             "elapsed_time_s": float(self.elapsed_time_s),
+            "valid_elapsed_time_s": float(self.valid_elapsed_time_s),
             "phase": str(self.phase),
         }
 
@@ -126,9 +127,7 @@ class State:
         int32_arr = jnp.array(
             [
                 d.get("num_steps", 0),
-                d.get("num_samples", 0),
                 d.get("num_valid_steps", 0),
-                d.get("num_valid_samples", 0),
                 d.get("_phase", 0),
             ],
             dtype=jnp.int32,
@@ -136,8 +135,10 @@ class State:
 
         float32_arr = jnp.array(
             [
-                d.get("start_time_s", time.time()),
+                d.get("num_samples", 0),
+                d.get("num_valid_samples", 0),
                 d.get("elapsed_time_s", 0.0),
+                d.get("valid_elapsed_time_s", 0.0),
             ],
             dtype=jnp.float32,
         )
