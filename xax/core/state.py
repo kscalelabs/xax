@@ -99,7 +99,9 @@ class State:
             float32_arr = float32_arr.at[1].set(kwargs["num_valid_samples"])
 
         if "elapsed_time_s" in kwargs:
-            float32_arr = float32_arr.at[3].set(kwargs["elapsed_time_s"])
+            float32_arr = float32_arr.at[2].set(kwargs["elapsed_time_s"])
+        if "valid_elapsed_time_s" in kwargs:
+            float32_arr = float32_arr.at[3].set(kwargs["valid_elapsed_time_s"])
 
         return State(
             _int32_arr=int32_arr,
