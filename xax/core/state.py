@@ -45,32 +45,32 @@ class State:
 
     @property
     def num_samples(self) -> Array:
-        return self._int32_arr[1]
-
-    @property
-    def num_valid_steps(self) -> Array:
-        return self._int32_arr[2]
-
-    @property
-    def num_valid_samples(self) -> Array:
-        return self._int32_arr[3]
-
-    @property
-    def start_time_s(self) -> Array:
         return self._float32_arr[0]
 
     @property
-    def elapsed_time_s(self) -> Array:
+    def num_valid_steps(self) -> Array:
+        return self._int32_arr[1]
+
+    @property
+    def num_valid_samples(self) -> Array:
         return self._float32_arr[1]
 
     @property
+    def start_time_s(self) -> Array:
+        return self._float32_arr[2]
+
+    @property
+    def elapsed_time_s(self) -> Array:
+        return self._float32_arr[3]
+
+    @property
     def phase(self) -> Phase:
-        return _int_to_phase(self._int32_arr[6].item())
+        return _int_to_phase(self._int32_arr[2].item())
 
     @classmethod
     def init_state(cls) -> "State":
         return cls(
-            _int32_arr=jnp.array([0, 0, 0, 0, 0], dtype=jnp.int32),
+            _int32_arr=jnp.array([0, 0, 0], dtype=jnp.int32),
             _float32_arr=jnp.array([0.0, 0.0, time.time(), 0.0], dtype=jnp.float32),
         )
 
@@ -88,9 +88,9 @@ class State:
             int32_arr = int32_arr.at[1].set(kwargs["num_valid_steps"])
 
         if "phase" in kwargs:
-            int32_arr = int32_arr.at[6].set(_phase_to_int(kwargs["phase"]))
+            int32_arr = int32_arr.at[3].set(_phase_to_int(kwargs["phase"]))
         if "_phase" in kwargs:
-            int32_arr = int32_arr.at[6].set(kwargs["_phase"])
+            int32_arr = int32_arr.at[3].set(kwargs["_phase"])
 
         if "num_samples" in kwargs:
             float32_arr = float32_arr.at[0].set(kwargs["num_samples"])
