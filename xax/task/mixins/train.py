@@ -548,7 +548,7 @@ class TrainMixin(
             "loss": loss,
         }
 
-    @xax_jit(static_argnames=["self", "model_static"])
+    @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
     def get_output_and_loss(
         self,
         model_arr: PyTree,
@@ -572,12 +572,12 @@ class TrainMixin(
         state: State,
     ) -> tuple[PyTree, optax.OptState, Output, dict[str, Array]]:
         grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
-        grad_fn = xax_jit(static_argnums=[1])(grad_fn)
+        grad_fn = xax_jit(static_argnums=[1], jit_level=3)(grad_fn)
         grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
         model_arr, opt_state, grad_metrics = self.apply_gradients_with_clipping(model_arr, grads, optimizer, opt_state)
         return model_arr, opt_state, output, metrics | grad_metrics
 
-    @xax_jit(static_argnames=["self", "optimizer"])
+    @xax_jit(static_argnames=["self", "optimizer"], jit_level=3)
     def apply_gradients_with_clipping(
         self,
         model_arr: PyTree,
@@ -683,7 +683,7 @@ class TrainMixin(
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
 
-    @xax_jit(static_argnames=["self", "model_static", "optimizer"])
+    @xax_jit(static_argnames=["self", "model_static", "optimizer"], jit_level=3)
     def train_step(
         self,
         model_arr: PyTree,
@@ -696,7 +696,7 @@ class TrainMixin(
         model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
         return model_arr, opt_state, output, FrozenDict(metrics)
 
-    @xax_jit(static_argnames=["self", "model_static"])
+    @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
     def val_step(
         self,
         model_arr: PyTree,
