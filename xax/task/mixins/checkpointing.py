@@ -200,7 +200,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
             def get_state() -> State:
                 if (state := tar.extractfile("state")) is None:
                     raise ValueError(f"Checkpoint does not contain a state file: {path}")
-                return State(**json.loads(state.read().decode()))
+                return State.from_dict(**json.loads(state.read().decode()))
 
             def get_config() -> Config:
                 if (config := tar.extractfile("config")) is None:

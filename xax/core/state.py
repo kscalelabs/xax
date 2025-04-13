@@ -1,10 +1,12 @@
 """Defines a dataclass for keeping track of the current training state."""
 
 import time
-from dataclasses import asdict, dataclass
-from typing import Any, Literal, NotRequired, TypedDict, Unpack, cast
+from dataclasses import dataclass
+from typing import Literal, NotRequired, TypedDict, Unpack, cast
 
 import jax
+import jax.numpy as jnp
+from jaxtyping import Array
 from omegaconf import MISSING
 
 from xax.core.conf import field
@@ -28,33 +30,48 @@ class StateDict(TypedDict, total=False):
     start_time_s: NotRequired[float]
     elapsed_time_s: NotRequired[float]
     phase: NotRequired[Phase]
+    _phase: NotRequired[int]
 
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, kw_only=True)
 class State:
-    num_steps: int = field(MISSING, help="Number of steps so far")
-    num_samples: int = field(MISSING, help="Number of sample so far")
-    num_valid_steps: int = field(MISSING, help="Number of validation steps so far")
-    num_valid_samples: int = field(MISSING, help="Number of validation samples so far")
-    start_time_s: float = field(MISSING, help="Start time of training")
-    elapsed_time_s: float = field(MISSING, help="Total elapsed time so far")
-    _phase: int = field(MISSING, help="Current training phase")
+    _int64_arr: Array = field(MISSING, help="Internal array for storing int64 values")
+    _float64_arr: Array = field(MISSING, help="Internal array for storing floating-point values")
+
+    @property
+    def num_steps(self) -> int:
+        return self._int64_arr[0].item()
+
+    @property
+    def num_samples(self) -> int:
+        return self._int64_arr[1].item()
+
+    @property
+    def num_valid_steps(self) -> int:
+        return self._int64_arr[2].item()
+
+    @property
+    def num_valid_samples(self) -> int:
+        return self._int64_arr[3].item()
+
+    @property
+    def start_time_s(self) -> float:
+        return self._float64_arr[0].item()
+
+    @property
+    def elapsed_time_s(self) -> float:
+        return self._float64_arr[1].item()
 
     @property
     def phase(self) -> Phase:
-        return _int_to_phase(self._phase)
+        return _int_to_phase(self._int64_arr[6])
 
     @classmethod
     def init_state(cls) -> "State":
         return cls(
-            num_steps=0,
-            num_samples=0,
-            num_valid_steps=0,
-            num_valid_samples=0,
-            start_time_s=time.time(),
-            elapsed_time_s=0.0,
-            _phase=0,
+            _int64_arr=jnp.array([0, 0, 0, 0, 0, 0, 0], dtype=jnp.int64),
+            _float64_arr=jnp.array([time.time(), 0.0], dtype=jnp.float64),
         )
 
     @property
@@ -71,17 +88,31 @@ class State:
                 raise ValueError(f"Invalid phase: {phase}")
 
     def replace(self, **kwargs: Unpack[StateDict]) -> "State":
-        extra_kwargs: dict[str, Any] = {}  # noqa: ANN401
+        int64_arr = self._int64_arr
+        float64_arr = self._float64_arr
+
+        if "num_steps" in kwargs:
+            int64_arr.at[0].set(kwargs["num_steps"])
+        if "num_samples" in kwargs:
+            int64_arr.at[1].set(kwargs["num_samples"])
+        if "num_valid_steps" in kwargs:
+            int64_arr.at[2].set(kwargs["num_valid_steps"])
+        if "num_valid_samples" in kwargs:
+            int64_arr.at[3].set(kwargs["num_valid_samples"])
         if "phase" in kwargs:
-            phase = kwargs.pop("phase")
-            match phase:
-                case "train":
-                    extra_kwargs["_phase"] = 0
-                case "valid":
-                    extra_kwargs["_phase"] = 1
-                case _:
-                    raise ValueError(f"Invalid phase: {phase}")
-        return State(**{**asdict(self), **kwargs, **extra_kwargs})
+            int64_arr.at[6].set(_phase_to_int(kwargs["phase"]))
+        if "_phase" in kwargs:
+            int64_arr.at[6].set(kwargs["_phase"])
+
+        if "start_time_s" in kwargs:
+            float64_arr.at[0].set(kwargs["start_time_s"])
+        if "elapsed_time_s" in kwargs:
+            float64_arr.at[1].set(kwargs["elapsed_time_s"])
+
+        return State(
+            _int64_arr=int64_arr,
+            _float64_arr=float64_arr,
+        )
 
     def to_dict(self) -> dict[str, int | float | str]:
         return {
@@ -95,7 +126,30 @@ class State:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, int | float | str]) -> "State":
+    def from_dict(cls, **d: Unpack[StateDict]) -> "State":
         if "phase" in d:
             d["_phase"] = _phase_to_int(cast(Phase, d.pop("phase")))
-        return cls(**d)  # type: ignore[arg-type]
+
+        int64_arr = jnp.array(
+            [
+                d.get("num_steps", 0),
+                d.get("num_samples", 0),
+                d.get("num_valid_steps", 0),
+                d.get("num_valid_samples", 0),
+                d.get("_phase", 0),
+            ],
+            dtype=jnp.int64,
+        )
+
+        float64_arr = jnp.array(
+            [
+                d.get("start_time_s", time.time()),
+                d.get("elapsed_time_s", 0.0),
+            ],
+            dtype=jnp.float64,
+        )
+
+        return cls(
+            __int64_arr=int64_arr,
+            __float64_arr=float64_arr,
+        )
