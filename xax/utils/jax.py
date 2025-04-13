@@ -24,6 +24,18 @@ P = ParamSpec("P")  # For function parameters
 R = TypeVar("R")  # For function return type
 
 
+def disable_jit_level() -> int:
+    """Gets a debugging flag for disabling jitting.
+
+    For Xax's JIT'ed functions, we can set a JIT level which can be used to
+    disable jitting when we want to debug some NaN issues.
+
+    Returns:
+        The JIT level to disable.
+    """
+    return int(os.environ.get("DISABLE_JIT_LEVEL", "0"))
+
+
 def as_float(value: int | float | np.ndarray | jnp.ndarray) -> float:
     if isinstance(value, (int, float)):
         return float(value)
@@ -55,6 +67,7 @@ def jit(
     inline: bool = False,
     abstracted_axes: Any | None = None,  # noqa: ANN401
     compiler_options: dict[str, Any] | None = None,
+    jit_level: int | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Wrapper function that provides utility improvements over Jax's JIT.
 
@@ -64,6 +77,8 @@ def jit(
     This is meant to be used as a decorator factory, and the decorated function
     calls `wrapped`.
     """
+    if jit_level is not None and jit_level < disable_jit_level():
+        return lambda fn: fn  # Identity function.
 
     def decorator(fn: Callable[P, R]) -> Callable[P, R]:
         class JitState:
