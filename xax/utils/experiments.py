@@ -111,8 +111,10 @@ class StateTimer:
 
     def step(self, state: State) -> None:
         cur_time = time.time()
-        self.step_timer.step(state.num_steps if state.phase == "train" else state.num_valid_steps, cur_time)
-        self.sample_timer.step(state.num_samples if state.phase == "train" else state.num_valid_samples, cur_time)
+        num_steps = (state.num_steps if state.phase == "train" else state.num_valid_steps).item()
+        num_samples = (state.num_samples if state.phase == "train" else state.num_valid_samples).item()
+        self.step_timer.step(num_steps, cur_time)
+        self.sample_timer.step(num_samples, cur_time)
         self.iter_timer.step(cur_time)
 
     def log_dict(self) -> dict[str, int | float | tuple[int | float, bool]]:
