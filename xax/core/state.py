@@ -18,7 +18,7 @@ def _phase_to_int(phase: Phase) -> int:
 
 
 def _int_to_phase(i: int) -> Phase:
-    if i > 1:
+    if i < 0 or i > 1:
         raise ValueError(f"Invalid phase: {i}")
     return cast(Phase, ["train", "valid"][i])
 
