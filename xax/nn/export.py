@@ -15,7 +15,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "In order to export models, please install Xax with export dependencies, "
-        "using 'xax[export]` to install the required dependencies."
+        "using 'xax[all]` to install the required dependencies."
     ) from e
 
 logger = logging.getLogger(__name__)
