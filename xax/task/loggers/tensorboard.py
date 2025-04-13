@@ -155,14 +155,16 @@ class TensorboardLogger(LoggerImpl):
             return
 
         writer = self.get_writer(line.state.phase)
-        walltime = line.state.start_time_s + line.state.elapsed_time_s
+
+        global_step = line.state.num_steps.item()
+        walltime = (line.state.start_time_s + line.state.elapsed_time_s).item()
 
         for namespace, scalars in line.scalars.items():
             for scalar_key, scalar_value in scalars.items():
                 writer.add_scalar(
                     f"{namespace}/{scalar_key}",
                     as_float(scalar_value.value),
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -172,7 +174,7 @@ class TensorboardLogger(LoggerImpl):
                     f"{namespace}/{distribution_key}",
                     mean=float(distribution_value.mean),
                     std=float(distribution_value.std),
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -187,7 +189,7 @@ class TensorboardLogger(LoggerImpl):
                     sum_squares=float(histogram_value.sum_squares),
                     bucket_limits=[float(x) for x in histogram_value.bucket_limits],
                     bucket_counts=[int(x) for x in histogram_value.bucket_counts],
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -196,7 +198,7 @@ class TensorboardLogger(LoggerImpl):
                 writer.add_text(
                     f"{namespace}/{string_key}",
                     string_value.value,
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -205,7 +207,7 @@ class TensorboardLogger(LoggerImpl):
                 writer.add_image(
                     f"{namespace}/{image_key}",
                     image_value.image,
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -215,7 +217,7 @@ class TensorboardLogger(LoggerImpl):
                     f"{namespace}/{video_key}",
                     video_value.frames,
                     fps=video_value.fps,
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
@@ -227,7 +229,7 @@ class TensorboardLogger(LoggerImpl):
                     faces=mesh_value.faces,
                     colors=mesh_value.colors,
                     config_dict=mesh_value.config_dict,
-                    global_step=line.state.num_steps,
+                    global_step=global_step,
                     walltime=walltime,
                 )
 
