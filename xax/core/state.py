@@ -27,14 +27,14 @@ def _int_to_phase(i: int) -> Phase:
 
 
 class StateDict(TypedDict, total=False):
-    num_steps: NotRequired[int]
-    num_samples: NotRequired[int]
-    num_valid_steps: NotRequired[int]
-    num_valid_samples: NotRequired[int]
-    start_time_s: NotRequired[float]
-    elapsed_time_s: NotRequired[float]
+    num_steps: NotRequired[int | Array]
+    num_samples: NotRequired[int | Array]
+    num_valid_steps: NotRequired[int | Array]
+    num_valid_samples: NotRequired[int | Array]
+    start_time_s: NotRequired[float | Array]
+    elapsed_time_s: NotRequired[float | Array]
     phase: NotRequired[Phase]
-    _phase: NotRequired[int]
+    _phase: NotRequired[int | Array]
 
 
 @jax.tree_util.register_dataclass
@@ -44,28 +44,28 @@ class State:
     _float32_arr: Array = field(MISSING, help="Internal array for storing floating-point values")
 
     @property
-    def num_steps(self) -> int:
-        return self._int32_arr[0].item()
+    def num_steps(self) -> Array:
+        return self._int32_arr[0]
 
     @property
-    def num_samples(self) -> int:
-        return self._int32_arr[1].item()
+    def num_samples(self) -> Array:
+        return self._int32_arr[1]
 
     @property
-    def num_valid_steps(self) -> int:
-        return self._int32_arr[2].item()
+    def num_valid_steps(self) -> Array:
+        return self._int32_arr[2]
 
     @property
-    def num_valid_samples(self) -> int:
-        return self._int32_arr[3].item()
+    def num_valid_samples(self) -> Array:
+        return self._int32_arr[3]
 
     @property
-    def start_time_s(self) -> float:
-        return self._float32_arr[0].item()
+    def start_time_s(self) -> Array:
+        return self._float32_arr[0]
 
     @property
-    def elapsed_time_s(self) -> float:
-        return self._float32_arr[1].item()
+    def elapsed_time_s(self) -> Array:
+        return self._float32_arr[1]
 
     @property
     def phase(self) -> Phase:
@@ -81,15 +81,6 @@ class State:
     @property
     def training(self) -> bool:
         return self.phase == "train"
-
-    def num_phase_steps(self, phase: Phase) -> int:
-        match phase:
-            case "train":
-                return self.num_steps
-            case "valid":
-                return self.num_valid_steps
-            case _:
-                raise ValueError(f"Invalid phase: {phase}")
 
     def replace(self, **kwargs: Unpack[StateDict]) -> "State":
         int32_arr = self._int32_arr

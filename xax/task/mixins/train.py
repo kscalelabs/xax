@@ -119,27 +119,30 @@ class ValidStepTimer:
             return True
 
         if self.last_valid_time is None or self.last_valid_step is None:
-            self.last_valid_time = state.elapsed_time_s
-            self.last_valid_step = state.num_steps
+            self.last_valid_time = state.elapsed_time_s.item()
+            self.last_valid_step = state.num_steps.item()
             return False
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
         if valid_every_n_steps is not None and state.num_steps >= valid_every_n_steps + self.last_valid_step:
-            self.last_valid_step = state.num_steps
+            self.last_valid_step = state.num_steps.item()
             return True
 
         # Time-based validation.
         valid_every_n_seconds = self.valid_every_n_seconds
-        if valid_every_n_seconds is not None and state.elapsed_time_s - self.last_valid_time >= valid_every_n_seconds:
-            self.last_valid_time = state.elapsed_time_s
+        if (
+            valid_every_n_seconds is not None
+            and state.elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
+        ):
+            self.last_valid_time = state.elapsed_time_s.item()
             return True
 
         # Time-based validation for first validation step.
         if self.first_valid_step_flag:
             valid_first_n_seconds = self.valid_first_n_seconds
-            if valid_first_n_seconds is not None and state.elapsed_time_s >= valid_first_n_seconds:
-                self.last_valid_time = state.elapsed_time_s
+            if valid_first_n_seconds is not None and state.elapsed_time_s.item() >= valid_first_n_seconds:
+                self.last_valid_time = state.elapsed_time_s.item()
                 self.first_valid_step_flag = False
                 return True
 
@@ -641,8 +644,8 @@ class TrainMixin(
     def maybe_log_termination_time(self, remaining_percent: float, state: State) -> None:
         if self._last_printed_remaining_time + PRINT_FINISH_TIME_EVERY_N_SECONDS > state.elapsed_time_s:
             return
-        self._last_printed_remaining_time = state.elapsed_time_s
-        remaining_seconds = remaining_percent * state.elapsed_time_s / (1 - remaining_percent)
+        self._last_printed_remaining_time = state.elapsed_time_s.item()
+        remaining_seconds = remaining_percent * state.elapsed_time_s.item() / (1 - remaining_percent)
         termination_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + remaining_seconds))
         logger.log(LOG_PING, "Estimated finish time: %s", termination_time)
 
@@ -663,11 +666,11 @@ class TrainMixin(
     def get_step(self, state: State) -> int:
         match self._step_kind:
             case "step":
-                return state.num_steps
+                return state.num_steps.item()
             case "sample":
-                return state.num_samples
+                return state.num_samples.item()
             case "second":
-                return int(state.elapsed_time_s)
+                return int(state.elapsed_time_s.item())
             case _:
                 raise ValueError(f"Invalid step kind {self._step_kind}")
 

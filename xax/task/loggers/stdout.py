@@ -90,9 +90,9 @@ class StdoutLogger(LoggerImpl):
 
     def write_state_window(self, line: LogLine) -> None:
         state_info: dict[str, str] = {
-            "Steps": format_number(line.state.num_steps, 0),
-            "Samples": format_number(line.state.num_samples, 0),
-            "Elapsed Time": format_timedelta(datetime.timedelta(seconds=line.state.elapsed_time_s), short=True),
+            "Steps": format_number(line.state.num_steps.item(), 0),
+            "Samples": format_number(line.state.num_samples.item(), 0),
+            "Elapsed Time": format_timedelta(datetime.timedelta(seconds=line.state.elapsed_time_s.item()), short=True),
         }
 
         colored_prefix = colored("Phase: ", "grey", bold=True)

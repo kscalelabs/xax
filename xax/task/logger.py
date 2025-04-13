@@ -521,7 +521,7 @@ class LoggerImpl(ABC):
         Returns:
             If the logger should log the current step.
         """
-        return self.tickers[state.phase].tick(state.elapsed_time_s)
+        return self.tickers[state.phase].tick(state.elapsed_time_s.item())
 
 
 class ToastHandler(logging.Handler):
