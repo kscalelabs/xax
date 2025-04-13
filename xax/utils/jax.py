@@ -1,5 +1,6 @@
 """Defines some utility functions for interfacing with Jax."""
 
+import functools
 import inspect
 import logging
 import os
@@ -23,7 +24,13 @@ Number = int | float | np.ndarray | jnp.ndarray
 P = ParamSpec("P")  # For function parameters
 R = TypeVar("R")  # For function return type
 
+# For control flow functions.
+Carry = TypeVar("Carry")
+X = TypeVar("X")
+Y = TypeVar("Y")
 
+
+@functools.lru_cache(maxsize=None)
 def disable_jit_level() -> int:
     """Gets a debugging flag for disabling jitting.
 
@@ -34,6 +41,10 @@ def disable_jit_level() -> int:
         The JIT level to disable.
     """
     return int(os.environ.get("DISABLE_JIT_LEVEL", "0"))
+
+
+def should_disable_jit(jit_level: int | None) -> bool:
+    return jit_level is not None and jit_level < disable_jit_level()
 
 
 def as_float(value: int | float | np.ndarray | jnp.ndarray) -> float:
@@ -77,7 +88,7 @@ def jit(
     This is meant to be used as a decorator factory, and the decorated function
     calls `wrapped`.
     """
-    if jit_level is not None and jit_level < disable_jit_level():
+    if should_disable_jit(jit_level):
         return lambda fn: fn  # Identity function.
 
     def decorator(fn: Callable[P, R]) -> Callable[P, R]:
@@ -153,3 +164,46 @@ def jit(
         return wrapped
 
     return decorator
+
+
+def scan(
+    f: Callable[[Carry, X], tuple[Carry, Y]],
+    init: Carry,
+    xs: X | None = None,
+    length: int | None = None,
+    reverse: bool = False,
+    unroll: int | bool = 1,
+    jit_level: int | None = None,
+) -> tuple[Carry, Y]:
+    """A wrapper around jax.lax.scan that allows for more flexible tracing.
+
+    If the provided JIT level is below the environment JIT level, we manually
+    unroll the scan function as a for loop.
+
+    Args:
+        f: The function to scan.
+        init: The initial value for the scan.
+        xs: The input to the scan.
+        length: The length of the scan.
+        reverse: Whether to reverse the scan.
+        unroll: The unroll factor for the scan.
+        jit_level: The JIT level to use for the scan.
+
+    Returns:
+        A tuple containing the final carry and the output of the scan.
+    """
+    if not should_disable_jit(jit_level):
+        return jax.lax.scan(f, init, xs, length, reverse, unroll)
+
+    if xs is None:
+        if length is None:
+            raise ValueError("length must be provided if xs is None")
+        xs = cast(X, [None] * length)
+
+    carry = init
+    ys = []
+    for x in cast(Iterable, xs):
+        carry, y = f(carry, x)
+        ys.append(y)
+
+    return carry, jax.tree.map(lambda *ys: jnp.stack(ys), *ys)
