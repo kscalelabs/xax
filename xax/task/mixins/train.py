@@ -115,19 +115,22 @@ class ValidStepTimer:
         self.last_valid_time: float | None = None
         self.last_valid_step: int | None = None
 
+    def _reset(self, state: State) -> None:
+        self.last_valid_time = state.elapsed_time_s.item()
+        self.last_valid_step = state.num_steps.item()
+
     def is_valid_step(self, state: State) -> bool:
         if state.num_steps < self.valid_first_n_steps:
             return True
 
         if self.last_valid_time is None or self.last_valid_step is None:
-            self.last_valid_time = state.elapsed_time_s.item()
-            self.last_valid_step = state.num_steps.item()
+            self._reset(state)
             return False
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
         if valid_every_n_steps is not None and state.num_steps >= valid_every_n_steps + self.last_valid_step:
-            self.last_valid_step = state.num_steps.item()
+            self._reset(state)
             return True
 
         # Time-based validation.
@@ -136,14 +139,14 @@ class ValidStepTimer:
             valid_every_n_seconds is not None
             and state.elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
         ):
-            self.last_valid_time = state.elapsed_time_s.item()
+            self._reset(state)
             return True
 
         # Time-based validation for first validation step.
         if self.first_valid_step_flag:
             valid_first_n_seconds = self.valid_first_n_seconds
             if valid_first_n_seconds is not None and state.elapsed_time_s.item() >= valid_first_n_seconds:
-                self.last_valid_time = state.elapsed_time_s.item()
+                self._reset(state)
                 self.first_valid_step_flag = False
                 return True
 
