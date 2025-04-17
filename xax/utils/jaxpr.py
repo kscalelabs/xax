@@ -3,10 +3,10 @@
 from pathlib import Path
 
 import jax
-import jax.core
+import jax.extend.core
 
 
-def save_jaxpr_dot(closed_jaxpr: jax.core.ClosedJaxpr, filename: str | Path) -> None:
+def save_jaxpr_dot(closed_jaxpr: jax.extend.core.ClosedJaxpr, filename: str | Path) -> None:
     """Save the JAXPR to a DOT file.
 
     Example usage:
@@ -30,15 +30,15 @@ def save_jaxpr_dot(closed_jaxpr: jax.core.ClosedJaxpr, filename: str | Path) -> 
     with open(filename, "w") as f:
         f.write("digraph Jaxpr {\n")
 
-        var_names: dict[jax.core.Var, str] = {}
+        var_names: dict[jax.extend.core.Var, str] = {}
         var_count = 0
 
-        def get_var_name(var: jax.core.Var) -> str:
+        def get_var_name(var: jax.extend.core.Var) -> str:
             """Get a unique name for a variable."""
             nonlocal var_names, var_count
 
             # Handle Literal objects specially since they're not hashable
-            if isinstance(var, jax.core.Literal):
+            if isinstance(var, jax.extend.core.Literal):
                 # Create a name based on the literal value
                 name = f"lit_{var.val}"
                 return name

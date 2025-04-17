@@ -57,7 +57,7 @@ def pytree_has_nans(pytree: PyTree) -> Array:
 
 def update_pytree(cond: Array, new: PyTree, original: PyTree) -> PyTree:
     """Update a pytree based on a condition."""
-    # Tricky, need use tree_map because where expects array leafs.
+    # Tricky, need use tree.map because where expects array leafs.
     return jax.tree.map(lambda x, y: jnp.where(cond, x, y), new, original)
 
 

@@ -138,7 +138,7 @@ class FrozenDict(Mapping[K, V]):
 
 def unfreeze(x: FrozenDict[K, V] | dict[str, Any]) -> dict[Any, Any]:  # noqa: ANN401
     if isinstance(x, FrozenDict):
-        return jax.tree_util.tree_map(lambda y: y, x._dict)
+        return jax.tree.map(lambda y: y, x._dict)
     elif isinstance(x, dict):
         ys = {}
         for key, value in x.items():
