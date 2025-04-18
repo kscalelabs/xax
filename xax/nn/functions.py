@@ -1,5 +1,5 @@
 # mypy: disable-error-code="override"
-"""Defines helper Torch functions."""
+"""Defines helper Jax functions."""
 
 import random
 from dataclasses import is_dataclass
