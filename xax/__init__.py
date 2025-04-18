@@ -71,6 +71,7 @@ __all__ = [
     "GPUStatsOptions",
     "StepContext",
     "ValidStepTimer",
+    "get_param_count",
     "Script",
     "ScriptConfig",
     "Config",
@@ -235,6 +236,7 @@ NAME_MAP: dict[str, str] = {
     "GPUStatsOptions": "task.mixins.gpu_stats",
     "StepContext": "task.mixins.step_wrapper",
     "ValidStepTimer": "task.mixins.train",
+    "get_param_count": "task.mixins.train",
     "Script": "task.script",
     "ScriptConfig": "task.script",
     "Config": "task.task",
@@ -394,7 +396,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
     from xax.task.mixins.step_wrapper import StepContext
-    from xax.task.mixins.train import Batch, Output, ValidStepTimer
+    from xax.task.mixins.train import Batch, Output, ValidStepTimer, get_param_count
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null

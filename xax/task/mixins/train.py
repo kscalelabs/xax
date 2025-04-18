@@ -96,6 +96,12 @@ def batches_per_step_schedule(schedule: list[int] | None) -> list[int] | None:
     return list(itertools.accumulate([0] + schedule))
 
 
+def get_param_count(pytree: PyTree) -> int:
+    """Calculates the total number of parameters in a PyTree."""
+    leaves, _ = jax.tree.flatten(pytree)
+    return sum(x.size for x in leaves if isinstance(x, jnp.ndarray))
+
+
 class ValidStepTimer:
     def __init__(
         self,
@@ -360,6 +366,7 @@ class TrainMixin(
         model = self.get_model(key)
         state = State.init_state()
 
+        self.log_model_size(model)
         if not load_optimizer:
             return model, state
 
@@ -682,6 +689,10 @@ class TrainMixin(
         self.logger.log_file("training_code.py", get_training_code(self))
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
         self.logger.log_file("info.json", get_info_json())
+
+    def log_model_size(self, model: PyTree) -> None:
+        total_params = get_param_count(model)
+        logger.info("Model size: %d parameters", total_params)
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
