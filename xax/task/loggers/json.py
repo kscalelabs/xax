@@ -2,7 +2,6 @@
 
 import json
 import sys
-from dataclasses import asdict
 from typing import Any, Literal, Mapping, TextIO
 
 from jaxtyping import Array
@@ -67,7 +66,7 @@ class JsonLogger(LoggerImpl):
         return self.err_log_stream
 
     def get_json(self, line: LogLine) -> str:
-        data: dict = {"state": asdict(line.state)}
+        data: dict = {"state": line.state.to_dict()}
 
         def add_logs(log: Mapping[str, Mapping[str, LogScalar | LogString]], data: dict) -> None:
             for namespace, values in log.items():

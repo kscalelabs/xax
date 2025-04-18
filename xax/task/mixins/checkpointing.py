@@ -52,6 +52,114 @@ class CheckpointingConfig(ArtifactsConfig):
 Config = TypeVar("Config", bound=CheckpointingConfig)
 
 
+@overload
+def load_ckpt(
+    path: Path,
+    *,
+    part: Literal["all"],
+    model_template: PyTree,
+    optimizer_template: PyTree,
+    opt_state_template: PyTree,
+) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]: ...
+
+
+@overload
+def load_ckpt(
+    path: Path,
+    *,
+    part: Literal["model_state_config"],
+    model_template: PyTree,
+) -> tuple[PyTree, State, DictConfig]: ...
+
+
+@overload
+def load_ckpt(path: Path, *, part: Literal["model"], model_template: PyTree) -> PyTree: ...
+
+
+@overload
+def load_ckpt(path: Path, *, part: Literal["opt"], optimizer_template: PyTree) -> optax.GradientTransformation: ...
+
+
+@overload
+def load_ckpt(path: Path, *, part: Literal["opt_state"], opt_state_template: PyTree) -> optax.OptState: ...
+
+
+@overload
+def load_ckpt(path: Path, *, part: Literal["state"]) -> State: ...
+
+
+@overload
+def load_ckpt(path: Path, *, part: Literal["config"]) -> DictConfig: ...
+
+
+def load_ckpt(
+    path: str | Path,
+    *,
+    part: CheckpointPart = "model",
+    model_template: PyTree | None = None,
+    optimizer_template: PyTree | None = None,
+    opt_state_template: PyTree | None = None,
+) -> (
+    tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]
+    | tuple[PyTree, State, DictConfig]
+    | PyTree
+    | optax.GradientTransformation
+    | optax.OptState
+    | State
+    | DictConfig
+):
+    with tarfile.open(path, "r:gz") as tar:
+
+        def get_model() -> PyTree:
+            if model_template is None:
+                raise ValueError("model_template must be provided to load model weights")
+            if (model := tar.extractfile("model")) is None:
+                raise ValueError(f"Checkpoint does not contain a model file: {path}")
+            return eqx.tree_deserialise_leaves(io.BytesIO(model.read()), model_template)
+
+        def get_opt() -> optax.GradientTransformation:
+            if optimizer_template is None:
+                raise ValueError("optimizer_template must be provided to load optimizer")
+            if (opt := tar.extractfile("optimizer")) is None:
+                raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
+            return eqx.tree_deserialise_leaves(io.BytesIO(opt.read()), optimizer_template)
+
+        def get_opt_state() -> optax.OptState:
+            if opt_state_template is None:
+                raise ValueError("opt_state_template must be provided to load optimizer state")
+            if (opt_state := tar.extractfile("opt_state")) is None:
+                raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
+            return eqx.tree_deserialise_leaves(io.BytesIO(opt_state.read()), opt_state_template)
+
+        def get_state() -> State:
+            if (state := tar.extractfile("state")) is None:
+                raise ValueError(f"Checkpoint does not contain a state file: {path}")
+            return State.from_dict(**json.loads(state.read().decode()))
+
+        def get_config() -> DictConfig:
+            if (config := tar.extractfile("config")) is None:
+                raise ValueError(f"Checkpoint does not contain a config file: {path}")
+            return cast(DictConfig, OmegaConf.load(config))
+
+        match part:
+            case "model":
+                return get_model()
+            case "opt":
+                return get_opt()
+            case "opt_state":
+                return get_opt_state()
+            case "state":
+                return get_state()
+            case "config":
+                return get_config()
+            case "model_state_config":
+                return get_model(), get_state(), get_config()
+            case "all":
+                return get_model(), get_opt(), get_opt_state(), get_state(), get_config()
+            case _:
+                raise ValueError(f"Invalid checkpoint part: {part}")
+
+
 class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
@@ -81,149 +189,6 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 self.__last_ckpt_time = cur_time
                 return True
         return False
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["all"],
-        model_template: PyTree,
-        optimizer_template: PyTree,
-        opt_state_template: PyTree,
-    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["model_state_config"],
-        model_template: PyTree,
-    ) -> tuple[PyTree, State, Config]: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["model"],
-        model_template: PyTree,
-    ) -> PyTree: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["opt"],
-        optimizer_template: PyTree,
-    ) -> optax.GradientTransformation: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["opt_state"],
-        opt_state_template: PyTree,
-    ) -> optax.OptState: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["state"],
-    ) -> State: ...
-
-    @overload
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: Literal["config"],
-    ) -> Config: ...
-
-    def load_ckpt_with_template(
-        self,
-        path: Path,
-        *,
-        part: CheckpointPart = "all",
-        model_template: PyTree | None = None,
-        optimizer_template: PyTree | None = None,
-        opt_state_template: PyTree | None = None,
-    ) -> (
-        tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]
-        | tuple[PyTree, State, Config]
-        | PyTree
-        | optax.GradientTransformation
-        | optax.OptState
-        | State
-        | Config
-    ):
-        """Load a checkpoint.
-
-        Args:
-            path: Path to the checkpoint directory
-            part: Which part of the checkpoint to load
-            model_template: Template model with correct structure but uninitialized weights
-            optimizer_template: Template optimizer with correct structure but uninitialized weights
-            opt_state_template: Template optimizer state with correct structure but uninitialized weights
-
-        Returns:
-            The requested checkpoint components
-        """
-        with tarfile.open(path, "r:gz") as tar:
-
-            def get_model() -> PyTree:
-                if model_template is None:
-                    raise ValueError("model_template must be provided to load model weights")
-                if (model := tar.extractfile("model")) is None:
-                    raise ValueError(f"Checkpoint does not contain a model file: {path}")
-                return eqx.tree_deserialise_leaves(io.BytesIO(model.read()), model_template)
-
-            def get_opt() -> optax.GradientTransformation:
-                if optimizer_template is None:
-                    raise ValueError("optimizer_template must be provided to load optimizer")
-                if (opt := tar.extractfile("optimizer")) is None:
-                    raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
-                return eqx.tree_deserialise_leaves(io.BytesIO(opt.read()), optimizer_template)
-
-            def get_opt_state() -> optax.OptState:
-                if opt_state_template is None:
-                    raise ValueError("opt_state_template must be provided to load optimizer state")
-                if (opt_state := tar.extractfile("opt_state")) is None:
-                    raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
-                return eqx.tree_deserialise_leaves(io.BytesIO(opt_state.read()), opt_state_template)
-
-            def get_state() -> State:
-                if (state := tar.extractfile("state")) is None:
-                    raise ValueError(f"Checkpoint does not contain a state file: {path}")
-                return State.from_dict(**json.loads(state.read().decode()))
-
-            def get_config() -> Config:
-                if (config := tar.extractfile("config")) is None:
-                    raise ValueError(f"Checkpoint does not contain a config file: {path}")
-                return self.get_config(cast(DictConfig, OmegaConf.load(config)), use_cli=False)
-
-            match part:
-                case "model":
-                    return get_model()
-                case "opt":
-                    return get_opt()
-                case "opt_state":
-                    return get_opt_state()
-                case "state":
-                    return get_state()
-                case "config":
-                    return get_config()
-                case "model_state_config":
-                    return get_model(), get_state(), get_config()
-                case "all":
-                    return get_model(), get_opt(), get_opt_state(), get_state(), get_config()
-                case _:
-                    raise ValueError(f"Invalid checkpoint part: {part}")
 
     def save_checkpoint(
         self,
