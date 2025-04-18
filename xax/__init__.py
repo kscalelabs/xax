@@ -66,6 +66,7 @@ __all__ = [
     "StateLogger",
     "StdoutLogger",
     "TensorboardLogger",
+    "load_ckpt",
     "CPUStatsOptions",
     "DataloaderConfig",
     "GPUStatsOptions",
@@ -230,6 +231,7 @@ NAME_MAP: dict[str, str] = {
     "StateLogger": "task.loggers.state",
     "StdoutLogger": "task.loggers.stdout",
     "TensorboardLogger": "task.loggers.tensorboard",
+    "load_ckpt": "task.mixins.checkpointing",
     "CPUStatsOptions": "task.mixins.cpu_stats",
     "DataloaderConfig": "task.mixins.data_loader",
     "GPUStatsOptions": "task.mixins.gpu_stats",
@@ -390,6 +392,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.loggers.state import StateLogger
     from xax.task.loggers.stdout import StdoutLogger
     from xax.task.loggers.tensorboard import TensorboardLogger
+    from xax.task.mixins.checkpointing import load_ckpt
     from xax.task.mixins.cpu_stats import CPUStatsOptions
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
