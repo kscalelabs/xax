@@ -450,7 +450,9 @@ class TrainMixin(
         match part:
             case "model_state_config":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return load_ckpt(path, part="model_state_config", model_template=model_spec)
+                model, state, config = load_ckpt(path, part="model_state_config", model_template=model_spec)
+                config = self.get_config(config, use_cli=False)
+                return model, state, config
 
             case "model":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
