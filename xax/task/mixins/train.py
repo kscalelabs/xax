@@ -40,7 +40,7 @@ from xax.core.state import Phase, State
 from xax.nn.functions import set_random_seed
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart
+from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart, load_ckpt
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
@@ -450,44 +450,41 @@ class TrainMixin(
         match part:
             case "model_state_config":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return self.load_ckpt_with_template(path, part="model_state_config", model_template=model_spec)
+                return load_ckpt(path, part="model_state_config", model_template=model_spec)
 
             case "model":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return self.load_ckpt_with_template(path, part="model", model_template=model_spec)
-
-            case "config":
-                return self.load_ckpt_with_template(path, part="config")
+                return load_ckpt(path, part="model", model_template=model_spec)
 
             case "opt":
                 optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                return self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
+                return load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
 
             case "opt_state":
                 if model is None:
                     model_spec = eqx.filter_eval_shape(self.get_model, key)
-                    model = self.load_ckpt_with_template(path, part="model", model_template=model_spec)
+                    model = load_ckpt(path, part="model", model_template=model_spec)
                 if optimizer is None:
                     optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                    optimizer = self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
+                    optimizer = load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
                 opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                return self.load_ckpt_with_template(path, part="opt_state", opt_state_template=opt_state_spec)
+                return load_ckpt(path, part="opt_state", opt_state_template=opt_state_spec)
 
             case "state":
-                return self.load_ckpt_with_template(path, part="state")
+                return load_ckpt(path, part="state")
 
             case "config":
-                return self.load_ckpt_with_template(path, part="config")
+                return self.get_config(load_ckpt(path, part="config"), use_cli=False)
 
             case "all":
                 model_spec = eqx.filter_eval_shape(self.get_model, key)
-                model = self.load_ckpt_with_template(path, part="model", model_template=model_spec)
+                model = load_ckpt(path, part="model", model_template=model_spec)
                 optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                optimizer = self.load_ckpt_with_template(path, part="opt", optimizer_template=optimizer_spec)
+                optimizer = load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
                 opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                opt_state = self.load_ckpt_with_template(path, part="opt_state", opt_state_template=opt_state_spec)
-                state = self.load_ckpt_with_template(path, part="state")
-                config = self.load_ckpt_with_template(path, part="config")
+                opt_state = load_ckpt(path, part="opt_state", opt_state_template=opt_state_spec)
+                state = load_ckpt(path, part="state")
+                config = self.get_config(load_ckpt(path, part="config"), use_cli=False)
                 return model, optimizer, opt_state, state, config
 
             case _:
