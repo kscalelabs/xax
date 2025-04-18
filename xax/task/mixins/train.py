@@ -690,7 +690,7 @@ class TrainMixin(
         self.logger.log_file("info.json", get_info_json())
 
     def log_model_size(self, model: PyTree) -> None:
-        logger.info("Model size: %d parameters", f"{get_param_count(model):,}")
+        logger.info("Model size: %s", f"{get_param_count(model):,}")
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
