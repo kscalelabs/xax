@@ -233,15 +233,16 @@ def rotation6d_to_rotation_matrix(r6d: jnp.ndarray) -> jnp.ndarray:
     chex.assert_shape(r6d, (..., 6))
     shape = r6d.shape
     flat = r6d.reshape(-1, 6)
-    x_raw = flat[:, 0:3]
-    y_raw = flat[:, 3:6]
-    x = normalize(x_raw, axis=-1)
-    z = jnp.cross(x, y_raw)
-    z = normalize(z, axis=-1)
-    y = jnp.cross(z, x)
+    a_1 = flat[:, 0:3]
+    a_2 = flat[:, 3:6]
 
-    mat = jnp.stack([x, y, z], axis=-1)  # [N,3,3]
-    return mat.reshape(shape[:-1] + (3, 3))
+    b_1 = normalize(a_1, axis=-1)
+    # reordered Gram-Schmidt orthonormalization
+    b_3 = normalize(jnp.cross(b_1, a_2), axis=-1)
+    b_2 = jnp.cross(b_3, b_1)
+
+    rotation_matrix = jnp.stack([b_1, b_2, b_3], axis=-1)
+    return rotation_matrix.reshape(shape[:-1] + (3, 3))
 
 
 def rotation_matrix_to_rotation6d(rotation_matrix: jnp.ndarray) -> jnp.ndarray:
@@ -255,6 +256,7 @@ def rotation_matrix_to_rotation6d(rotation_matrix: jnp.ndarray) -> jnp.ndarray:
     """
     chex.assert_shape(rotation_matrix, (..., 3, 3))
     shape = rotation_matrix.shape
+    # Simply concatenate a1 and a2 from SO(3)
     r6d = jnp.concatenate([rotation_matrix[..., 0], rotation_matrix[..., 1]], axis=-1)
 
     return r6d.reshape(shape[:-2] + (6,))
