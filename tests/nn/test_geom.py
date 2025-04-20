@@ -127,3 +127,176 @@ def test_get_projected_gravity_vector_from_quat() -> None:
     batch_gravity = jax.vmap(xax.get_projected_gravity_vector_from_quat)(batch_quat)
     expected_gravity = jnp.array([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]])
     assert jnp.allclose(batch_gravity, expected_gravity, atol=1e-5)
+
+
+def test_cubic_bezier_interpolation() -> None:
+    """Test cubic bezier interpolation function."""
+    # Test at start point (x=0)
+    y_start = jnp.array(1.0)
+    y_end = jnp.array(2.0)
+    x = jnp.array(0.0)
+    result = xax.cubic_bezier_interpolation(y_start, y_end, x)
+    assert jnp.allclose(result, y_start)
+
+    # Test at end point (x=1)
+    x = jnp.array(1.0)
+    result = xax.cubic_bezier_interpolation(y_start, y_end, x)
+    assert jnp.allclose(result, y_end)
+
+    # Test at midpoint (x=0.5)
+    x = jnp.array(0.5)
+    result = xax.cubic_bezier_interpolation(y_start, y_end, x)
+    # At midpoint, the value should be between start and end
+    assert result > y_start and result < y_end
+
+    # Test with arrays
+    y_start = jnp.array([1.0, 2.0, 3.0])
+    y_end = jnp.array([2.0, 3.0, 4.0])
+    x = jnp.array([0.0, 0.5, 1.0])
+    result = xax.cubic_bezier_interpolation(y_start, y_end, x)
+    expected = jnp.array([1.0, 2.5, 4.0])
+    assert jnp.allclose(result, expected, atol=1e-5)
+
+
+def test_quat_to_rotmat() -> None:
+    """Test conversion from quaternion to rotation matrix."""
+    # Identity quaternion should give identity matrix
+    identity_quat = jnp.array([1.0, 0.0, 0.0, 0.0])
+    rotmat = xax.quat_to_rotmat(identity_quat)
+    assert jnp.allclose(rotmat, jnp.eye(3), atol=1e-5)
+
+    # 90 degree rotation around Z-axis
+    z90_quat = jnp.array([jnp.cos(jnp.pi / 4), 0.0, 0.0, jnp.sin(jnp.pi / 4)])
+    rotmat = xax.quat_to_rotmat(z90_quat)
+    expected = jnp.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    assert jnp.allclose(rotmat, expected, atol=1e-5)
+
+    # Test with batch of quaternions
+    batch_quat = jnp.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # Identity
+            [jnp.cos(jnp.pi / 4), 0.0, 0.0, jnp.sin(jnp.pi / 4)],  # 90 deg around Z
+        ]
+    )
+    batch_rotmat = jax.vmap(xax.quat_to_rotmat)(batch_quat)
+    expected_batch = jnp.array(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],  # Identity
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],  # 90 deg around Z
+        ]
+    )
+    assert jnp.allclose(batch_rotmat, expected_batch, atol=1e-5)
+
+
+def test_normalize() -> None:
+    """Test vector normalization function."""
+    # Test with a simple vector
+    v = jnp.array([3.0, 4.0])
+    normalized = xax.normalize(v)
+    expected = jnp.array([0.6, 0.8])
+    assert jnp.allclose(normalized, expected)
+
+    # Test with zero vector (should handle eps)
+    v = jnp.array([0.0, 0.0])
+    normalized = xax.normalize(v)
+    # Should not be NaN or Inf
+    assert jnp.all(jnp.isfinite(normalized))
+
+    # Test with batch of vectors
+    v_batch = jnp.array([[3.0, 4.0], [1.0, 0.0], [0.0, 5.0]])
+    normalized_batch = xax.normalize(v_batch, axis=-1)
+    expected_batch = jnp.array([[0.6, 0.8], [1.0, 0.0], [0.0, 1.0]])
+    assert jnp.allclose(normalized_batch, expected_batch)
+
+
+def test_rotation6d_to_rotation_matrix() -> None:
+    """Test conversion from 6D rotation representation to rotation matrix."""
+    # Test with identity rotation
+    r6d = jnp.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    rotmat = xax.rotation6d_to_rotation_matrix(r6d)
+    assert jnp.allclose(rotmat, jnp.eye(3), atol=1e-5)
+
+    # Test with a known rotation (90 degrees around Z-axis)
+    r6d = jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+    rotmat = xax.rotation6d_to_rotation_matrix(r6d)
+    expected = jnp.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+    assert jnp.allclose(rotmat, expected, atol=1e-5)
+
+    # Test with batch of rotations
+    r6d_batch = jnp.array(
+        [
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],  # Identity
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0],  # 90 deg around Z
+        ]
+    )
+    rotmat_batch = xax.rotation6d_to_rotation_matrix(r6d_batch)
+    expected_batch = jnp.array(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],  # Identity
+            [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],  # 90 deg around Z
+        ]
+    )
+    assert jnp.allclose(rotmat_batch, expected_batch, atol=1e-5)
+
+
+def test_rotation_matrix_to_rotation6d() -> None:
+    """Test conversion from rotation matrix to 6D rotation representation."""
+    # Test with identity matrix
+    rotmat = jnp.eye(3)
+    r6d = xax.rotation_matrix_to_rotation6d(rotmat)
+    expected = jnp.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    assert jnp.allclose(r6d, expected)
+
+    # Test with a known rotation (90 degrees around Z-axis)
+    rotmat = jnp.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+    r6d = xax.rotation_matrix_to_rotation6d(rotmat)
+    expected = jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+    assert jnp.allclose(r6d, expected)
+
+    # Test with batch of rotation matrices
+    rotmat_batch = jnp.array(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],  # Identity
+            [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],  # 90 deg around Z
+        ]
+    )
+    r6d_batch = xax.rotation_matrix_to_rotation6d(rotmat_batch)
+    expected_batch = jnp.array(
+        [
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],  # Identity
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0],  # 90 deg around Z
+        ]
+    )
+    assert jnp.allclose(r6d_batch, expected_batch)
+
+
+def test_rotation_conversion_roundtrip() -> None:
+    """Test roundtrip conversion between rotation representations."""
+    # Generate random rotation matrices
+    rng = jax.random.PRNGKey(0)
+    batch_size = 10
+
+    # Generate random 6D rotations
+    r6d = jax.random.normal(rng, (batch_size, 6))
+
+    # Convert to rotation matrix and back
+    rotmat = xax.rotation6d_to_rotation_matrix(r6d)
+    r6d_again = xax.rotation_matrix_to_rotation6d(rotmat)
+
+    # Convert back to rotation matrix
+    rotmat_again = xax.rotation6d_to_rotation_matrix(r6d_again)
+
+    # The rotation matrices should be equivalent (represent the same rotation)
+    # We can't compare the 6D representations directly as they're not unique
+    assert jnp.allclose(rotmat, rotmat_again, atol=1e-5)
+
+    # The rotation matrices should be orthogonal
+    identity = jnp.eye(3)
+    for i in range(batch_size):
+        # R * R^T should be identity
+        orthogonality = jnp.dot(rotmat[i], rotmat[i].T)
+        assert jnp.allclose(orthogonality, identity, atol=1e-5)
+
+        # det(R) should be 1
+        det = jnp.linalg.det(rotmat[i])
+        assert jnp.isclose(det, 1.0, atol=1e-5)
