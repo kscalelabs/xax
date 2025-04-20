@@ -237,7 +237,8 @@ def rotation6d_to_rotation_matrix(r6d: jnp.ndarray) -> jnp.ndarray:
     a_2 = flat[:, 3:6]
 
     b_1 = normalize(a_1, axis=-1)
-    # reordered Gram-Schmidt orthonormalization
+
+    # Reordered Gram-Schmidt orthonormalization.
     b_3 = normalize(jnp.cross(b_1, a_2), axis=-1)
     b_2 = jnp.cross(b_3, b_1)
 
@@ -258,5 +259,4 @@ def rotation_matrix_to_rotation6d(rotation_matrix: jnp.ndarray) -> jnp.ndarray:
     shape = rotation_matrix.shape
     # Simply concatenate a1 and a2 from SO(3)
     r6d = jnp.concatenate([rotation_matrix[..., 0], rotation_matrix[..., 1]], axis=-1)
-
     return r6d.reshape(shape[:-2] + (6,))
