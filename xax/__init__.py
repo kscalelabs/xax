@@ -85,7 +85,6 @@ __all__ = [
     "GPUStatsOptions",
     "StepContext",
     "ValidStepTimer",
-    "get_param_count",
     "Script",
     "ScriptConfig",
     "Config",
@@ -130,6 +129,7 @@ __all__ = [
     "compute_nan_ratio",
     "flatten_array",
     "flatten_pytree",
+    "get_param_count",
     "pytree_has_nans",
     "reshuffle_pytree",
     "reshuffle_pytree_along_dims",
@@ -264,7 +264,6 @@ NAME_MAP: dict[str, str] = {
     "GPUStatsOptions": "task.mixins.gpu_stats",
     "StepContext": "task.mixins.step_wrapper",
     "ValidStepTimer": "task.mixins.train",
-    "get_param_count": "task.mixins.train",
     "Script": "task.script",
     "ScriptConfig": "task.script",
     "Config": "task.task",
@@ -309,6 +308,7 @@ NAME_MAP: dict[str, str] = {
     "compute_nan_ratio": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
+    "get_param_count": "utils.pytree",
     "pytree_has_nans": "utils.pytree",
     "reshuffle_pytree": "utils.pytree",
     "reshuffle_pytree_along_dims": "utils.pytree",
@@ -443,7 +443,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
     from xax.task.mixins.step_wrapper import StepContext
-    from xax.task.mixins.train import Batch, Output, ValidStepTimer, get_param_count
+    from xax.task.mixins.train import Batch, Output, ValidStepTimer
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
@@ -488,6 +488,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         compute_nan_ratio,
         flatten_array,
         flatten_pytree,
+        get_param_count,
         pytree_has_nans,
         reshuffle_pytree,
         reshuffle_pytree_along_dims,

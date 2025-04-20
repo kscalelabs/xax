@@ -236,3 +236,9 @@ def reshuffle_pytree_along_dims(
         return x
 
     return jax.tree.map_with_path(restore_transpose, reshuffled_transposed)
+
+
+def get_param_count(pytree: PyTree) -> int:
+    """Calculates the total number of parameters in a PyTree."""
+    leaves, _ = jax.tree.flatten(pytree)
+    return sum(x.size for x in leaves if isinstance(x, jnp.ndarray))
