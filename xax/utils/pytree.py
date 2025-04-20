@@ -1,6 +1,7 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
 import chex
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
@@ -238,7 +239,7 @@ def reshuffle_pytree_along_dims(
     return jax.tree.map_with_path(restore_transpose, reshuffled_transposed)
 
 
-def get_param_count(pytree: PyTree) -> int:
+def get_pytree_param_count(pytree: PyTree) -> int:
     """Calculates the total number of parameters in a PyTree."""
     leaves, _ = jax.tree.flatten(pytree)
-    return sum(x.size for x in leaves if isinstance(x, jnp.ndarray))
+    return sum(x.size for x in leaves if isinstance(x, jnp.ndarray) and eqx.is_inexact_array(x))
