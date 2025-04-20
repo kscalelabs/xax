@@ -124,7 +124,7 @@ def reshuffle_pytree(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArr
 def reshuffle_pytree_independently(data: PyTree, batch_shape: tuple[int, ...], rng: PRNGKeyArray) -> PyTree:
     """Reshuffle a rollout array across arbitrary batch dimensions independently of each other."""
     rngs = jax.random.split(rng, len(batch_shape))
-    perms = [jax.random.permutation(rng_i, dim) for rng_i, dim in zip(rngs, batch_shape)]
+    perms = [jax.random.permutation(rng_i, dim) for rng_i, dim in zip(rngs, batch_shape, strict=True)]
     # n-dimensional index grid from permutations
     idx_grids = jnp.meshgrid(*perms, indexing="ij")
 

@@ -58,13 +58,16 @@ def recursive_chunk(item: Any, num_chunks: int, dim: int = 0) -> Iterable[Any]: 
         yield from np.array_split(item, num_chunks, axis=dim)
     elif is_dataclass(item):
         yield from (
-            item.__class__(**{k: i for k, i in zip(item.__dict__, ii)})
-            for ii in zip(*(recursive_chunk(v, num_chunks, dim) for v in item.__dict__.values()))
+            item.__class__(**{k: i for k, i in zip(item.__dict__, ii, strict=True)})
+            for ii in zip(*(recursive_chunk(v, num_chunks, dim) for v in item.__dict__.values()), strict=False)
         )
     elif isinstance(item, Mapping):
-        yield from (dict(zip(item, ii)) for ii in zip(*(recursive_chunk(i, num_chunks, dim) for i in item.values())))
+        yield from (
+            dict(zip(item, ii, strict=False))
+            for ii in zip(*(recursive_chunk(i, num_chunks, dim) for i in item.values()), strict=False)
+        )
     elif isinstance(item, Sequence):
-        yield from (list(ii) for ii in zip(*(recursive_chunk(i, num_chunks, dim) for i in item)))
+        yield from (list(ii) for ii in zip(*(recursive_chunk(i, num_chunks, dim) for i in item), strict=False))
     else:
         yield from (item for _ in range(num_chunks))
 

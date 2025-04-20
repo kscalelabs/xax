@@ -16,8 +16,8 @@ import xax
 try:
     import trimesh
 
-except ModuleNotFoundError:
-    raise ImportError("trimesh is required to run this example. Please install it with `pip install trimesh`.")
+except ModuleNotFoundError as err:
+    raise ImportError("trimesh is required to run this example. Please install it with `pip install trimesh`.") from err
 
 
 @dataclass
@@ -64,6 +64,7 @@ class LoggingExample(xax.Task[Config]):
     ) -> None:
         # Tests logging a 3D mesh.
         mesh = trimesh.load_mesh(Path(__file__).parent / "assets" / "teapot.stl")
+        assert isinstance(mesh, trimesh.Trimesh)
         self.logger.log_mesh("test_mesh", vertices=np.array(mesh.vertices), faces=np.array(mesh.faces))
 
     def get_data_iterator(self, phase: xax.Phase, key: PRNGKeyArray) -> Iterator[tuple[Array, Array]]:

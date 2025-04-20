@@ -8,6 +8,7 @@ from jaxtyping import Array
 
 from xax.task.logger import (
     LogError,
+    LogErrorSummary,
     LoggerImpl,
     LogLine,
     LogPing,
@@ -57,6 +58,12 @@ class JsonLogger(LoggerImpl):
         self.line_sep = line_sep
         self.remove_unicode_from_namespaces = remove_unicode_from_namespaces
 
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
     @property
     def fp(self) -> TextIO:
         return self.log_stream
@@ -86,6 +93,12 @@ class JsonLogger(LoggerImpl):
         self.fp.write(self.line_sep)
         if self.flush_immediately:
             self.fp.flush()
+
+    def write_error_summary(self, error_summary: LogErrorSummary) -> None:
+        pass
+
+    def log_file(self, name: str, contents: str) -> None:
+        pass
 
     def write_error(self, error: LogError) -> None:
         self.err_fp.write(error.message)

@@ -25,6 +25,12 @@ class CallbackLogger(LoggerImpl):
         self.ping_callback = ping_callback
         self.file_callback = file_callback
 
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
     def write(self, line: LogLine) -> None:
         self.callback(line)
 

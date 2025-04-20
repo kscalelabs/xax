@@ -12,7 +12,7 @@ from typing import TypeVar
 
 from xax.core.state import Phase
 from xax.nn.parallel import is_master
-from xax.task.logger import LoggerImpl, LogLine
+from xax.task.logger import LogError, LogErrorSummary, LoggerImpl, LogLine, LogPing, LogStatus
 from xax.utils.jax import as_float
 from xax.utils.logging import LOG_STATUS, port_is_busy
 from xax.utils.tensorboard import TensorboardWriter, TensorboardWriters
@@ -236,3 +236,21 @@ class TensorboardLogger(LoggerImpl):
         for name, contents in self.files.items():
             writer.add_text(name, contents)
         self.files.clear()
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def write_error(self, error: LogError) -> None:
+        pass
+
+    def write_error_summary(self, error_summary: LogErrorSummary) -> None:
+        pass
+
+    def write_ping(self, ping: LogPing) -> None:
+        pass
+
+    def write_status(self, status: LogStatus) -> None:
+        pass

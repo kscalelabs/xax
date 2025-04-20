@@ -192,7 +192,7 @@ def render_text_blocks(
         if any(len(row) != len(blocks[0]) for row in blocks):
             raise ValueError("All rows must have the same number of blocks in order to align them")
         widths = [[max(len(line) for line in i.lines) if i.width is None else i.width for i in r] for r in blocks]
-        row_widths = [max(i) for i in zip(*widths)]
+        row_widths = [max(i) for i in zip(*widths, strict=True)]
         for row in blocks:
             for i, block in enumerate(row):
                 block.width = row_widths[i]
@@ -263,7 +263,7 @@ def render_text_blocks(
                             if i >= len(block.lines)
                             else colored(pad(block.lines[i], width, block.center), block.color, bold=block.bold)
                         )
-                        for block, width in zip(row, get_widths(row))
+                        for block, width in zip(row, get_widths(row), strict=True)
                     ]
                 )
                 + " │"
