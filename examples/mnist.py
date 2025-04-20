@@ -113,7 +113,7 @@ class MnistClassification(xax.Task[Config]):
         max_images = 16
         batch = jax.tree.map(lambda x: jax.device_get(x[:max_images]), batch)
         (x, y), yhat = batch, output.argmax(axis=1)
-        labels = [f"pred: {p}\ntrue: {t}" for p, t in zip(yhat[:max_images], y[:max_images])]
+        labels = [f"pred: {p}\ntrue: {t}" for p, t in zip(yhat[:max_images], y[:max_images], strict=True)]
         self.logger.log_labeled_images("predictions", (x, labels), max_images=max_images)
 
     def get_data_iterator(self, phase: xax.Phase, key: PRNGKeyArray) -> Iterator:

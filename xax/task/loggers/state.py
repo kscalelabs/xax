@@ -3,7 +3,14 @@
 from pathlib import Path
 from typing import Literal
 
-from xax.task.logger import LoggerImpl, LogLine
+from xax.task.logger import (
+    LogError,
+    LogErrorSummary,
+    LoggerImpl,
+    LogLine,
+    LogPing,
+    LogStatus,
+)
 
 
 class StateLogger(LoggerImpl):
@@ -29,4 +36,22 @@ class StateLogger(LoggerImpl):
             f.write(contents)
 
     def write(self, line: LogLine) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def write_error_summary(self, error_summary: LogErrorSummary) -> None:
+        pass
+
+    def write_error(self, error: LogError) -> None:
+        pass
+
+    def write_status(self, status: LogStatus) -> None:
+        pass
+
+    def write_ping(self, ping: LogPing) -> None:
         pass

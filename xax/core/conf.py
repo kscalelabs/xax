@@ -26,7 +26,7 @@ def field(value: FieldType, **kwargs: str) -> FieldType:
     metadata: dict[str, Any] = {}
     metadata.update(kwargs)
 
-    if hasattr(value, "__call__"):
+    if hasattr(value, "__call__"):  # noqa: B004
         return field_base(default_factory=value, metadata=metadata)
     if value.__class__.__hash__ is None:
         return field_base(default_factory=lambda: value, metadata=metadata)

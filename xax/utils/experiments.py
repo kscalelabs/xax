@@ -749,7 +749,8 @@ class BaseFileDownloader(ABC):
                         f"We detected some HTML elements in the downloaded file. "
                         f"This most likely means that the download triggered an unhandled API response by GDrive. "
                         f"Please report this to torchvision at https://github.com/pytorch/vision/issues including "
-                        f"the response:\n\n{text}"
+                        f"the response:\n\n{text}",
+                        stacklevel=2,
                     )
 
     @classmethod

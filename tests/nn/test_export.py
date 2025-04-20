@@ -73,7 +73,7 @@ class MultiMLP(eqx.Module):
         # Process each input with its corresponding MLP
         # Each input can have a different size as long as it matches the MLP's expected input shape
         results = []
-        for mlp, x in zip(self.mlps, xs):
+        for mlp, x in zip(self.mlps, xs, strict=True):
             results.append(mlp(x))
         return jnp.concatenate(results, axis=-1)
 
