@@ -361,7 +361,6 @@ class TrainMixin(
         model = self.get_model(key)
         state = State.init_state()
 
-        self.log_model_size(model)
         if not load_optimizer:
             return model, state
 
@@ -684,9 +683,6 @@ class TrainMixin(
         self.logger.log_file("config.yaml", self.config_str(self.config, use_cli=False))
         self.logger.log_file("info.json", get_info_json())
 
-    def log_model_size(self, model: PyTree) -> None:
-        logger.info("Model size: %s", f"{get_pytree_param_count(model):,}")
-
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
 
@@ -832,6 +828,9 @@ class TrainMixin(
 
             key, model_key = jax.random.split(key)
             model, optimizer, opt_state, state = self.load_initial_state(model_key, load_optimizer=True)
+            logger.info("Model size: %s", f"{get_pytree_param_count(model):,}")
+            logger.info("Optimizer size: %s", f"{get_pytree_param_count(optimizer):,}")
+
             state = self.on_training_start(state)
 
             def on_exit() -> None:
