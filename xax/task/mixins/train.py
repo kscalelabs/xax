@@ -57,6 +57,7 @@ from xax.utils.experiments import (
 )
 from xax.utils.jax import jit as xax_jit
 from xax.utils.logging import LOG_PING, LOG_STATUS
+from xax.utils.pytree import get_pytree_param_count
 from xax.utils.text import highlight_exception_message, show_info
 from xax.utils.types.frozen_dict import FrozenDict
 
@@ -94,12 +95,6 @@ def batches_per_step_schedule(schedule: list[int] | None) -> list[int] | None:
     if any(s < 1 for s in schedule):
         raise ValueError("Batch chunk schedule must be positive")
     return list(itertools.accumulate([0] + schedule))
-
-
-def get_param_count(pytree: PyTree) -> int:
-    """Calculates the total number of parameters in a PyTree."""
-    leaves, _ = jax.tree.flatten(pytree)
-    return sum(x.size for x in leaves if isinstance(x, jnp.ndarray))
 
 
 class ValidStepTimer:
@@ -690,7 +685,7 @@ class TrainMixin(
         self.logger.log_file("info.json", get_info_json())
 
     def log_model_size(self, model: PyTree) -> None:
-        logger.info("Model size: %s", f"{get_param_count(model):,}")
+        logger.info("Model size: %s", f"{get_pytree_param_count(model):,}")
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
