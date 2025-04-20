@@ -121,7 +121,7 @@ class ValidStepTimer:
         self.last_valid_step = state.num_steps.item()
 
     def is_valid_step(self, state: State) -> bool:
-        if state.num_steps < self.valid_first_n_steps:
+        if state.num_steps < self.valid_first_n_steps and state.num_valid_steps < self.valid_first_n_steps:
             return True
 
         if self.last_valid_time is None or self.last_valid_step is None:
