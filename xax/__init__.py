@@ -57,8 +57,18 @@ __all__ = [
     "BaseLauncher",
     "CliLauncher",
     "SingleProcessLauncher",
+    "LogDistribution",
+    "LogError",
+    "LogErrorSummary",
+    "LogGraph",
+    "LogHistogram",
     "LogImage",
     "LogLine",
+    "LogMesh",
+    "LogPing",
+    "LogScalar",
+    "LogStatus",
+    "LogVideo",
     "Logger",
     "LoggerImpl",
     "CallbackLogger",
@@ -223,8 +233,18 @@ NAME_MAP: dict[str, str] = {
     "BaseLauncher": "task.launchers.base",
     "CliLauncher": "task.launchers.cli",
     "SingleProcessLauncher": "task.launchers.single_process",
+    "LogDistribution": "task.logger",
+    "LogError": "task.logger",
+    "LogErrorSummary": "task.logger",
+    "LogGraph": "task.logger",
+    "LogHistogram": "task.logger",
     "LogImage": "task.logger",
     "LogLine": "task.logger",
+    "LogMesh": "task.logger",
+    "LogPing": "task.logger",
+    "LogScalar": "task.logger",
+    "LogStatus": "task.logger",
+    "LogVideo": "task.logger",
     "Logger": "task.logger",
     "LoggerImpl": "task.logger",
     "CallbackLogger": "task.loggers.callback",
@@ -388,7 +408,22 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.launchers.base import BaseLauncher
     from xax.task.launchers.cli import CliLauncher
     from xax.task.launchers.single_process import SingleProcessLauncher
-    from xax.task.logger import Logger, LoggerImpl, LogImage, LogLine
+    from xax.task.logger import (
+        LogDistribution,
+        LogError,
+        LogErrorSummary,
+        Logger,
+        LoggerImpl,
+        LogGraph,
+        LogHistogram,
+        LogImage,
+        LogLine,
+        LogMesh,
+        LogPing,
+        LogScalar,
+        LogStatus,
+        LogVideo,
+    )
     from xax.task.loggers.callback import CallbackLogger
     from xax.task.loggers.json import JsonLogger
     from xax.task.loggers.state import StateLogger

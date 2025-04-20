@@ -68,8 +68,8 @@ def _infer_activation(activation: ActivationFunction) -> Callable:
         return lambda x: x
     try:
         return getattr(jax.nn, activation)
-    except AttributeError:
-        raise ValueError(f"Activation function `{activation}` not found in `jax.nn`")
+    except AttributeError as err:
+        raise ValueError(f"Activation function `{activation}` not found in `jax.nn`") from err
 
 
 def make_eqx_mlp(hyperparams: MLPHyperParams, *, key: PRNGKeyArray) -> eqx.nn.MLP:
@@ -100,7 +100,7 @@ def make_eqx_mlp(hyperparams: MLPHyperParams, *, key: PRNGKeyArray) -> eqx.nn.ML
 def export_eqx_mlp(
     model: eqx.nn.MLP,
     output_path: str | Path,
-    dtype: jax.numpy.dtype = eqx._misc.default_floating_dtype(),
+    dtype: jax.numpy.dtype | None = None,
 ) -> None:
     """Serialize an Equinox MLP to a .eqx file.
 
@@ -109,6 +109,9 @@ def export_eqx_mlp(
         output_path: The path to save the exported model.
         dtype: The dtype of the model.
     """
+    if dtype is None:
+        dtype = eqx._misc.default_floating_dtype()
+
     activation = model.activation.__name__
     final_activation = model.final_activation.__name__
 

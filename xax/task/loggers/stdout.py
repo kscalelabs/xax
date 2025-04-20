@@ -79,11 +79,13 @@ class StdoutLogger(LoggerImpl):
         self.error_summary: tuple[str, datetime.datetime] | None = None
 
     def start(self) -> None:
-        return super().start()
+        pass
 
     def stop(self) -> None:
         self.write_queues()
-        return super().stop()
+
+    def log_file(self, name: str, contents: str) -> None:
+        pass
 
     def write_separator(self) -> None:
         self.write_fp.write("\033[2J\033[H")

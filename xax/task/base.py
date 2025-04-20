@@ -184,8 +184,8 @@ class BaseTask(Generic[Config]):
 
             # Attempts to load any paths as configs.
             is_path = [Path(arg).is_file() or (task_path / arg).is_file() for arg in args]
-            paths = [arg for arg, is_path in zip(args, is_path) if is_path]
-            non_paths = [arg for arg, is_path in zip(args, is_path) if not is_path]
+            paths = [arg for arg, is_path in zip(args, is_path, strict=True) if is_path]
+            non_paths = [arg for arg, is_path in zip(args, is_path, strict=True) if not is_path]
             if paths:
                 cfg = OmegaConf.merge(cfg, *(get_config(path, task_path) for path in paths))
             cfg = OmegaConf.merge(cfg, OmegaConf.from_cli(non_paths))

@@ -30,6 +30,39 @@ class DummyLogger(xax.LoggerImpl):
     def should_log(self, state: xax.State) -> bool:
         return True
 
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def log_file(self, name: str, contents: str) -> None:
+        pass
+
+    def log_error(self, error: xax.LogError) -> None:
+        pass
+
+    def log_error_summary(self, summary: xax.LogErrorSummary) -> None:
+        pass
+
+    def log_status(self, status: xax.LogStatus) -> None:
+        pass
+
+    def log_ping(self, ping: xax.LogPing) -> None:
+        pass
+
+    def write_error(self, error: xax.LogError) -> None:
+        pass
+
+    def write_error_summary(self, error_summary: xax.LogErrorSummary) -> None:
+        pass
+
+    def write_status(self, status: xax.LogStatus) -> None:
+        pass
+
+    def write_ping(self, ping: xax.LogPing) -> None:
+        pass
+
 
 @pytest.mark.parametrize(
     "image",

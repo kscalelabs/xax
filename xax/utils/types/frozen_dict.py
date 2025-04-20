@@ -133,7 +133,7 @@ class FrozenDict(Mapping[K, V]):
 
     @classmethod
     def tree_unflatten(cls, keys: tuple[K, ...], values: tuple[Any, ...]) -> "FrozenDict[K, V]":
-        return cls({k: v for k, v in zip(keys, values)}, __unsafe_skip_copy__=True)
+        return cls({k: v for k, v in zip(keys, values, strict=True)}, __unsafe_skip_copy__=True)
 
 
 def unfreeze(x: FrozenDict[K, V] | dict[str, Any]) -> dict[Any, Any]:  # noqa: ANN401

@@ -31,11 +31,13 @@ Config = TypeVar("Config", bound=ArtifactsConfig)
 
 class ArtifactsMixin(BaseTask[Config]):
     _exp_dir: Path | None
+    _stage_dir: Path | None
 
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
         self._exp_dir = None
+        self._stage_dir = None
 
     @functools.cached_property
     def run_dir(self) -> Path:
@@ -75,15 +77,16 @@ class ArtifactsMixin(BaseTask[Config]):
         logger.log(LOG_STATUS, self._exp_dir)
         return self._exp_dir
 
-    @functools.lru_cache(maxsize=None)
     def stage_environment(self) -> Path | None:
-        stage_dir = (self.exp_dir / "code").resolve()
-        try:
-            stage_environment(self, stage_dir)
-        except Exception:
-            logger.exception("Failed to stage environment!")
-            return None
-        return stage_dir
+        if self._stage_dir is None:
+            stage_dir = (self.exp_dir / "code").resolve()
+            try:
+                stage_environment(self, stage_dir)
+            except Exception:
+                logger.exception("Failed to stage environment!")
+                return None
+            self._stage_dir = stage_dir
+        return self._stage_dir
 
     def on_training_end(self, state: State) -> State:
         state = super().on_training_end(state)

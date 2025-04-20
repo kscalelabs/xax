@@ -462,11 +462,11 @@ class LoggerImpl(ABC):
 
         self.tickers = {phase: IntervalTicker(log_interval_seconds) for phase in get_args(Phase)}
 
-    def start(self) -> None:
-        pass
+    @abstractmethod
+    def start(self) -> None: ...
 
-    def stop(self) -> None:
-        pass
+    @abstractmethod
+    def stop(self) -> None: ...
 
     @abstractmethod
     def write(self, line: LogLine) -> None:
@@ -476,6 +476,7 @@ class LoggerImpl(ABC):
             line: The line to write.
         """
 
+    @abstractmethod
     def write_error_summary(self, error_summary: LogErrorSummary) -> None:
         """Handles writing an error summary.
 
@@ -483,6 +484,7 @@ class LoggerImpl(ABC):
             error_summary: The error summary to write.
         """
 
+    @abstractmethod
     def write_error(self, error: LogError) -> None:
         """Handles writing an error line.
 
@@ -490,6 +492,7 @@ class LoggerImpl(ABC):
             error: The error information to write.
         """
 
+    @abstractmethod
     def write_status(self, status: LogStatus) -> None:
         """Handles writing a status line.
 
@@ -497,6 +500,7 @@ class LoggerImpl(ABC):
             status: The status to write.
         """
 
+    @abstractmethod
     def write_ping(self, ping: LogPing) -> None:
         """Handles writing a ping line.
 
@@ -504,6 +508,7 @@ class LoggerImpl(ABC):
             ping: The ping to write.
         """
 
+    @abstractmethod
     def log_file(self, name: str, contents: str) -> None:
         """Logs a large text file.
 
@@ -621,7 +626,7 @@ class Logger:
             return
         line = self.pack(state)
         self.clear()
-        for lg in (lg for lg, should_log in zip(self.loggers, should_log) if should_log):
+        for lg in (lg for lg, should_log in zip(self.loggers, should_log, strict=False) if should_log):
             lg.write(line)
 
     def write_error_summary(self, error_summary: str) -> None:
@@ -1045,7 +1050,7 @@ class Logger:
                         line_spacing=line_spacing,
                         centered=centered,
                     )
-                    for img, label in zip(images, labels)
+                    for img, label in zip(images, labels, strict=True)
                 ]
                 tiled = tile_images([img.image for img in labeled], sep)
 
