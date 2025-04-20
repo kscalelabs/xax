@@ -1,5 +1,6 @@
 """Defines geometry functions."""
 
+import chex
 from jax import numpy as jnp
 from jaxtyping import Array
 
@@ -211,3 +212,51 @@ def quat_to_rotmat(quat: Array, eps: float = 1e-6) -> Array:
         ],
         axis=-2,
     )
+
+
+def normalize(v: jnp.ndarray, axis: int = -1, eps: float = 1e-8) -> jnp.ndarray:
+    norm = jnp.linalg.norm(v, axis=axis, keepdims=True)
+    return v / jnp.clip(norm, a_min=eps)
+
+
+def rotation6d_to_rotation_matrix(r6d: jnp.ndarray) -> jnp.ndarray:
+    """Convert 6D rotation representation to rotation matrix.
+
+    From https://arxiv.org/pdf/1812.07035, Appendix B
+
+    Args:
+        r6d: The 6D rotation representation, shape (*, 6).
+
+    Returns:
+        The rotation matrix, shape (*, 3, 3).
+    """
+    chex.assert_shape(r6d, (..., 6))
+    shape = r6d.shape
+    flat = r6d.reshape(-1, 6)
+    a_1 = flat[:, 0:3]
+    a_2 = flat[:, 3:6]
+
+    b_1 = normalize(a_1, axis=-1)
+
+    # Reordered Gram-Schmidt orthonormalization.
+    b_3 = normalize(jnp.cross(b_1, a_2), axis=-1)
+    b_2 = jnp.cross(b_3, b_1)
+
+    rotation_matrix = jnp.stack([b_1, b_2, b_3], axis=-1)
+    return rotation_matrix.reshape(shape[:-1] + (3, 3))
+
+
+def rotation_matrix_to_rotation6d(rotation_matrix: jnp.ndarray) -> jnp.ndarray:
+    """Convert rotation matrix to 6D rotation representation.
+
+    Args:
+        rotation_matrix: The rotation matrix, shape (*, 3, 3).
+
+    Returns:
+        The 6D rotation representation, shape (*, 6).
+    """
+    chex.assert_shape(rotation_matrix, (..., 3, 3))
+    shape = rotation_matrix.shape
+    # Simply concatenate a1 and a2 from SO(3)
+    r6d = jnp.concatenate([rotation_matrix[..., 0], rotation_matrix[..., 1]], axis=-1)
+    return r6d.reshape(shape[:-2] + (6,))
