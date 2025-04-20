@@ -32,7 +32,7 @@ class TensorboardLogger(LoggerImpl):
         flush_seconds: float = 10.0,
         wait_seconds: float = 0.0,
         start_in_subprocess: bool = True,
-        use_localhost: bool = False,
+        use_localhost: bool | None = None,
         log_interval_seconds: float = 10.0,
     ) -> None:
         """Defines a logger which writes to Tensorboard.
@@ -48,6 +48,9 @@ class TensorboardLogger(LoggerImpl):
             log_interval_seconds: The interval between successive log lines.
         """
         super().__init__(log_interval_seconds)
+
+        if use_localhost is None:
+            use_localhost = os.environ.get("USE_TENSORBOARD_LOCALHOST", "0") == "1"
 
         self.log_directory = Path(run_directory).expanduser().resolve() / subdirectory
         self.wait_seconds = wait_seconds
