@@ -272,7 +272,7 @@ class TrainMixin(
                 v, secondary = v
             else:
                 secondary = False
-            self.logger.log_scalar(k, v, namespace="⌛ timers", secondary=secondary)
+            self.logger.log_scalar(k, v, namespace="🕒 timers", secondary=secondary)
 
     def log_step(
         self,
