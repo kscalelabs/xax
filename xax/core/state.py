@@ -1,5 +1,6 @@
 """Defines a dataclass for keeping track of the current training state."""
 
+import time
 from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, Unpack, cast
 
@@ -28,6 +29,7 @@ class StateDict(TypedDict, total=False):
     num_samples: NotRequired[int | Array]
     num_valid_steps: NotRequired[int | Array]
     num_valid_samples: NotRequired[int | Array]
+    start_time_s: NotRequired[float | Array]
     elapsed_time_s: NotRequired[float | Array]
     valid_elapsed_time_s: NotRequired[float | Array]
     phase: NotRequired[Phase]
@@ -57,12 +59,16 @@ class State:
         return self._float32_arr[1]
 
     @property
-    def elapsed_time_s(self) -> Array:
+    def start_time_s(self) -> Array:
         return self._float32_arr[2]
 
     @property
-    def valid_elapsed_time_s(self) -> Array:
+    def elapsed_time_s(self) -> Array:
         return self._float32_arr[3]
+
+    @property
+    def valid_elapsed_time_s(self) -> Array:
+        return self._float32_arr[4]
 
     @property
     def phase(self) -> Phase:
@@ -72,7 +78,7 @@ class State:
     def init_state(cls) -> "State":
         return cls(
             _int32_arr=jnp.array([0, 0, 0], dtype=jnp.int32),
-            _float32_arr=jnp.array([0.0, 0.0, 0.0, 0.0], dtype=jnp.float32),
+            _float32_arr=jnp.array([0.0, 0.0, time.time(), 0.0, 0.0], dtype=jnp.float32),
         )
 
     @property
@@ -98,10 +104,12 @@ class State:
         if "num_valid_samples" in kwargs:
             float32_arr = float32_arr.at[1].set(kwargs["num_valid_samples"])
 
+        if "start_time_s" in kwargs:
+            float32_arr = float32_arr.at[3].set(kwargs["start_time_s"])
         if "elapsed_time_s" in kwargs:
-            float32_arr = float32_arr.at[2].set(kwargs["elapsed_time_s"])
+            float32_arr = float32_arr.at[3].set(kwargs["elapsed_time_s"])
         if "valid_elapsed_time_s" in kwargs:
-            float32_arr = float32_arr.at[3].set(kwargs["valid_elapsed_time_s"])
+            float32_arr = float32_arr.at[4].set(kwargs["valid_elapsed_time_s"])
 
         return State(
             _int32_arr=int32_arr,
@@ -137,6 +145,7 @@ class State:
             [
                 d.get("num_samples", 0),
                 d.get("num_valid_samples", 0),
+                d.get("start_time_s", time.time()),
                 d.get("elapsed_time_s", 0.0),
                 d.get("valid_elapsed_time_s", 0.0),
             ],
