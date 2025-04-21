@@ -105,7 +105,7 @@ class State:
             float32_arr = float32_arr.at[1].set(kwargs["num_valid_samples"])
 
         if "start_time_s" in kwargs:
-            float32_arr = float32_arr.at[3].set(kwargs["start_time_s"])
+            float32_arr = float32_arr.at[2].set(kwargs["start_time_s"])
         if "elapsed_time_s" in kwargs:
             float32_arr = float32_arr.at[3].set(kwargs["elapsed_time_s"])
         if "valid_elapsed_time_s" in kwargs:
@@ -118,13 +118,13 @@ class State:
 
     def to_dict(self) -> dict[str, int | float | str]:
         return {
-            "num_steps": int(self.num_steps),
-            "num_valid_steps": int(self.num_valid_steps),
-            "num_samples": int(self.num_samples),
-            "num_valid_samples": int(self.num_valid_samples),
-            "start_time_s": float(self.start_time_s),
-            "elapsed_time_s": float(self.elapsed_time_s),
-            "valid_elapsed_time_s": float(self.valid_elapsed_time_s),
+            "num_steps": int(self.num_steps.item()),
+            "num_valid_steps": int(self.num_valid_steps.item()),
+            "num_samples": int(self.num_samples.item()),
+            "num_valid_samples": int(self.num_valid_samples.item()),
+            "start_time_s": float(self.start_time_s.item()),
+            "elapsed_time_s": float(self.elapsed_time_s.item()),
+            "valid_elapsed_time_s": float(self.valid_elapsed_time_s.item()),
             "phase": str(self.phase),
         }
 
