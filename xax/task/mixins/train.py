@@ -310,23 +310,46 @@ class TrainMixin(
         self.write_logs(state)
 
     @abstractmethod
-    def get_model(self, key: PRNGKeyArray) -> PyTree:
+    def get_model(self, key: PRNGKeyArray) -> PyTree | Sequence[PyTree]:
         """Returns the Equinox model to train.
 
         Returns:
             The model to train.
         """
 
+    def _get_models(self, key: PRNGKeyArray) -> list[PyTree]:
+        models = self.get_model(key)
+        if isinstance(models, Sequence):
+            models = list(models)
+        elif isinstance(models, eqx.Module):
+            models = [models]
+        else:
+            logger.warning("Model is not a sequence or an eqx.Module, wrapping it in a list anyway")
+            models = [models]
+        return models
+
     @abstractmethod
-    def get_optimizer(self) -> optax.GradientTransformation:
+    def get_optimizer(self) -> optax.GradientTransformation | Sequence[optax.GradientTransformation]:
         """Gets the optimizer for the model.
 
         Returns:
             The optimizer to use to train the model.
         """
 
-    def get_initial_opt_state(self, model: PyTree, optimizer: optax.GradientTransformation) -> optax.OptState:
-        return optimizer.init(eqx.filter(model, eqx.is_array))
+    def _get_optimizers(self) -> list[optax.GradientTransformation]:
+        optimizers = self.get_optimizer()
+        if isinstance(optimizers, optax.GradientTransformation):
+            optimizers = [optimizers]
+        elif isinstance(optimizers, Sequence):
+            optimizers = list(optimizers)
+        return optimizers
+
+    def get_initial_opt_state(
+        self,
+        models: list[PyTree],
+        optimizers: list[optax.GradientTransformation],
+    ) -> list[optax.OptState]:
+        return [opt.init(eqx.filter(model, eqx.is_array)) for model, opt in zip(models, optimizers, strict=True)]
 
     @overload
     def load_initial_state(
@@ -346,7 +369,10 @@ class TrainMixin(
         self,
         key: PRNGKeyArray,
         load_optimizer: bool = False,
-    ) -> tuple[PyTree, State] | tuple[PyTree, optax.GradientTransformation, optax.OptState, State]:
+    ) -> (
+        tuple[list[PyTree], State]
+        | tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State]
+    ):
         init_ckpt_path = self.get_init_ckpt_path()
 
         if init_ckpt_path is not None:
@@ -364,16 +390,17 @@ class TrainMixin(
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
-        model = self.get_model(key)
+        models = self._get_models(key)
         state = State.init_state()
 
         if not load_optimizer:
-            return model, state
+            return models, state
 
-        optimizer = self.get_optimizer()
-        opt_state = self.get_initial_opt_state(model, optimizer)
+        # Gets the optimizer(s) for the model.
+        optimizers = self._get_optimizers()
+        opt_states = self.get_initial_opt_state(models, optimizers)
 
-        return model, optimizer, opt_state, state
+        return models, optimizers, opt_states, state
 
     @overload
     def load_ckpt(
@@ -381,7 +408,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["all"],
-    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]: ...
+    ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, Config]: ...
 
     @overload
     def load_ckpt(
@@ -389,7 +416,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["model_state_config"],
-    ) -> tuple[PyTree, State, Config]: ...
+    ) -> tuple[list[PyTree], State, Config]: ...
 
     @overload
     def load_ckpt(
@@ -397,7 +424,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["model"],
-    ) -> PyTree: ...
+    ) -> list[PyTree]: ...
 
     @overload
     def load_ckpt(
@@ -405,7 +432,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["opt"],
-    ) -> optax.GradientTransformation: ...
+    ) -> list[optax.GradientTransformation]: ...
 
     @overload
     def load_ckpt(
@@ -415,7 +442,7 @@ class TrainMixin(
         part: Literal["opt_state"],
         model: PyTree | None = None,
         optimizer: optax.GradientTransformation | None = None,
-    ) -> optax.OptState: ...
+    ) -> list[optax.OptState]: ...
 
     @overload
     def load_ckpt(
@@ -423,7 +450,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["state"],
-    ) -> State: ...
+    ) -> list[State]: ...
 
     @overload
     def load_ckpt(
@@ -431,7 +458,7 @@ class TrainMixin(
         path: Path,
         *,
         part: Literal["config"],
-    ) -> Config: ...
+    ) -> list[Config]: ...
 
     def load_ckpt(
         self,
@@ -441,11 +468,11 @@ class TrainMixin(
         model: PyTree | None = None,
         optimizer: optax.GradientTransformation | None = None,
     ) -> (
-        tuple[PyTree, optax.GradientTransformation, optax.OptState, State, Config]
-        | tuple[PyTree, State, Config]
-        | PyTree
-        | optax.GradientTransformation
-        | optax.OptState
+        tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, Config]
+        | tuple[list[PyTree], State, Config]
+        | list[PyTree]
+        | list[optax.GradientTransformation]
+        | list[optax.OptState]
         | State
         | Config
     ):
@@ -456,28 +483,28 @@ class TrainMixin(
 
         match part:
             case "model_state_config":
-                model_spec = eqx.filter_eval_shape(self.get_model, key)
-                model, state, config = load_ckpt(path, part="model_state_config", model_template=model_spec)
+                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model, state, config = load_ckpt(path, part="model_state_config", model_templates=model_specs)
                 config = self.get_config(config, use_cli=False)
                 return model, state, config
 
             case "model":
-                model_spec = eqx.filter_eval_shape(self.get_model, key)
-                return load_ckpt(path, part="model", model_template=model_spec)
+                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                return load_ckpt(path, part="model", model_templates=model_specs)
 
             case "opt":
-                optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                return load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
+                optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
+                return load_ckpt(path, part="opt", optimizer_templates=optimizer_specs)
 
             case "opt_state":
                 if model is None:
-                    model_spec = eqx.filter_eval_shape(self.get_model, key)
-                    model = load_ckpt(path, part="model", model_template=model_spec)
+                    model_specs = eqx.filter_eval_shape(self._get_models, key)
+                    model = load_ckpt(path, part="model", model_templates=model_specs)
                 if optimizer is None:
-                    optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                    optimizer = load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
-                opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                return load_ckpt(path, part="opt_state", opt_state_template=opt_state_spec)
+                    optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
+                    optimizer = load_ckpt(path, part="opt", optimizer_templates=optimizer_specs)
+                opt_state_specs = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
+                return load_ckpt(path, part="opt_state", opt_state_templates=opt_state_specs)
 
             case "state":
                 return load_ckpt(path, part="state")
@@ -486,12 +513,12 @@ class TrainMixin(
                 return self.get_config(load_ckpt(path, part="config"), use_cli=False)
 
             case "all":
-                model_spec = eqx.filter_eval_shape(self.get_model, key)
-                model = load_ckpt(path, part="model", model_template=model_spec)
-                optimizer_spec = eqx.filter_eval_shape(self.get_optimizer)
-                optimizer = load_ckpt(path, part="opt", optimizer_template=optimizer_spec)
-                opt_state_spec = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
-                opt_state = load_ckpt(path, part="opt_state", opt_state_template=opt_state_spec)
+                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model = load_ckpt(path, part="model", model_templates=model_specs)
+                optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
+                optimizer = load_ckpt(path, part="opt", optimizer_templates=optimizer_specs)
+                opt_state_specs = eqx.filter_eval_shape(self.get_initial_opt_state, model, optimizer)
+                opt_state = load_ckpt(path, part="opt_state", opt_state_templates=opt_state_specs)
                 state = load_ckpt(path, part="state")
                 config = self.get_config(load_ckpt(path, part="config"), use_cli=False)
                 return model, optimizer, opt_state, state, config
@@ -718,14 +745,22 @@ class TrainMixin(
 
     def train_loop(
         self,
-        model: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
+        models: Sequence[PyTree],
+        optimizers: Sequence[optax.GradientTransformation],
+        opt_states: Sequence[optax.OptState],
         train_pf: Iterator[Batch],
         valid_pf: Iterator[Batch],
         state: State,
     ) -> None:
-        model_arr, model_static = eqx.partition(model, self.model_partition_fn)
+        if len(models) != 1 or len(optimizers) != 1 or len(opt_states) != 1:
+            raise ValueError(
+                "Vanilla training expects a single model, optimizer and optimizer state. "
+                f"Found {len(models)} models, {len(optimizers)} optimizers and {len(opt_states)} optimizer states."
+            )
+
+        model_arr, model_static = eqx.partition(models[0], self.model_partition_fn)
+        optimizer = optimizers[0]
+        opt_state = opt_states[0]
 
         while not self.is_training_over(state):
             valid_step = self.valid_step_timer(state)
@@ -773,11 +808,11 @@ class TrainMixin(
 
             if self.should_checkpoint(state):
                 model = eqx.combine(model_arr, model_static)
-                self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
+                self.save_checkpoint(models=[model], optimizers=[optimizer], opt_states=[opt_state], state=state)
 
         # After finishing training, save the final checkpoint.
         model = eqx.combine(model_arr, model_static)
-        self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
+        self.save_checkpoint(models=[model], optimizers=[optimizer], opt_states=[opt_state], state=state)
 
     @contextlib.contextmanager
     def get_train_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
@@ -841,14 +876,14 @@ class TrainMixin(
                 Thread(target=self.log_state, daemon=True).start()
 
             key, model_key = jax.random.split(key)
-            model, optimizer, opt_state, state = self.load_initial_state(model_key, load_optimizer=True)
-            logger.info("Model size: %s", f"{get_pytree_param_count(model):,}")
-            logger.info("Optimizer size: %s", f"{get_pytree_param_count(optimizer):,}")
+            models, optimizers, opt_states, state = self.load_initial_state(model_key, load_optimizer=True)
+            logger.info("Model size: %s", f"{get_pytree_param_count(models):,}")
+            logger.info("Optimizer size: %s", f"{get_pytree_param_count(optimizers):,}")
 
             state = self.on_training_start(state)
 
             def on_exit() -> None:
-                self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
+                self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
 
             # Handle user-defined interrupts during the training loop.
             self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
@@ -857,9 +892,9 @@ class TrainMixin(
             with self.get_train_iterator(tkey) as train_pf, self.get_valid_iterator(vkey) as valid_pf:
                 try:
                     self.train_loop(
-                        model=model,
-                        optimizer=optimizer,
-                        opt_state=opt_state,
+                        models=models,
+                        optimizers=optimizers,
+                        opt_states=opt_states,
                         train_pf=train_pf,
                         valid_pf=valid_pf,
                         state=state,
@@ -869,7 +904,7 @@ class TrainMixin(
                     if is_master():
                         num_steps, num_samples = int(state.num_steps), int(state.num_samples)
                         show_info(f"Finished training after {num_steps} steps, {num_samples} samples", important=True)
-                    self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
+                    self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
 
                 except (KeyboardInterrupt, bdb.BdbQuit):
                     if is_master():
@@ -879,7 +914,7 @@ class TrainMixin(
                     exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
                     sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
                     sys.stdout.flush()
-                    self.save_checkpoint(model=model, optimizer=optimizer, opt_state=opt_state, state=state)
+                    self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
 
                 finally:
                     state = self.on_training_end(state)

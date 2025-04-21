@@ -6,7 +6,7 @@ import logging
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Literal, TypeVar, cast, overload
+from typing import Generic, Literal, Sequence, TypeVar, cast, overload
 
 import equinox as eqx
 import jax
@@ -57,10 +57,10 @@ def load_ckpt(
     path: Path,
     *,
     part: Literal["all"],
-    model_template: PyTree,
-    optimizer_template: PyTree,
-    opt_state_template: PyTree,
-) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]: ...
+    model_templates: Sequence[PyTree],
+    optimizer_templates: Sequence[optax.GradientTransformation],
+    opt_state_templates: Sequence[optax.OptState],
+) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, DictConfig]: ...
 
 
 @overload
@@ -68,20 +68,35 @@ def load_ckpt(
     path: Path,
     *,
     part: Literal["model_state_config"],
-    model_template: PyTree,
-) -> tuple[PyTree, State, DictConfig]: ...
+    model_templates: Sequence[PyTree],
+) -> tuple[list[PyTree], State, DictConfig]: ...
 
 
 @overload
-def load_ckpt(path: Path, *, part: Literal["model"], model_template: PyTree) -> PyTree: ...
+def load_ckpt(
+    path: Path,
+    *,
+    part: Literal["model"],
+    model_templates: Sequence[PyTree],
+) -> list[PyTree]: ...
 
 
 @overload
-def load_ckpt(path: Path, *, part: Literal["opt"], optimizer_template: PyTree) -> optax.GradientTransformation: ...
+def load_ckpt(
+    path: Path,
+    *,
+    part: Literal["opt"],
+    optimizer_templates: Sequence[optax.GradientTransformation],
+) -> list[optax.GradientTransformation]: ...
 
 
 @overload
-def load_ckpt(path: Path, *, part: Literal["opt_state"], opt_state_template: PyTree) -> optax.OptState: ...
+def load_ckpt(
+    path: Path,
+    *,
+    part: Literal["opt_state"],
+    opt_state_templates: Sequence[optax.OptState],
+) -> list[optax.OptState]: ...
 
 
 @overload
@@ -96,40 +111,49 @@ def load_ckpt(
     path: str | Path,
     *,
     part: CheckpointPart = "model",
-    model_template: PyTree | None = None,
-    optimizer_template: PyTree | None = None,
-    opt_state_template: PyTree | None = None,
+    model_templates: Sequence[PyTree] | None = None,
+    optimizer_templates: Sequence[optax.GradientTransformation] | None = None,
+    opt_state_templates: Sequence[optax.OptState] | None = None,
 ) -> (
-    tuple[PyTree, optax.GradientTransformation, optax.OptState, State, DictConfig]
-    | tuple[PyTree, State, DictConfig]
-    | PyTree
-    | optax.GradientTransformation
-    | optax.OptState
+    tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, DictConfig]
+    | tuple[list[PyTree], State, DictConfig]
+    | list[PyTree]
+    | list[optax.GradientTransformation]
+    | list[optax.OptState]
     | State
     | DictConfig
 ):
     with tarfile.open(path, "r:gz") as tar:
 
-        def get_model() -> PyTree:
-            if model_template is None:
+        def get_model() -> list[PyTree]:
+            if model_templates is None:
                 raise ValueError("model_template must be provided to load model weights")
-            if (model := tar.extractfile("model")) is None:
-                raise ValueError(f"Checkpoint does not contain a model file: {path}")
-            return eqx.tree_deserialise_leaves(io.BytesIO(model.read()), model_template)
+            models: list[PyTree] = []
+            for i, model_template in enumerate(model_templates):
+                if (model := tar.extractfile(f"model_{i}")) is None:
+                    raise ValueError(f"Checkpoint does not contain a model file: {path}")
+                models.append(eqx.tree_deserialise_leaves(io.BytesIO(model.read()), model_template))
+            return models
 
-        def get_opt() -> optax.GradientTransformation:
-            if optimizer_template is None:
+        def get_opt() -> list[optax.GradientTransformation]:
+            if optimizer_templates is None:
                 raise ValueError("optimizer_template must be provided to load optimizer")
-            if (opt := tar.extractfile("optimizer")) is None:
-                raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
-            return eqx.tree_deserialise_leaves(io.BytesIO(opt.read()), optimizer_template)
+            opts: list[optax.GradientTransformation] = []
+            for i, optimizer_template in enumerate(optimizer_templates):
+                if (opt := tar.extractfile(f"optimizer_{i}")) is None:
+                    raise ValueError(f"Checkpoint does not contain an optimizer file: {path}")
+                opts.append(eqx.tree_deserialise_leaves(io.BytesIO(opt.read()), optimizer_template))
+            return opts
 
-        def get_opt_state() -> optax.OptState:
-            if opt_state_template is None:
+        def get_opt_state() -> list[optax.OptState]:
+            if opt_state_templates is None:
                 raise ValueError("opt_state_template must be provided to load optimizer state")
-            if (opt_state := tar.extractfile("opt_state")) is None:
-                raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
-            return eqx.tree_deserialise_leaves(io.BytesIO(opt_state.read()), opt_state_template)
+            opt_states: list[optax.OptState] = []
+            for i, opt_state_template in enumerate(opt_state_templates):
+                if (opt_state := tar.extractfile(f"opt_state_{i}")) is None:
+                    raise ValueError(f"Checkpoint does not contain an optimizer state file: {path}")
+                opt_states.append(eqx.tree_deserialise_leaves(io.BytesIO(opt_state.read()), opt_state_template))
+            return opt_states
 
         def get_state() -> State:
             if (state := tar.extractfile("state")) is None:
@@ -192,20 +216,20 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
 
     def save_checkpoint(
         self,
-        model: PyTree | None = None,
-        optimizer: optax.GradientTransformation | None = None,
-        opt_state: optax.OptState | None = None,
+        models: Sequence[PyTree] | None = None,
+        optimizers: Sequence[optax.GradientTransformation] | None = None,
+        opt_states: Sequence[optax.OptState] | None = None,
         aux_data: PyTree | None = None,
         state: State | None = None,
     ) -> Path:
         """Save a checkpoint.
 
         Args:
-            model: The model to save
-            state: The current training state
-            optimizer: The optimizer to save
+            models: The models to save
+            optimizers: The optimizers to save
+            opt_states: The optimizer states to save
             aux_data: Additional data to save
-            opt_state: The optimizer state to save
+            state: The current training state
 
         Returns:
             Path to the saved checkpoint
@@ -235,22 +259,25 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
                 tar.addfile(tarinfo, buf)
 
             # Save model using Equinox
-            if model is not None:
-                with io.BytesIO() as buf:
-                    eqx.tree_serialise_leaves(buf, model)
-                    add_file("model", buf)
+            if models is not None:
+                for i, model in enumerate(models):
+                    with io.BytesIO() as buf:
+                        eqx.tree_serialise_leaves(buf, model)
+                        add_file(f"model_{i}", buf)
 
             # Save optimizer using Equinox
-            if optimizer is not None:
-                with io.BytesIO() as buf:
-                    eqx.tree_serialise_leaves(buf, optimizer)
-                    add_file("optimizer", buf)
+            if optimizers is not None:
+                for i, optimizer in enumerate(optimizers):
+                    with io.BytesIO() as buf:
+                        eqx.tree_serialise_leaves(buf, optimizer)
+                        add_file(f"optimizer_{i}", buf)
 
             # Save optimizer state using Equinox
-            if opt_state is not None:
-                with io.BytesIO() as buf:
-                    eqx.tree_serialise_leaves(buf, opt_state)
-                    add_file("opt_state", buf)
+            if opt_states is not None:
+                for i, opt_state in enumerate(opt_states):
+                    with io.BytesIO() as buf:
+                        eqx.tree_serialise_leaves(buf, opt_state)
+                        add_file(f"opt_state_{i}", buf)
 
             # Save aux data using Equinox.
             if aux_data is not None:
