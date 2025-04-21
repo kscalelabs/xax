@@ -728,21 +728,27 @@ class TrainMixin(
         model_arr, model_static = eqx.partition(model, self.model_partition_fn)
 
         while not self.is_training_over(state):
-            if self.valid_step_timer(state):
+            valid_step = self.valid_step_timer(state)
+
+            if valid_step:
                 with ContextTimer() as timer:
+                    state = state.replace(phase="valid")
                     valid_batch = next(valid_pf)
                     output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
                     self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
 
+                    state = state.replace(
+                        num_valid_steps=state.num_valid_steps + 1,
+                        num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
+                    )
+
                 state = state.replace(
-                    phase="valid",
-                    num_valid_steps=state.num_valid_steps + 1,
-                    num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
                     valid_elapsed_time_s=state.valid_elapsed_time_s + timer.elapsed_time,
                 )
 
             with ContextTimer() as timer:
                 state = self.on_step_start(state)
+                state = state.replace(phase="train")
                 train_batch = next(train_pf)
                 model_arr, opt_state, output, metrics = self.train_step(
                     model_arr=model_arr,
@@ -754,14 +760,16 @@ class TrainMixin(
                 )
                 self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
 
+                state = state.replace(
+                    num_steps=state.num_steps + 1,
+                    num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
+                )
+
+                state = self.on_step_end(state)
+
             state = state.replace(
-                phase="train",
-                num_steps=state.num_steps + 1,
-                num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
                 elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
             )
-
-            state = self.on_step_end(state)
 
             if self.should_checkpoint(state):
                 model = eqx.combine(model_arr, model_static)
