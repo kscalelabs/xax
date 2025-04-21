@@ -120,7 +120,7 @@ class ValidStepTimer:
         self.last_valid_time = state.elapsed_time_s.item()
         self.last_valid_step = state.num_steps.item()
 
-    def is_valid_step(self, state: State) -> bool:
+    def __call__(self, state: State) -> bool:
         if state.num_steps < self.valid_first_n_steps and state.num_valid_steps < self.valid_first_n_steps:
             return True
 
@@ -728,7 +728,7 @@ class TrainMixin(
         model_arr, model_static = eqx.partition(model, self.model_partition_fn)
 
         while not self.is_training_over(state):
-            if self.valid_step_timer.is_valid_step(state):
+            if self.valid_step_timer(state):
                 with ContextTimer() as timer:
                     valid_batch = next(valid_pf)
                     output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
