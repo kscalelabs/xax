@@ -122,6 +122,7 @@ class State:
             "num_valid_steps": int(self.num_valid_steps),
             "num_samples": int(self.num_samples),
             "num_valid_samples": int(self.num_valid_samples),
+            "start_time_s": float(self.start_time_s),
             "elapsed_time_s": float(self.elapsed_time_s),
             "valid_elapsed_time_s": float(self.valid_elapsed_time_s),
             "phase": str(self.phase),
