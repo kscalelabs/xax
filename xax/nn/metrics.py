@@ -39,7 +39,7 @@ def pad_inf(inp: Array, before: int, after: int) -> Array:
     return jnp.pad(inp, (before, after), constant_values=jnp.inf)
 
 
-def dtw(prediction: Array, target: Array) -> Array:
+def dtw(prediction: Array, target: Array, soft: bool = False) -> Array:
     """Dynamic Time Warping.
 
     Reference:
@@ -65,6 +65,7 @@ def dtw(prediction: Array, target: Array) -> Array:
         diagonal = two_ago[:-1]
         right = one_ago[:-1]
         down = one_ago[1:]
+
         best = jnp.min(jnp.stack([diagonal, right, down], axis=-1), axis=-1)
 
         next_row = best + current_antidiagonal

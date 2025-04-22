@@ -5,13 +5,17 @@ import jax.numpy as jnp
 import xax
 
 
-def test_dtw() -> None:
-    t = jnp.linspace(0, 2 * jnp.pi, 32)
-    timeseries_1 = jnp.sin(t)
-    timeseries_2 = jnp.cos(t)
-    series = [timeseries_1, timeseries_2]
+def test_dtw_identical() -> None:
+    series_1 = jnp.array([1, 2, 3, 4, 5])
+    series_2 = jnp.array([1, 2, 3, 4, 5])
 
-    dtw_distance = xax.dtw(series[0], series[1])
-    assert dtw_distance.shape == ()
-    assert dtw_distance.dtype == jnp.float32
+    dtw_distance = xax.dtw(series_1, series_2)
     assert dtw_distance.item() == 0.0
+
+
+def test_dtw_different() -> None:
+    series_1 = jnp.array([1, 2, 3, 4, 5])
+    series_2 = jnp.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+
+    dtw_distance = xax.dtw(series_1, series_2)
+    assert dtw_distance.item() == -1.0
