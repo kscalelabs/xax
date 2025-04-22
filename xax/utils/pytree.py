@@ -1,11 +1,15 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
+from typing import TypeVar
+
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jaxtyping import PRNGKeyArray, PyTree
+
+T = TypeVar("T")
 
 
 def slice_array(x: Array, start: Array, slice_length: int) -> Array:
@@ -243,3 +247,9 @@ def get_pytree_param_count(pytree: PyTree) -> int:
     """Calculates the total number of parameters in a PyTree."""
     leaves, _ = jax.tree.flatten(pytree)
     return sum(x.size for x in leaves if isinstance(x, jnp.ndarray) and eqx.is_inexact_array(x))
+
+
+def tuple_insert(t: tuple[T, ...], index: int, value: T) -> tuple[T, ...]:
+    mut = list(t)
+    mut[index] = value
+    return tuple(mut)
