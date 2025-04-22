@@ -363,7 +363,7 @@ class TrainMixin(
         self,
         key: PRNGKeyArray,
         load_optimizer: Literal[True],
-    ) -> tuple[PyTree, optax.GradientTransformation, optax.OptState, State]: ...
+    ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State]: ...
 
     def load_initial_state(
         self,
