@@ -136,6 +136,7 @@ __all__ = [
     "reshuffle_pytree_independently",
     "slice_array",
     "slice_pytree",
+    "tuple_insert",
     "update_pytree",
     "TextBlock",
     "camelcase_to_snakecase",
@@ -315,6 +316,7 @@ NAME_MAP: dict[str, str] = {
     "reshuffle_pytree_independently": "utils.pytree",
     "slice_array": "utils.pytree",
     "slice_pytree": "utils.pytree",
+    "tuple_insert": "utils.pytree",
     "update_pytree": "utils.pytree",
     "TextBlock": "utils.text",
     "camelcase_to_snakecase": "utils.text",
@@ -495,6 +497,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         reshuffle_pytree_independently,
         slice_array,
         slice_pytree,
+        tuple_insert,
         update_pytree,
     )
     from xax.utils.text import (
