@@ -51,6 +51,7 @@ __all__ = [
     "rotation_matrix_to_rotation6d",
     "cross_entropy",
     "cast_norm_type",
+    "dynamic_time_warping",
     "get_norm",
     "is_master",
     "BaseSSMBlock",
@@ -230,8 +231,9 @@ NAME_MAP: dict[str, str] = {
     "rotation6d_to_rotation_matrix": "nn.geom",
     "rotation_matrix_to_rotation6d": "nn.geom",
     "cross_entropy": "nn.losses",
-    "cast_norm_type": "nn.norm",
-    "get_norm": "nn.norm",
+    "cast_norm_type": "nn.metrics",
+    "dynamic_time_warping": "nn.metrics",
+    "get_norm": "nn.metrics",
     "is_master": "nn.parallel",
     "BaseSSMBlock": "nn.ssm",
     "DiagSSMBlock": "nn.ssm",
@@ -347,7 +349,7 @@ NAME_MAP.update(
         "LOG_ERROR_SUMMARY": "utils.logging",
         "LOG_PING": "utils.logging",
         "LOG_STATUS": "utils.logging",
-        "NormType": "nn.norm",
+        "NormType": "nn.metrics",
         "Output": "task.mixins.output",
         "Phase": "core.state",
         "RawConfigType": "task.base",
@@ -412,7 +414,12 @@ if IMPORT_ALL or TYPE_CHECKING:
         rotation_matrix_to_rotation6d,
     )
     from xax.nn.losses import cross_entropy
-    from xax.nn.norm import NormType, cast_norm_type, get_norm
+    from xax.nn.metrics import (
+        NormType,
+        cast_norm_type,
+        dynamic_time_warping,
+        get_norm,
+    )
     from xax.nn.parallel import is_master
     from xax.nn.ssm import SSM, BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType
