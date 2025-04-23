@@ -119,7 +119,7 @@ def rotate_vector_by_quat(vector: Array, quat: Array, inverse: bool = False, eps
     w, x, y, z = jnp.split(quat, 4, axis=-1)
 
     if inverse:
-        w, x, y, z = w, -x, -y, -z
+        x, y, z = -x, -y, -z
 
     # Extract vector components
     vx, vy, vz = jnp.split(vector, 3, axis=-1)
