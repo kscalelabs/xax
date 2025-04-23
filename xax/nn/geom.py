@@ -102,12 +102,13 @@ def get_projected_gravity_vector_from_quat(quat: Array, eps: float = 1e-6) -> Ar
     return jnp.concatenate([gx, gy, -gz], axis=-1)
 
 
-def rotate_vector_by_quat(vector: Array, quat: Array, eps: float = 1e-6) -> Array:
+def rotate_vector_by_quat(vector: Array, quat: Array, inverse: bool = False, eps: float = 1e-6) -> Array:
     """Rotates a vector by a quaternion.
 
     Args:
         vector: The vector to rotate, shape (*, 3).
         quat: The quaternion to rotate by, shape (*, 4).
+        inverse: If True, rotate the vector by the conjugate of the quaternion.
         eps: A small epsilon value to avoid division by zero.
 
     Returns:
@@ -116,6 +117,9 @@ def rotate_vector_by_quat(vector: Array, quat: Array, eps: float = 1e-6) -> Arra
     # Normalize quaternion
     quat = quat / (jnp.linalg.norm(quat, axis=-1, keepdims=True) + eps)
     w, x, y, z = jnp.split(quat, 4, axis=-1)
+
+    if inverse:
+        w, x, y, z = w, -x, -y, -z
 
     # Extract vector components
     vx, vy, vz = jnp.split(vector, 3, axis=-1)
