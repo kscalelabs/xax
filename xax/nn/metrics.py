@@ -2,6 +2,7 @@
 
 from typing import Literal, cast, get_args
 
+import chex
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array
@@ -25,53 +26,51 @@ def get_norm(x: Array, norm: NormType) -> Array:
             raise ValueError(f"Invalid norm: {norm}")
 
 
-def compute_distance_matrix(a: Array, b: Array) -> Array:
-    has_features = len(a.shape) > 1
-    a = jnp.expand_dims(a, axis=1)
-    b = jnp.expand_dims(b, axis=0)
-    distance_matrix = jnp.square(a - b)
-    if has_features:
-        distance_matrix = jnp.sum(distance_matrix, axis=-1)
-    return distance_matrix
-
-
-def pad_inf(inp: Array, before: int, after: int) -> Array:
-    return jnp.pad(inp, (before, after), constant_values=jnp.inf)
-
-
-def dtw(prediction: Array, target: Array, soft: bool = False) -> Array:
+def dynamic_time_warping(distance_matrix_nm: Array) -> tuple[Array, Array]:
     """Dynamic Time Warping.
 
-    Reference:
-        K. Heidler. (Soft-)DTW for JAX, Github, https://github.com/khdlr/softdtw_jax
+    Args:
+        distance_matrix_nm: A matrix of pairwise distances between two
+            sequences, with shape (N, M), with the condition that N <= M.
+
+    Returns:
+        The cost of the minimum path from the top-left corner of the distance
+        matrix to the bottom-right corner, along with the indices of that
+        minimum path.
     """
-    distance_matrix = compute_distance_matrix(prediction, target)
-    # contract: height >= width
-    if distance_matrix.shape[0] < distance_matrix.shape[1]:
-        distance_matrix = distance_matrix.T
-    height, width = distance_matrix.shape
+    chex.assert_shape(distance_matrix_nm, (None, None))
+    n, m = distance_matrix_nm.shape
 
-    rows = []
-    for row in range(height):
-        rows.append(pad_inf(distance_matrix[row], row, height - row - 1))
+    assert n <= m, f"Invalid dynamic time warping distance matrix shape: ({n}, {m})"
 
-    model_matrix = jnp.stack(rows, axis=1)
+    # Masks values which cannot be reached.
+    row_idx = jnp.arange(n)[:, None]
+    col_idx = jnp.arange(m)[None, :]
+    mask = row_idx > col_idx
+    distance_matrix_nm = jnp.where(mask, jnp.inf, distance_matrix_nm)
 
-    init = (pad_inf(model_matrix[0], 1, 0), pad_inf(model_matrix[1] + model_matrix[0, 0], 1, 0))
+    # Pre-pads with inf
+    distance_matrix_nm = jnp.pad(distance_matrix_nm, ((1, 0), (0, 0)), mode="constant", constant_values=jnp.inf)
+    indices = jnp.arange(n)
 
-    def _scan_step(carry: tuple[Array, Array], current_antidiagonal: Array) -> tuple[tuple[Array, Array], Array]:
-        two_ago, one_ago = carry
+    # Scan over remaining rows to fill cost matrix
+    def scan_fn(prev_cost: Array, cur_distances: Array) -> tuple[Array, Array]:
+        same_trans = prev_cost
+        prev_trans = jnp.pad(prev_cost[:-1], ((1, 0),), mode="constant", constant_values=jnp.inf)
+        bp = jnp.where(prev_trans < same_trans, indices - 1, indices)
+        nc = jnp.minimum(prev_trans, same_trans) + cur_distances[1:]
+        return nc, bp
 
-        diagonal = two_ago[:-1]
-        right = one_ago[:-1]
-        down = one_ago[1:]
+    init_cost = distance_matrix_nm[1:, 0]
+    final_cost, back_pointers = jax.lax.scan(scan_fn, init_cost, distance_matrix_nm[:, 1:].T)
 
-        best = jnp.min(jnp.stack([diagonal, right, down], axis=-1), axis=-1)
+    # Scan the back pointers backwards to get the minimum path.
+    def scan_back_fn(carry: Array, back_pointer: Array) -> tuple[Array, Array]:
+        prev_idx = back_pointer[carry]
+        return prev_idx, carry
 
-        next_row = best + current_antidiagonal
-        next_row = pad_inf(next_row, 1, 0)
+    final_index = jnp.array(n - 1)
+    _, min_path = jax.lax.scan(scan_back_fn, final_index, back_pointers, reverse=True)
+    min_path = jnp.pad(min_path, ((1, 0)), mode="constant", constant_values=0)
 
-        return (one_ago, next_row), next_row
-
-    carry, ys = jax.lax.scan(_scan_step, init, model_matrix[2:], unroll=4)
-    return carry[1][-1]
+    return final_cost[-1], min_path
