@@ -10,7 +10,7 @@ import xax
 
 def test_dtw_cost_matches() -> None:
     def _assert_correct(distances: Array) -> None:
-        min_cost, indices = xax.dynamic_time_warping(distances)
+        min_cost, indices = xax.dynamic_time_warping(distances, return_path=True)
         assert min_cost.item() == jnp.take_along_axis(distances, indices[None, :], axis=0).sum().item()
 
     # Simple distance matrix.

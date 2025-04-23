@@ -1,11 +1,13 @@
 """Norm and metric utilities."""
 
-from typing import Literal, cast, get_args
+from typing import Literal, cast, get_args, overload
 
 import chex
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array
+
+from xax.utils.jax import jit as xax_jit
 
 NormType = Literal["l1", "l2"]
 
@@ -26,12 +28,24 @@ def get_norm(x: Array, norm: NormType) -> Array:
             raise ValueError(f"Invalid norm: {norm}")
 
 
-def dynamic_time_warping(distance_matrix_nm: Array) -> tuple[Array, Array]:
+@overload
+def dynamic_time_warping(distance_matrix_nm: Array) -> Array: ...
+
+
+@overload
+def dynamic_time_warping(distance_matrix_nm: Array, return_path: Literal[True]) -> tuple[Array, Array]: ...
+
+
+@xax_jit(static_argnames=["return_path"])
+def dynamic_time_warping(distance_matrix_nm: Array, return_path: bool = False) -> Array | tuple[Array, Array]:
     """Dynamic Time Warping.
 
     Args:
         distance_matrix_nm: A matrix of pairwise distances between two
             sequences, with shape (N, M), with the condition that N <= M.
+        return_path: If set, return the minimum path, otherwise just return
+            the cost. The latter is preferred if using this function as a
+            distance metric since it avoids the backwards scan on backpointers.
 
     Returns:
         The cost of the minimum path from the top-left corner of the distance
@@ -57,12 +71,14 @@ def dynamic_time_warping(distance_matrix_nm: Array) -> tuple[Array, Array]:
     def scan_fn(prev_cost: Array, cur_distances: Array) -> tuple[Array, Array]:
         same_trans = prev_cost
         prev_trans = jnp.pad(prev_cost[:-1], ((1, 0),), mode="constant", constant_values=jnp.inf)
-        bp = jnp.where(prev_trans < same_trans, indices - 1, indices)
         nc = jnp.minimum(prev_trans, same_trans) + cur_distances[1:]
-        return nc, bp
+        return nc, jnp.where(prev_trans < same_trans, indices - 1, indices) if return_path else nc
 
     init_cost = distance_matrix_nm[1:, 0]
     final_cost, back_pointers = jax.lax.scan(scan_fn, init_cost, distance_matrix_nm[:, 1:].T)
+
+    if not return_path:
+        return final_cost
 
     # Scan the back pointers backwards to get the minimum path.
     def scan_back_fn(carry: Array, back_pointer: Array) -> tuple[Array, Array]:
