@@ -86,20 +86,7 @@ def get_projected_gravity_vector_from_quat(quat: Array, eps: float = 1e-6) -> Ar
     Returns:
         A 3D vector representing the gravity in the local frame, shape (*, 3).
     """
-    # Normalize quaternion
-    quat = quat / (jnp.linalg.norm(quat, axis=-1, keepdims=True) + eps)
-    w, x, y, z = jnp.split(quat, 4, axis=-1)
-
-    # Gravity vector in world frame is [0, 0, -1] (pointing down)
-    # Rotate gravity vector using quaternion rotation
-
-    # Calculate quaternion rotation: q * [0,0,-1] * q^-1
-    gx = 2 * (x * z - w * y)
-    gy = 2 * (y * z + w * x)
-    gz = w * w - x * x - y * y + z * z
-
-    # Note: We're rotating [0,0,-1], so we negate gz to match the expected direction
-    return jnp.concatenate([gx, gy, -gz], axis=-1)
+    return rotate_vector_by_quat(jnp.array([0, 0, -9.81]), quat, inverse=True, eps=eps)
 
 
 def rotate_vector_by_quat(vector: Array, quat: Array, inverse: bool = False, eps: float = 1e-6) -> Array:
