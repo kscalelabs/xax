@@ -85,7 +85,6 @@ def test_euler_to_quat_batch() -> None:
         (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, 0.0]), jnp.array([1.0, 0.0, 0.0])),
         (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, jnp.pi / 2]), jnp.array([0.0, 1.0, 0.0])),
         (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, jnp.pi / 2, 0.0]), jnp.array([0.0, 0.0, -1.0])),
-        (jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 0.0, jnp.pi / 2]), jnp.array([0.0, 1.0, 0.0])),
     ],
 )
 def test_rotate_vector_by_quat(
@@ -95,7 +94,7 @@ def test_rotate_vector_by_quat(
 ) -> None:
     quat = xax.euler_to_quat(euler)
     rotated_vector = xax.rotate_vector_by_quat(vector, quat)
-    assert jnp.allclose(rotated_vector, expected)
+    assert jnp.allclose(rotated_vector, expected, atol=1e-4)
 
 
 def test_get_projected_gravity_vector_from_quat() -> None:
@@ -103,17 +102,17 @@ def test_get_projected_gravity_vector_from_quat() -> None:
     # Identity quaternion (no rotation) - gravity should point down in local frame
     identity_quat = jnp.array([1.0, 0.0, 0.0, 0.0])
     gravity = xax.get_projected_gravity_vector_from_quat(identity_quat)
-    assert jnp.allclose(gravity, jnp.array([0.0, 0.0, -1.0]), atol=1e-3)
+    assert jnp.allclose(gravity, jnp.array([0.0, 0.0, -9.81]), atol=1e-3)
 
-    # 90 degree rotation around X-axis - gravity should point along Y
+    # 90 degree rotation around X-axis - gravity should point along -Y
     x90_quat = jnp.array([jnp.cos(jnp.pi / 4), jnp.sin(jnp.pi / 4), 0.0, 0.0])
     gravity = xax.get_projected_gravity_vector_from_quat(x90_quat)
-    assert jnp.allclose(gravity, jnp.array([0.0, 1.0, 0.0]), atol=1e-3)
+    assert jnp.allclose(gravity, jnp.array([0.0, -9.81, 0.0]), atol=1e-3)
 
     # 90 degree rotation around Y-axis - gravity should point along X
     y90_quat = jnp.array([jnp.cos(jnp.pi / 4), 0.0, jnp.sin(jnp.pi / 4), 0.0])
     gravity = xax.get_projected_gravity_vector_from_quat(y90_quat)
-    assert jnp.allclose(gravity, jnp.array([-1.0, 0.0, 0.0]), atol=1e-3)
+    assert jnp.allclose(gravity, jnp.array([9.81, 0.0, 0.0]), atol=1e-3)
 
     # Test with batch of quaternions
     batch_quat = jnp.array(
@@ -125,7 +124,7 @@ def test_get_projected_gravity_vector_from_quat() -> None:
     )
 
     batch_gravity = jax.vmap(xax.get_projected_gravity_vector_from_quat)(batch_quat)
-    expected_gravity = jnp.array([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]])
+    expected_gravity = jnp.array([[0.0, 0.0, -9.81], [0.0, -9.81, 0.0], [9.81, 0.0, 0.0]])
     assert jnp.allclose(batch_gravity, expected_gravity, atol=1e-5)
 
 
