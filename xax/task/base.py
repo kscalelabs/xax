@@ -222,7 +222,7 @@ class BaseTask(Generic[Config]):
 
     @classmethod
     def load_config(cls, ckpt_path: str | Path) -> Config:
-        return cls.get_config(load_ckpt(ckpt_path, part="config"), use_cli=False)
+        return cls.get_config(load_ckpt(Path(ckpt_path), part="config"), use_cli=False)
 
     @classmethod
     def load_task(cls, ckpt_path: str | Path) -> Self:
