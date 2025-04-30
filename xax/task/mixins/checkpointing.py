@@ -46,7 +46,6 @@ class CheckpointingConfig(ArtifactsConfig):
     save_every_n_seconds: float | None = field(60.0 * 60.0, help="Save a checkpoint every N seconds")
     only_save_most_recent: bool = field(True, help="Only keep the most recent checkpoint")
     load_from_ckpt_path: str | None = field(None, help="If set, load initial model weights from this path")
-    load_ckpt_strict: bool = field(True, help="If set, only load weights for which have a matching key in the model")
 
 
 Config = TypeVar("Config", bound=CheckpointingConfig)
