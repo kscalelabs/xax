@@ -6,7 +6,7 @@ import logging
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Literal, Sequence, TypeVar, cast, overload
+from typing import Generic, Literal, Self, Sequence, TypeVar, cast, overload
 
 import equinox as eqx
 import jax
@@ -305,3 +305,11 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
         self.on_after_checkpoint_save(ckpt_path, state)
 
         return ckpt_path
+
+    @classmethod
+    def load_config(cls, ckpt_path: str | Path) -> Config:
+        return cls.get_config(load_ckpt(Path(ckpt_path), part="config"), use_cli=False)
+
+    @classmethod
+    def load_task(cls, ckpt_path: str | Path) -> Self:
+        return cls(cls.load_config(ckpt_path))

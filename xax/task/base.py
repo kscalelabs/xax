@@ -20,7 +20,6 @@ from omegaconf import DictConfig, OmegaConf
 from omegaconf.base import SCMode
 
 from xax.core.state import State
-from xax.task.mixins.checkpointing import load_ckpt
 from xax.utils.text import camelcase_to_snakecase
 
 logger = logging.getLogger(__name__)
@@ -219,11 +218,3 @@ class BaseTask(Generic[Config]):
         """
         cfg = cls.get_config(*cfgs, use_cli=use_cli)
         return cls(cfg)
-
-    @classmethod
-    def load_config(cls, ckpt_path: str | Path) -> Config:
-        return cls.get_config(load_ckpt(Path(ckpt_path), part="config"), use_cli=False)
-
-    @classmethod
-    def load_task(cls, ckpt_path: str | Path) -> Self:
-        return cls(cls.load_config(ckpt_path))
