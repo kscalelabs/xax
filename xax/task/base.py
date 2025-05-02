@@ -92,7 +92,11 @@ class BaseTask(Generic[Config]):
 
     @functools.cached_property
     def task_path(self) -> Path:
-        return Path(inspect.getfile(self.__class__))
+        try:
+            return Path(inspect.getfile(self.__class__))
+        except OSError:
+            logger.warning("Could not resolve task path for %s, returning current working directory")
+            return Path.cwd()
 
     @functools.cached_property
     def task_module(self) -> str:
@@ -172,7 +176,11 @@ class BaseTask(Generic[Config]):
         Returns:
             The merged configs.
         """
-        task_path = Path(inspect.getfile(cls))
+        try:
+            task_path = Path(inspect.getfile(cls))
+        except OSError:
+            logger.warning("Could not resolve task path for %s, returning current working directory", cls.__name__)
+            task_path = Path.cwd()
         cfg = OmegaConf.structured(cls.get_config_class())
         cfg = OmegaConf.merge(cfg, *(get_config(other_cfg, task_path) for other_cfg in cfgs))
         if use_cli:
