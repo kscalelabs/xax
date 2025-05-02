@@ -47,7 +47,9 @@ class ArtifactsMixin(BaseTask[Config]):
                 task_file = inspect.getfile(self.__class__)
                 run_dir = Path(task_file).resolve().parent
             except OSError:
-                logger.warning("Could not resolve task path for %s, returning current working directory", self.__class__.__name__)
+                logger.warning(
+                    "Could not resolve task path for %s, returning current working directory", self.__class__.__name__
+                )
                 run_dir = Path.cwd()
         return run_dir / self.task_name
 

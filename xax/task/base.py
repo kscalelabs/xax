@@ -93,7 +93,7 @@ class BaseTask(Generic[Config]):
     @functools.cached_property
     def task_path(self) -> Path:
         try:
-            return Path(inspect.getsourcefile(self.__class__))
+            return Path(inspect.getfile(self.__class__))
         except OSError:
             logger.warning("Could not resolve task path for %s, returning current working directory")
             return Path.cwd()
