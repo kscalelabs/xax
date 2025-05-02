@@ -178,8 +178,8 @@ class BaseTask(Generic[Config]):
         if use_cli:
             args = use_cli if isinstance(use_cli, list) else sys.argv[1:]
             if "-h" in args or "--help" in args:
-                sys.stderr.write(OmegaConf.to_yaml(cfg))
-                sys.stderr.flush()
+                sys.stdout.write(OmegaConf.to_yaml(cfg, sort_keys=True))
+                sys.stdout.flush()
                 sys.exit(0)
 
             # Attempts to load any paths as configs.
