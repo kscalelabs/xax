@@ -54,24 +54,36 @@ def compute_loss(self, model, x, y):
 ### 4. View profiling results
 
 Profiling results are saved to the experiment directory under the `profiles` subdirectory.
-You can view them using TensorBoard:
+We provide multiple viewing utilities with full Python 3.13 compatibility:
 
 ```bash
-tensorboard --logdir=path/to/experiment/profiles
+# Combined TensorBoard and Perfetto UI viewer (recommended)
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles
+
+# TensorBoard only with Python 3.13 compatibility fix
+python -m xax.examples.profiling.view_tensorboard --profile-dir=path/to/profiles
+
+# Perfetto UI only (extracts and decompresses trace files)
+python -m xax.examples.profiling.view_perfetto --profile-dir=path/to/profiles --extract
 ```
 
 Or programmatically:
 
 ```python
-from xax.utils.profiling import open_latest_profile
+from xax.utils.profiling import open_profile_viewer
 
-# Opens the latest profile in TensorBoard
-open_latest_profile("path/to/experiment/profiles")
+# Opens the latest profile in the combined viewer
+open_profile_viewer("path/to/experiment/profiles")
 ```
 
-## Example
+## Examples
 
-See the `examples/mnist_profiling.py` file for a complete example of using the profiling functionality.
+See the `examples/profiling/` directory for complete examples:
+- `mnist_profiling.py` - MNIST training with profiling
+- `matrix_profile_demo.py` - Simple matrix operations profiling
+- `comprehensive_profile_demo.py` - Advanced profiling capabilities
+
+For more detailed documentation, see `examples/profiling/README.md`.
 
 ## Advanced Usage
 
@@ -100,4 +112,11 @@ class MyTaskConfig(TrainConfig):
     profile_gpu_trace: bool = True
 ```
 
-This will capture more detailed information about GPU kernel execution times. 
+This will capture more detailed information about GPU kernel execution times.
+
+### Troubleshooting
+
+If you encounter issues with TensorBoard profile visualization:
+1. Ensure you have `tensorboard-plugin-profile` installed
+2. Try using the dedicated `view_perfetto.py` script instead
+3. See the troubleshooting section in `examples/profiling/README.md` 
