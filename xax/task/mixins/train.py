@@ -60,6 +60,7 @@ from xax.utils.logging import LOG_PING, LOG_STATUS
 from xax.utils.pytree import get_pytree_param_count
 from xax.utils.text import highlight_exception_message, show_info
 from xax.utils.types.frozen_dict import FrozenDict
+from xax.task.mixins.profiler import ProfilerConfig, ProfilerMixin
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ class TrainConfig(
     StepContextConfig,
     ArtifactsConfig,
     RunnableConfig,
+    ProfilerConfig,
 ):
     valid_every_n_steps: int | None = field(None, help="Number of training steps to run per validation step")
     valid_first_n_steps: int = field(0, help="Treat the first N steps as validation steps")
@@ -190,6 +192,7 @@ class TrainMixin(
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
+    ProfilerMixin[Config],
     Generic[Config],
     ABC,
 ):
@@ -729,7 +732,12 @@ class TrainMixin(
         batch: Batch,
         state: State,
     ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
-        model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
+        # Profile the training step if enabled
+        if self.should_profile:
+            with self.profile_context(state, name="train_step"):
+                model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
+        else:
+            model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
         return model_arr, opt_state, output, FrozenDict(metrics)
 
     @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
@@ -740,7 +748,12 @@ class TrainMixin(
         batch: Batch,
         state: State,
     ) -> tuple[Output, FrozenDict[str, Array]]:
-        _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
+        # Profile the validation step if enabled
+        if self.should_profile:
+            with self.profile_context(state, name="valid_step"):
+                _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
+        else:
+            _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
         return output, FrozenDict(metrics)
 
     def train_loop(
