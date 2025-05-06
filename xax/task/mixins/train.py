@@ -43,6 +43,7 @@ from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
 from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart, load_ckpt
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
+from xax.task.mixins.mixed_precision import MixedPrecisionConfig, MixedPrecisionMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
@@ -169,6 +170,7 @@ class TrainConfig(
     StepContextConfig,
     ArtifactsConfig,
     RunnableConfig,
+    MixedPrecisionConfig,
 ):
     valid_every_n_steps: int | None = field(None, help="Number of training steps to run per validation step")
     valid_first_n_steps: int = field(0, help="Treat the first N steps as validation steps")
@@ -190,6 +192,7 @@ class TrainMixin(
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
+    MixedPrecisionMixin[Config],
     Generic[Config],
     ABC,
 ):
@@ -592,10 +595,32 @@ class TrainMixin(
         batch: Batch,
         state: State,
     ) -> tuple[Array, tuple[Output, dict[str, Array]]]:
+        """Get the task output and loss.
+
+        Args:
+            model_arr: The model arrays.
+            model_static: The model static parameters.
+            batch: The input batch.
+            state: The training state.
+
+        Returns:
+            The loss and a tuple of task output and metrics.
+        """
         model = eqx.combine(model_arr, model_static)
+        
+        # Apply mixed precision casting for computation
+        if hasattr(self, 'cast_params_to_compute'):
+            model = self.cast_params_to_compute(model)
+            
         output = self.get_output(model, batch, state)
         loss = self.compute_loss(model, batch, output, state)
+        
+        # Apply loss scaling if using mixed precision
+        if hasattr(self, 'scale_loss'):
+            loss = self.scale_loss(loss)
+            
         metrics = self.compute_metrics(model, batch, output, loss, state)
+        
         return loss, (output, metrics)
 
     def update(
@@ -610,7 +635,17 @@ class TrainMixin(
         grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
         grad_fn = xax_jit(static_argnums=[1], jit_level=3)(grad_fn)
         grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
+        
+        # Unscale gradients if using mixed precision
+        if hasattr(self, 'unscale_grads'):
+            grads = self.unscale_grads(grads)
+        
         model_arr, opt_state, grad_metrics = self.apply_gradients_with_clipping(model_arr, grads, optimizer, opt_state)
+        
+        # Cast parameters back to storage dtype if using mixed precision
+        if hasattr(self, 'cast_params_to_storage'):
+            model_arr = self.cast_params_to_storage(model_arr)
+        
         return model_arr, opt_state, output, metrics | grad_metrics
 
     @xax_jit(static_argnames=["self", "optimizer"], jit_level=3)
@@ -634,7 +669,23 @@ class TrainMixin(
             new_model_arr = eqx.apply_updates(model_arr, updates)
             return new_model_arr, new_opt_state
 
-        # Don't apply updates if the gradient is NaN or Inf.
+        # Check if we're using mixed precision with nonfinite update skipping
+        if hasattr(self, 'should_skip_nonfinite_update') and self.should_skip_nonfinite_update():
+            # Use the mixed precision update handling
+            grads_finite = ~(jnp.isnan(grad_norm) | jnp.isinf(grad_norm))
+            
+            # Conditionally apply updates and adjust loss scale
+            if hasattr(self, 'mixed_precision_update'):
+                optimizer_update = lambda p, os: apply(grads, grad_norm)
+                new_model_arr, new_opt_state, new_loss_scale = self.mixed_precision_update(
+                    model_arr, grads, optimizer_update, opt_state
+                )
+                # Store the updated loss scale
+                if hasattr(self, 'set_loss_scale'):
+                    self.set_loss_scale(new_loss_scale)
+                return new_model_arr, new_opt_state, grad_metrics
+        
+        # Regular non-mixed-precision path
         new_model_arr, new_opt_state = jax.lax.cond(
             jnp.isnan(grad_norm) | jnp.isinf(grad_norm),
             lambda *_: (model_arr, opt_state),
@@ -740,6 +791,10 @@ class TrainMixin(
         batch: Batch,
         state: State,
     ) -> tuple[Output, FrozenDict[str, Array]]:
+        # For validation, we want to use the compute dtype for better performance
+        if hasattr(self, 'cast_params_to_compute'):
+            model_arr = self.cast_params_to_compute(model_arr)
+            
         _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
         return output, FrozenDict(metrics)
 
