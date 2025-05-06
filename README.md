@@ -128,16 +128,15 @@ The benchmark:
 
 ## Performance Results
 
-The implementation provides significant benefits on compatible hardware:
+The benchmark shows the implementation is working correctly, with nearly identical final loss values between full and mixed precision training. On appropriate hardware with specialized tensor cores (like NVIDIA GPUs or Google TPUs), mixed precision training typically provides significant performance benefits:
 
-| Hardware | Speed Improvement | Memory Reduction |
-|----------|-------------------|-----------------|
-| NVIDIA GPUs | 1.5-3x faster | 1.5-2x less memory |
-| Google TPUs | 2-3x faster | 1.5-2x less memory |
-| Apple Silicon | 1.2-1.5x faster | 1.3-1.8x less memory |
-| CPU | Similar performance | Similar memory usage |
+| Test Environment | Results |
+|------------------|---------|
+| CPU (tested) | Mixed precision achieves similar training quality to full precision |
+| CPU (tested) | Both approaches converge to similar final loss values |
+| CPU (tested) | Mixed precision maintains numerical stability with dynamic loss scaling |
 
-*Note: Actual performance gains vary by model architecture, training parameters, and specific hardware capabilities.*
+**Note:** While our tests on CPU show similar performance between full and mixed precision (which is expected), the true performance benefits would be observed on GPU/TPU hardware with dedicated half-precision acceleration. In those environments, literature suggests 1.5-3x speed improvements and memory savings of 1.5-2x are typical.
 
 ## Usage Guide
 
