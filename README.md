@@ -15,7 +15,7 @@ This repository implements mixed precision training capabilities for the XAX dee
 ### Installation
 
 ```bash
-git clone https://github.com/your-username/xax.git
+git clone https://github.com/xerk-dot/xax.git
 cd xax
 pip install -e .
 ```
