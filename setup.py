@@ -48,4 +48,9 @@ setup(
             "requirements*.txt",
         ],
     },
+    entry_points={
+        "console_scripts": [
+            "xax-edit-config=xax.cli.edit_config:main",
+        ],
+    },
 )

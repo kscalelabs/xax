@@ -292,7 +292,7 @@ class CheckpointingMixin(ArtifactsMixin[Config], Generic[Config]):
 
             if state is not None:
                 add_file_bytes("state", json.dumps(state.to_dict(), indent=2).encode())
-            add_file_bytes("config", OmegaConf.to_yaml(self.config).encode())
+            add_file_bytes("config", OmegaConf.to_yaml(self.config, sort_keys=True).encode())
 
         # Updates the symlink to the new checkpoint
         last_ckpt_path.unlink(missing_ok=True)
