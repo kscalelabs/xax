@@ -31,9 +31,11 @@ def main() -> None:
         subprocess.run([os.environ.get("EDITOR", "vim"), f.name], check=True)
 
     # Loads the edited config.
-    edited_config = OmegaConf.load(f.name)
-    edited_config_str = OmegaConf.to_yaml(edited_config, sort_keys=True)
-    os.remove(f.name)
+    try:
+        edited_config = OmegaConf.load(f.name)
+        edited_config_str = OmegaConf.to_yaml(edited_config, sort_keys=True)
+    finally:
+        os.remove(f.name)
 
     if edited_config_str == config_str:
         show_info("No changes were made to the config.")
