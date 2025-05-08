@@ -18,6 +18,7 @@ requirements_export: list[str] = [
     "flax",
     "orbax-export",
     "tensorflow",
+    "tf2onnx",
 ]
 
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
