@@ -52,17 +52,17 @@ def main() -> None:
             print(colored(line, "light-cyan"), flush=True)
 
     # Saves the edited config to the checkpoint.
-    with tempfile.NamedTemporaryFile(suffix=".tgz") as tmp:
+    with tempfile.TemporaryDirectory() as tmp_dir:
         with tarfile.open(args.ckpt_path, "r:gz") as src_tar:
             for member in src_tar.getmembers():
                 if member.name != "config":  # Skip the old config file
-                    src_tar.extract(member, tmp.name)
+                    src_tar.extract(member, tmp_dir)
 
         with tarfile.open(args.ckpt_path, "w:gz") as tar:
-            for root, _, files in os.walk(tmp.name):
+            for root, _, files in os.walk(tmp_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, tmp.name)
+                    arcname = os.path.relpath(file_path, tmp_dir)
                     tar.add(file_path, arcname=arcname)
 
             # Add the new config file
