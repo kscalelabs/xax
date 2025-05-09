@@ -40,7 +40,16 @@ setup(
     extras_require={
         "dev": requirements_dev,
         "exportable": requirements_export,
-        "all": requirements_dev + requirements_export,
+        # installs only the TensorBoard event-writer & GraphDef protobuf
+        "tensorboard": [
+            "tensorboard>=2.0",
+            "protobuf>=3.12",
+        ],
+        # everything, including TF export and TB graph logging
+        "all": requirements_dev + requirements_export + [
+            "tensorboard>=2.0",
+            "protobuf>=3.12",
+        ],
     },
     package_data={
         "xax": [

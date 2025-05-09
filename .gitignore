@@ -19,3 +19,19 @@ build/
 dist/
 *.so
 out*/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Logs & TensorBoard
+logs/
+*.log
+events.out.tfevents.*
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
