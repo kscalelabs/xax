@@ -52,14 +52,24 @@ def main() -> None:
             print(colored(line, "light-cyan"), flush=True)
 
     # Saves the edited config to the checkpoint.
-    with tarfile.open(args.ckpt_path, "w:gz") as tar:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with tarfile.open(args.ckpt_path, "r:gz") as src_tar:
+            for member in src_tar.getmembers():
+                if member.name != "config":  # Skip the old config file
+                    src_tar.extract(member, tmp_dir)
 
-        def add_file_bytes(name: str, data: bytes) -> None:  # noqa: ANN401
-            info = tarfile.TarInfo(name=name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
+        with tarfile.open(args.ckpt_path, "w:gz") as tar:
+            for root, _, files in os.walk(tmp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, tmp_dir)
+                    tar.add(file_path, arcname=arcname)
 
-        add_file_bytes("config", edited_config_str.encode())
+            # Add the new config file
+            info = tarfile.TarInfo(name="config")
+            config_bytes = edited_config_str.encode()
+            info.size = len(config_bytes)
+            tar.addfile(info, io.BytesIO(config_bytes))
 
 
 if __name__ == "__main__":
