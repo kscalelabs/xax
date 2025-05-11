@@ -3,7 +3,9 @@
 import re
 import jax
 from tensorboard.compat.proto import graph_pb2, event_pb2
-from tensorboard.summary.writer.event_file_writer import EventFileWriter
+import equinox as eqx
+from xax.task.task import Task, Config
+from xax.task.loggers.tensorboard import TensorboardLogger
 
 
 # regex to pull out "%name = op(args…)" lines from HLO text
@@ -11,9 +13,8 @@ _HLO_INST_RE = re.compile(
     r"\s*(?:ROOT\s+)?%?([^ =]+)\s*=\s*(?:[^\s]+\s+)*([\w_]+)\((.*?)\)"
 )
 
-
 def _hlo_text_to_graphdef(hlo_text: str) -> graph_pb2.GraphDef:
-    """Convert HLO text dump into a TensorBoard GraphDef."""
+    #Convert HLO text dump into a TensorBoard GraphDef.
     gd = graph_pb2.GraphDef()
     in_entry = False
     for line in hlo_text.splitlines():
@@ -35,18 +36,14 @@ def _hlo_text_to_graphdef(hlo_text: str) -> graph_pb2.GraphDef:
     return gd
 
 
-def log_jax_graph(fn, example_args, logdir: str, step: int = 0):
-    """
-    Logs the HLO graph of `fn` to TensorBoard under `logdir` at `step`.
-    `fn` should be a bound train_step accepting (model_arr, model_static, optimizer,
-    opt_state, batch, state). `example_args` is that 6-tuple.
-    """
+def log_jax_graph(fn, example_args, task, cfg, logdir: str, step: int = 0):
     # Unpack the closure-bound arguments
     model_arr, model_static, optimizer, opt_state, batch, state = example_args
 
     # Wrap out static args so XLA only sees array inputs
     def two_arg_step(ma, b):
-        return fn(ma, model_static, optimizer, opt_state, b, state)
+        full_model = eqx.combine(ma, model_static)
+        return fn(full_model, optimizer, b, state)
 
     # Lower to HLO via JAX AOT API
     hlo_comp = (
@@ -56,22 +53,23 @@ def log_jax_graph(fn, example_args, logdir: str, step: int = 0):
     )
     hlo_text = hlo_comp.as_hlo_text()
 
-    # Parse HLO text into a GraphDef
-    gd = _hlo_text_to_graphdef(hlo_text)
+    graph_def = _hlo_text_to_graphdef(hlo_text)  # Convert HLO text to GraphDef
 
-    writer = EventFileWriter(logdir)
+    # Initialize TensorBoard Logger (handles the logging and TensorBoard subprocess)
+    tb_logger = TensorboardLogger(run_directory=logdir)
 
-    # Session-start event to activate Graph plugin in TensorBoard
-    sess_ev = event_pb2.Event()
-    sess_ev.session_log.status = event_pb2.SessionLog.START
-    writer.add_event(sess_ev)
+    # 6) Log the graph at the specified steps
+    for step in range(cfg.max_steps):
+        loss, grads, new_opt_state = task.train_step(
+            task.model, task.optimizer, task.state, batch
+        )
 
-    # The GraphDef event (no need for CopyFrom if gd is already a GraphDef)
-    graph_ev = event_pb2.Event()
-    graph_ev.graph_def = gd.SerializeToString()  # Direct assignment instead of using CopyFrom
-    graph_ev.step = step
-    writer.add_event(graph_ev)
-
-# Write the event to disk
-    writer.flush()
-    writer.close()
+        # Log the graph at the specified steps
+        if step % cfg.valid_every_n_steps == 0:
+            # Log the graph to TensorBoard
+            writer = tb_logger.get_writer("train")
+            writer.pb_writer.add_graph(graph_def)
+            writer.pb_writer.flush()
+            print(f"Logged graph at step {step} to {logdir}. Run `tensorboard --logdir={logdir}`")
+        writer.add_scalar("loss", loss, global_step=step)
+        task.state = new_opt_state
