@@ -39,7 +39,6 @@ module = [
     "setuptools.*",
     "tensorboard.*",
     "transformers.*",
-    "orbax.export.*",
 ]
 
 ignore_missing_imports = true
