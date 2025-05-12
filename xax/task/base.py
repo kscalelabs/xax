@@ -210,7 +210,7 @@ class BaseTask(Generic[Config]):
 
     @classmethod
     def config_str(cls, *cfgs: RawConfigType, use_cli: bool | list[str] = True) -> str:
-        return OmegaConf.to_yaml(cls.get_config(*cfgs, use_cli=use_cli))
+        return OmegaConf.to_yaml(cls.get_config(*cfgs, use_cli=use_cli), sort_keys=True)
 
     @classmethod
     def get_task(cls, *cfgs: RawConfigType, use_cli: bool | list[str] = True) -> Self:

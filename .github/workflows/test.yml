@@ -44,7 +44,7 @@ jobs:
 
       - name: Install package
         run: |
-          pip install --upgrade --upgrade-strategy eager '.[all]' 'jax[cpu]'
+          pip install --upgrade --upgrade-strategy eager '.[dev]' 'jax[cpu]'
 
       - name: Run static checks
         run: |

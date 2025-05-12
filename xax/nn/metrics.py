@@ -7,8 +7,6 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from xax.utils.jax import jit as xax_jit
-
 NormType = Literal["l1", "l2"]
 
 
@@ -36,7 +34,6 @@ def dynamic_time_warping(distance_matrix_nm: Array) -> Array: ...
 def dynamic_time_warping(distance_matrix_nm: Array, return_path: Literal[True]) -> tuple[Array, Array]: ...
 
 
-@xax_jit(static_argnames=["return_path"])
 def dynamic_time_warping(distance_matrix_nm: Array, return_path: bool = False) -> Array | tuple[Array, Array]:
     """Dynamic Time Warping.
 

@@ -14,12 +14,6 @@ with open("xax/requirements.txt", "r", encoding="utf-8") as f:
 with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
-requirements_export: list[str] = [
-    "flax",
-    "orbax-export",
-    "tensorflow",
-]
-
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
     version_re = re.search(r"^__version__ = \"([^\"]*)\"", fh.read(), re.MULTILINE)
 assert version_re is not None, "Could not find version in xax/__init__.py"
@@ -39,22 +33,16 @@ setup(
     tests_require=requirements_dev,
     extras_require={
         "dev": requirements_dev,
-        "exportable": requirements_export,
-        # installs only the TensorBoard event-writer & GraphDef protobuf
-        "tensorboard": [
-            "tensorboard>=2.0",
-            "protobuf>=3.12",
-        ],
-        # everything, including TF export and TB graph logging
-        "all": requirements_dev + requirements_export + [
-            "tensorboard>=2.0",
-            "protobuf>=3.12",
-        ],
     },
     package_data={
         "xax": [
             "py.typed",
             "requirements*.txt",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "xax-edit-config=xax.cli.edit_config:main",
         ],
     },
 )
