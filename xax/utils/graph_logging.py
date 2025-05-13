@@ -42,8 +42,7 @@ def log_jax_graph(fn, example_args, task, cfg, logdir: str, step: int = 0):
 
     # Wrap out static args so XLA only sees array inputs
     def two_arg_step(ma, b):
-        full_model = eqx.combine(ma, model_static)
-        return fn(full_model, optimizer, b, state)
+        return fn(ma, model_static, optimizer, opt_state, b, state)
 
     # Lower to HLO via JAX AOT API
     hlo_comp = (
@@ -60,9 +59,8 @@ def log_jax_graph(fn, example_args, task, cfg, logdir: str, step: int = 0):
 
     # 6) Log the graph at the specified steps
     for step in range(cfg.max_steps):
-        loss, grads, new_opt_state = task.train_step(
-            task.model, task.optimizer, task.state, batch
-        )
+        model_arr, opt_state, output, metrics = two_arg_step(ma=model_arr, b=batch)
+
 
         # Log the graph at the specified steps
         if step % cfg.valid_every_n_steps == 0:
@@ -71,5 +69,5 @@ def log_jax_graph(fn, example_args, task, cfg, logdir: str, step: int = 0):
             writer.pb_writer.add_graph(graph_def)
             writer.pb_writer.flush()
             print(f"Logged graph at step {step} to {logdir}. Run `tensorboard --logdir={logdir}`")
-        writer.add_scalar("loss", loss, global_step=step)
-        task.state = new_opt_state
+        writer.add_scalar("loss", metrics['loss'], global_step=step)
+        task.state = opt_state

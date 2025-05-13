@@ -26,7 +26,7 @@ class MyTask(Task):
     def __init__(self, cfg: Config):
         super().__init__(cfg)
         self.model = MyModel()  # Initialize the model
-        self.optimizer = None
+        self.optimizer = optax.adam(learning_rate=1e-3)  # Adam optimizer
         self.state = None
 
     def get_model(self):
@@ -34,14 +34,54 @@ class MyTask(Task):
 
     def get_optimizer(self):
         return self.optimizer
+    
+    def get_output(self, model: eqx.Module, batch: dict, state: dict) -> jnp.ndarray:
+        """
+        Override the `get_output` method to calculate the output of the model.
+        In this case, we compute the model's prediction based on the input batch.
 
-    def train_step(self, model, optimizer, state, batch):
-        loss = 0.0
-        grads = None
-        return loss, grads, state
+        Args:
+            model: The model to get output from.
+            batch: The batch containing the input data.
+            state: The training state (if needed).
+
+        Returns:
+            The output of the model (in this case, the predictions).
+        """
+        # Perform forward pass to get output from the model
+        if model is None:
+            raise ValueError("Model is None when trying to compute the output")
+        return model(batch["x"])
+    
+    def train_step(self, model_arr, model_static, optimizer, opt_state, batch, state):
+        """
+        Perform one training step: compute output, loss, gradients, and update model.
+
+        Args:
+            model_arr: The current model parameters.
+            model_static: Static model parameters.
+            optimizer: The optimizer used for updating the model.
+            opt_state: The current optimizer state.
+            batch: The current batch of data.
+            state: Additional state for training.
+
+        Returns:
+            model_arr: Updated model parameters.
+            opt_state: Updated optimizer state.
+            output: Model output for the current batch.
+            metrics: Computed metrics (loss, etc.).
+        """
+        output = self.get_output(model_arr, batch, state)
+        loss = jnp.mean((output - batch["y"]) ** 2)  # MSE loss
+        grads = jax.grad(lambda m: jnp.mean((self.get_output(m, batch, state) - batch["y"]) ** 2))(model_arr)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        model_arr = optax.apply_updates(model_arr, updates)  # Apply optimizer updates
+        metrics = {"loss": loss}  # You can add more metrics here
+        return model_arr, opt_state, output, metrics
+    
 
     def load_initial_state(self, key, load_optimizer=False):
-        return [None], [None], [None], None
+        return [self.model], [self.optimizer], [None], None
 
 
 def main():
@@ -63,12 +103,12 @@ def main():
     models, optimizers, opt_states, state = task.load_initial_state(key, load_optimizer=True)
     model_arr, model_static = eqx.partition(models[0], task.model_partition_fn)
     optimizer = optimizers[0]
-    opt_state = opt_states[0]
-
+    #opt_state = opt_states[0]
+    opt_state = optimizer.init(model_arr)  # Initialize the optimizer state here
     # Define a fixed input shape for jax.jit
     example_batch = {
         "x": jnp.ones((cfg.batch_size, 4)),  # Input shape is (batch_size, 4)
-        "y": jnp.ones((cfg.batch_size,)) * 3.0,
+        "y": jnp.ones((cfg.batch_size, 3)) * 3.0,
     }
 
     log_jax_graph(
