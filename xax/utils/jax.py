@@ -174,7 +174,7 @@ def jit(
 def split_module(module: T, axis: int = 0) -> list[T]:
     first_leaf = jax.tree.leaves(module)[0]
     num_slices = first_leaf.shape[axis]
-    result = [jax.tree.map(lambda x: jnp.take(x, i, axis=axis), module) for i in range(num_slices)]
+    result = [jax.tree.map(lambda x, idx=i: jnp.take(x, idx, axis=axis), module) for i in range(num_slices)]
     return result
 
 
