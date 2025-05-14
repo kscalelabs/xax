@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from functools import wraps
-from typing import Any, Callable, Iterable, ParamSpec, Sequence, TypeVar, cast
+from typing import Any, Callable, Hashable, Iterable, ParamSpec, Sequence, TypeVar, cast
 
 import jax
 import jax.numpy as jnp
@@ -30,6 +30,9 @@ R = TypeVar("R")  # For function return type
 Carry = TypeVar("Carry")
 X = TypeVar("X")
 Y = TypeVar("Y")
+
+F = TypeVar("F", bound=Callable)
+AxisName = Hashable
 
 
 @functools.lru_cache(maxsize=None)
@@ -221,3 +224,37 @@ def scan(
             ys.append(y)
 
     return carry, jax.tree.map(lambda *ys: jnp.stack(ys), *ys)
+
+
+def vmap(
+    fun: Callable[P, R],
+    in_axes: int | Sequence[int] = 0,
+    jit_level: int | None = None,
+) -> Callable[P, R]:
+    """A wrapper around jax.lax.vmap that allows for more flexible tracing.
+
+    If the provided JIT level is below the environment JIT level, we manually
+    unroll the scan function as a for loop.
+    """
+    if not should_disable_jit(jit_level):
+        return jax.vmap(fun, in_axes=in_axes)
+
+    @functools.wraps(fun)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        if kwargs:
+            raise ValueError("vmap does not support keyword arguments")
+
+        ia = in_axes
+        if isinstance(ia, int):
+            ia = [ia] * len(args)
+        elif len(ia) != len(args):
+            raise ValueError("in_axes must be the same length as args")
+
+        if not all(isinstance(a, int) for a in ia):
+            raise ValueError("in_axes must be a list of integers")
+
+        split_args = [split_module(a, axis=ia[i]) for i, a in enumerate(args)]
+        split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
+        return jax.tree.map(lambda *ys: jnp.stack(ys), *split_outputs)
+
+    return wrapped
