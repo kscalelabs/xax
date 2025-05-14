@@ -245,7 +245,7 @@ def scan(
 
 def vmap(
     fun: Callable[P, R],
-    in_axes: int | Sequence[int] = 0,
+    in_axes: int | Sequence[int | None] = 0,
     jit_level: int | None = None,
 ) -> Callable[P, R]:
     """A wrapper around jax.lax.vmap that allows for more flexible tracing.
