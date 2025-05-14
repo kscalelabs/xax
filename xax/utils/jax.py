@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax._src import sharding_impls
 from jax._src.lib import xla_client as xc
+from jaxtyping import PyTree
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ DEFAULT_COMPILE_TIMEOUT = 1.0
 
 Number = int | float | np.ndarray | jnp.ndarray
 
+T = TypeVar("T", bound=PyTree)
 
 P = ParamSpec("P")  # For function parameters
 R = TypeVar("R")  # For function return type
@@ -166,6 +168,13 @@ def jit(
     return decorator
 
 
+def split_module(module: T, axis: int = 0) -> list[T]:
+    first_leaf = jax.tree.leaves(module)[0]
+    num_slices = first_leaf.shape[axis]
+    result = [jax.tree.map(lambda x: jnp.take(x, i, axis=axis), module) for i in range(num_slices)]
+    return result
+
+
 def scan(
     f: Callable[[Carry, X], tuple[Carry, Y]],
     init: Carry,
@@ -195,15 +204,20 @@ def scan(
     if not should_disable_jit(jit_level):
         return jax.lax.scan(f, init, xs, length, reverse, unroll)
 
+    carry = init
+    ys = []
+
     if xs is None:
         if length is None:
             raise ValueError("length must be provided if xs is None")
-        xs = cast(X, [None] * length)
+        for _ in range(length):
+            carry, y = f(carry, None)  # type: ignore[arg-type]
+            ys.append(y)
 
-    carry = init
-    ys = []
-    for x in cast(Iterable, xs):
-        carry, y = f(carry, x)
-        ys.append(y)
+    else:
+        xlist = split_module(xs, axis=0)
+        for x in xlist:
+            carry, y = f(carry, x)
+            ys.append(y)
 
     return carry, jax.tree.map(lambda *ys: jnp.stack(ys), *ys)
