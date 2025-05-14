@@ -267,10 +267,10 @@ def vmap(
         elif len(ia) != len(args):
             raise ValueError("in_axes must be the same length as args")
 
-        if not all(isinstance(a, int) for a in ia):
-            raise ValueError("in_axes must be a list of integers")
+        if not all(isinstance(a, int) or a is None for a in ia):
+            raise ValueError("in_axes must be a list of integers or None")
 
-        split_args = [_split_module(a, axis=ia[i]) for i, a in enumerate(args)]
+        split_args = [a if ia[i] is None else _split_module(a, axis=ia[i]) for i, a in enumerate(args)]
         split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
 
         if not split_outputs:
