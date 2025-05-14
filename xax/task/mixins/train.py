@@ -625,9 +625,13 @@ class TrainMixin(
         grad_metrics = {"grad_norm": grad_norm}
 
         def apply(grads: PyTree, grad_norm: Array) -> tuple[PyTree, optax.OptState]:
-            # Clip the global gradient norm to some desired range.
-            grad_factor = self.config.global_grad_clip / jnp.maximum(grad_norm, 1e-6)
-            grads = jax.tree.map(lambda x: x * grad_factor, grads)
+            # Clip gradients based on global norm, similar to optax.clip_by_global_norm
+            trigger = jnp.squeeze(grad_norm < self.config.global_grad_clip)
+
+            def clip_fn(t: Array) -> Array:
+                return jax.lax.select(trigger, t, (t / grad_norm.astype(t.dtype)) * self.config.global_grad_clip)
+
+            grads = jax.tree.map(clip_fn, grads)
 
             # Apply the gradient updates.
             updates, new_opt_state = optimizer.update(grads, opt_state, model_arr)
