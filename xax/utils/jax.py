@@ -270,7 +270,7 @@ def vmap(
         if not all(isinstance(a, int) or a is None for a in ia):
             raise ValueError("in_axes must be a list of integers or None")
 
-        split_args = [a if ia[i] is None else _split_module(a, axis=ia[i]) for i, a in enumerate(args)]
+        split_args = [a if i is None else _split_module(a, axis=i) for i, a in zip(ia, args, strict=True)]
         split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
 
         if not split_outputs:
