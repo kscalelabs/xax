@@ -282,3 +282,30 @@ def vmap(
         return jax.tree.map(lambda *ys: jnp.stack(ys), *split_outputs)
 
     return wrapped
+
+
+def grad(
+    fun: Callable[P, R],
+    argnums: int | Sequence[int] = 0,
+    has_aux: bool = False,
+    holomorphic: bool = False,
+    allow_int: bool = False,
+    reduce_axes: Sequence[AxisName] = (),
+    jit_level: int | None = None,
+) -> Callable:
+    """A wrapper around jax.grad that allows for more flexible tracing.
+
+    We don't do anything special here, we just manually evaluate the function
+    if the JIT level is below the environment JIT level.
+    """
+    if not should_disable_jit(jit_level):
+        return jax.grad(fun, argnums, has_aux, holomorphic, allow_int, reduce_axes)
+
+    @functools.wraps(fun)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> Callable:
+        # Evaluate the function once, then just return the gradient.
+        fun(*args, **kwargs)
+
+        return jax.grad(fun, argnums, has_aux, holomorphic, allow_int, reduce_axes)(*args, **kwargs)
+
+    return wrapped
