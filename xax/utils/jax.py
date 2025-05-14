@@ -6,13 +6,14 @@ import logging
 import os
 import time
 from functools import wraps
-from typing import Any, Callable, Iterable, ParamSpec, Sequence, TypeVar, cast
+from typing import Any, Callable, Hashable, Iterable, ParamSpec, Sequence, TypeVar, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax._src import sharding_impls
 from jax._src.lib import xla_client as xc
+from jaxtyping import PyTree
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ DEFAULT_COMPILE_TIMEOUT = 1.0
 
 Number = int | float | np.ndarray | jnp.ndarray
 
+T = TypeVar("T", bound=PyTree)
 
 P = ParamSpec("P")  # For function parameters
 R = TypeVar("R")  # For function return type
@@ -28,6 +30,9 @@ R = TypeVar("R")  # For function return type
 Carry = TypeVar("Carry")
 X = TypeVar("X")
 Y = TypeVar("Y")
+
+F = TypeVar("F", bound=Callable)
+AxisName = Hashable
 
 
 @functools.lru_cache(maxsize=None)
@@ -166,6 +171,22 @@ def jit(
     return decorator
 
 
+def _split_module(tree: T, axis: int = 0) -> list[T]:
+    """Splits a module in the same way that jax.lax.scan and jax.vmap do.
+
+    Args:
+        tree: The tree to split.
+        axis: The axis to split on.
+
+    Returns:
+        A list of the split trees.
+    """
+    first_leaf = jax.tree.leaves(tree)[0]
+    num_slices = first_leaf.shape[axis]
+    result = [jax.tree.map(lambda x, idx=i: jnp.take(x, idx, axis=axis), tree) for i in range(num_slices)]
+    return result
+
+
 def scan(
     f: Callable[[Carry, X], tuple[Carry, Y]],
     init: Carry,
@@ -195,15 +216,66 @@ def scan(
     if not should_disable_jit(jit_level):
         return jax.lax.scan(f, init, xs, length, reverse, unroll)
 
+    carry = init
+    ys = []
+
     if xs is None:
         if length is None:
             raise ValueError("length must be provided if xs is None")
-        xs = cast(X, [None] * length)
+        for _ in range(length) if not reverse else range(length - 1, -1, -1):
+            carry, y = f(carry, None)  # type: ignore[arg-type]
+            ys.append(y)
 
-    carry = init
-    ys = []
-    for x in cast(Iterable, xs):
-        carry, y = f(carry, x)
-        ys.append(y)
+    else:
+        xlist = _split_module(xs, axis=0)
+        if reverse:
+            xlist = xlist[::-1]
+        for x in xlist:
+            carry, y = f(carry, x)
+            ys.append(y)
+
+    if reverse:
+        ys = ys[::-1]
+
+    if not ys:
+        return carry, jnp.array([])  # type: ignore[return-value]
 
     return carry, jax.tree.map(lambda *ys: jnp.stack(ys), *ys)
+
+
+def vmap(
+    fun: Callable[P, R],
+    in_axes: int | Sequence[int] = 0,
+    jit_level: int | None = None,
+) -> Callable[P, R]:
+    """A wrapper around jax.lax.vmap that allows for more flexible tracing.
+
+    If the provided JIT level is below the environment JIT level, we manually
+    unroll the scan function as a for loop.
+    """
+    if not should_disable_jit(jit_level):
+        return jax.vmap(fun, in_axes=in_axes)
+
+    @functools.wraps(fun)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        if kwargs:
+            raise ValueError("vmap does not support keyword arguments")
+
+        ia = in_axes
+        if isinstance(ia, int):
+            ia = [ia] * len(args)
+        elif len(ia) != len(args):
+            raise ValueError("in_axes must be the same length as args")
+
+        if not all(isinstance(a, int) for a in ia):
+            raise ValueError("in_axes must be a list of integers")
+
+        split_args = [_split_module(a, axis=ia[i]) for i, a in enumerate(args)]
+        split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
+
+        if not split_outputs:
+            return jnp.array([])  # type: ignore[return-value]
+
+        return jax.tree.map(lambda *ys: jnp.stack(ys), *split_outputs)
+
+    return wrapped
