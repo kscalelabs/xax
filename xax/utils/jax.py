@@ -171,10 +171,19 @@ def jit(
     return decorator
 
 
-def split_module(module: T, axis: int = 0) -> list[T]:
-    first_leaf = jax.tree.leaves(module)[0]
+def _split_module(tree: T, axis: int = 0) -> list[T]:
+    """Splits a module in the same way that jax.lax.scan and jax.vmap do.
+
+    Args:
+        tree: The tree to split.
+        axis: The axis to split on.
+
+    Returns:
+        A list of the split trees.
+    """
+    first_leaf = jax.tree.leaves(tree)[0]
     num_slices = first_leaf.shape[axis]
-    result = [jax.tree.map(lambda x, idx=i: jnp.take(x, idx, axis=axis), module) for i in range(num_slices)]
+    result = [jax.tree.map(lambda x, idx=i: jnp.take(x, idx, axis=axis), tree) for i in range(num_slices)]
     return result
 
 
@@ -218,7 +227,7 @@ def scan(
             ys.append(y)
 
     else:
-        xlist = split_module(xs, axis=0)
+        xlist = _split_module(xs, axis=0)
         if reverse:
             xlist = xlist[::-1]
         for x in xlist:
@@ -261,7 +270,7 @@ def vmap(
         if not all(isinstance(a, int) for a in ia):
             raise ValueError("in_axes must be a list of integers")
 
-        split_args = [split_module(a, axis=ia[i]) for i, a in enumerate(args)]
+        split_args = [_split_module(a, axis=ia[i]) for i, a in enumerate(args)]
         split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
 
         if not split_outputs:
