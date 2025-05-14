@@ -245,7 +245,7 @@ def scan(
 
 def vmap(
     fun: Callable[P, R],
-    in_axes: int | Sequence[int] = 0,
+    in_axes: int | Sequence[int | None] = 0,
     jit_level: int | None = None,
 ) -> Callable[P, R]:
     """A wrapper around jax.lax.vmap that allows for more flexible tracing.
@@ -267,11 +267,14 @@ def vmap(
         elif len(ia) != len(args):
             raise ValueError("in_axes must be the same length as args")
 
-        if not all(isinstance(a, int) for a in ia):
-            raise ValueError("in_axes must be a list of integers")
+        if not all(isinstance(a, int) or a is None for a in ia):
+            raise ValueError("in_axes must be a list of integers or None")
 
-        split_args = [_split_module(a, axis=ia[i]) for i, a in enumerate(args)]
-        split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
+        ns = next((len(_split_module(a, axis=i)) for i, a in zip(ia, args, strict=True) if i is not None), None)
+        if ns is None:
+            return fun(*args, **kwargs)
+        split_args = [[a] * ns if i is None else _split_module(a, axis=i) for i, a in zip(ia, args, strict=True)]
+        split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=True)]
 
         if not split_outputs:
             return jnp.array([])  # type: ignore[return-value]
