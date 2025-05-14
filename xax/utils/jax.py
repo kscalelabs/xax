@@ -213,15 +213,23 @@ def scan(
     if xs is None:
         if length is None:
             raise ValueError("length must be provided if xs is None")
-        for _ in range(length):
+        for _ in range(length) if not reverse else range(length - 1, -1, -1):
             carry, y = f(carry, None)  # type: ignore[arg-type]
             ys.append(y)
 
     else:
         xlist = split_module(xs, axis=0)
+        if reverse:
+            xlist = xlist[::-1]
         for x in xlist:
             carry, y = f(carry, x)
             ys.append(y)
+
+    if reverse:
+        ys = ys[::-1]
+
+    if not ys:
+        return carry, jnp.array([])  # type: ignore[return-value]
 
     return carry, jax.tree.map(lambda *ys: jnp.stack(ys), *ys)
 
@@ -255,6 +263,10 @@ def vmap(
 
         split_args = [split_module(a, axis=ia[i]) for i, a in enumerate(args)]
         split_outputs = [fun(*sargs, **kwargs) for sargs in zip(*split_args, strict=False)]
+
+        if not split_outputs:
+            return jnp.array([])  # type: ignore[return-value]
+
         return jax.tree.map(lambda *ys: jnp.stack(ys), *split_outputs)
 
     return wrapped
