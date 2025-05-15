@@ -1,6 +1,14 @@
 # JAX Profiling in XAX
 
-This extension adds profiling capabilities to the XAX framework, allowing users to identify performance bottlenecks in their JAX code.
+This extension adds comprehensive profiling capabilities to the XAX framework, allowing users to identify and eliminate performance bottlenecks in their JAX computation graphs.
+
+## Key Features
+
+- **Seamless Integration**: Profiling is available through a mixin that can be added to any task
+- **Low Overhead**: Selective profiling only when needed to minimize performance impact
+- **Detailed Analysis**: Captures XLA operation times, function call hierarchies, and compilation phases
+- **Multiple Viewers**: Support for both TensorBoard and Perfetto UI with Python 3.13 compatibility
+- **Easy Extraction**: Tools to extract and process trace files for easier analysis
 
 ## Getting Started
 
@@ -54,13 +62,21 @@ def compute_loss(self, model, x, y):
 ### 4. View profiling results
 
 Profiling results are saved to the experiment directory under the `profiles` subdirectory.
-You can view them using TensorBoard:
+
+We provide a unified viewer that supports both TensorBoard and Perfetto UI with full Python 3.13 compatibility:
 
 ```bash
-tensorboard --logdir=path/to/experiment/profiles
+# Unified viewer (TensorBoard + Perfetto)
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles
+
+# Additional options
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles --ui=tensorboard  # TensorBoard only
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles --ui=perfetto     # Perfetto UI only
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles --extract         # Extract trace files
+python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles --list-only       # List trace files
 ```
 
-Or programmatically:
+You can also programmatically open profiles:
 
 ```python
 from xax.utils.profiling import open_latest_profile
@@ -69,9 +85,13 @@ from xax.utils.profiling import open_latest_profile
 open_latest_profile("path/to/experiment/profiles")
 ```
 
-## Example
+## Examples
 
-See the `examples/mnist_profiling.py` file for a complete example of using the profiling functionality.
+See the following example files for demonstrations of the profiling functionality:
+
+- `examples/profiling/mnist_profiling.py` - Basic MNIST profiling example
+- `examples/profiling/standalone_mnist_profiling.py` - Standalone MNIST profiling
+- `examples/profiling/comprehensive_profile_demo.py` - Comprehensive profiling demo showing various use cases
 
 ## Advanced Usage
 
@@ -100,4 +120,10 @@ class MyTaskConfig(TrainConfig):
     profile_gpu_trace: bool = True
 ```
 
-This will capture more detailed information about GPU kernel execution times. 
+This will capture more detailed information about GPU kernel execution times.
+
+## References
+
+- [JAX Profiler Documentation](https://docs.jax.dev/en/latest/jax.profiler.html)
+- [TensorBoard Profiling Guide](https://tensorflow.org/guide/profiler)
+- [Perfetto UI Documentation](https://perfetto.dev/docs/visualization/perfetto-ui) 

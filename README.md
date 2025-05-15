@@ -1,8 +1,14 @@
-# JAX Profiling in XAX
+# XAX: JAX Framework with Profiling Support
 
-This extension adds profiling capabilities to the XAX framework, allowing users to identify performance bottlenecks in their JAX code.
+XAX is an experimentation framework for JAX with comprehensive profiling capabilities, allowing users to identify performance bottlenecks in their JAX code.
 
-## Getting Started
+## Features
+
+- **Profiling**: Capture detailed profiles of JAX computations for optimization
+- **TensorBoard & Perfetto Integration**: Visualize profiles using industry-standard tools
+- **Python 3.13 Compatible**: Full compatibility with the latest Python release
+
+## Getting Started with Profiling
 
 ### 1. Enable profiling in your configuration
 
@@ -54,69 +60,35 @@ def compute_loss(self, model, x, y):
 ### 4. View profiling results
 
 Profiling results are saved to the experiment directory under the `profiles` subdirectory.
-We provide multiple viewing utilities with full Python 3.13 compatibility:
+We provide a unified viewing utility with full Python 3.13 compatibility:
 
 ```bash
-# Combined TensorBoard and Perfetto UI viewer (recommended)
+# Unified profiling viewer (supports both TensorBoard and Perfetto UI)
 python -m xax.examples.profiling.view_profile --profile-dir=path/to/profiles
 
-# TensorBoard only with Python 3.13 compatibility fix
-python -m xax.examples.profiling.view_tensorboard --profile-dir=path/to/profiles
-
-# Perfetto UI only (extracts and decompresses trace files)
-python -m xax.examples.profiling.view_perfetto --profile-dir=path/to/profiles --extract
-```
-
-Or programmatically:
-
-```python
-from xax.utils.profiling import open_profile_viewer
-
-# Opens the latest profile in the combined viewer
-open_profile_viewer("path/to/experiment/profiles")
+# Additional options
+python -m xax.examples.profiling.view_profile --ui=tensorboard     # TensorBoard only
+python -m xax.examples.profiling.view_profile --ui=perfetto        # Perfetto UI only
+python -m xax.examples.profiling.view_profile --extract            # Extract trace files
+python -m xax.examples.profiling.view_profile --list-only          # List trace files
 ```
 
 ## Examples
 
 See the `examples/profiling/` directory for complete examples:
 - `mnist_profiling.py` - MNIST training with profiling
-- `matrix_profile_demo.py` - Simple matrix operations profiling
-- `comprehensive_profile_demo.py` - Advanced profiling capabilities
+- `standalone_mnist_profiling.py` - Standalone MNIST profiling 
+- `comprehensive_profile_demo.py` - Advanced profiling capabilities for various matrix operations
 
-For more detailed documentation, see `examples/profiling/README.md`.
+## Documentation
 
-## Advanced Usage
+For comprehensive documentation about the profiling feature, see:
+- `docs/profiling.md` - Complete usage guide and advanced features
+- `examples/profiling/README.md` - Example-specific documentation
 
-### Tracing specific functions
+## Advanced Troubleshooting
 
-You can trace specific functions without modifying them:
-
-```python
-from xax.utils.profiling import trace_function
-
-# Wrap an existing function
-original_fn = model.forward
-model.forward = trace_function(original_fn, name="model_forward")
-```
-
-### Getting detailed GPU execution traces
-
-Enable detailed GPU traces in your configuration:
-
-```python
-@dataclass
-class MyTaskConfig(TrainConfig):
-    enable_profiling: bool = True
-    
-    # Enable detailed GPU traces
-    profile_gpu_trace: bool = True
-```
-
-This will capture more detailed information about GPU kernel execution times.
-
-### Troubleshooting
-
-If you encounter issues with TensorBoard profile visualization:
+If you encounter issues with profile visualization:
 1. Ensure you have `tensorboard-plugin-profile` installed
-2. Try using the dedicated `view_perfetto.py` script instead
-3. See the troubleshooting section in `examples/profiling/README.md` 
+2. Try using the `--extract` option to extract trace files for Perfetto UI
+3. Use the `--list-only` option to verify that trace files are being generated 

@@ -5,7 +5,8 @@ Comprehensive JAX profiling example.
 This example demonstrates:
 1. How to profile JAX operations with detailed annotations
 2. How to capture both compilation and execution time
-3. How to view results in both TensorBoard and Perfetto UI
+3. How to profile matrix operations of different sizes
+4. How to view results in both TensorBoard and Perfetto UI
 """
 
 import jax
@@ -22,10 +23,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run JAX profiling demo")
     parser.add_argument("--size", type=int, default=2000, 
                         help="Size of matrices (default: 2000)")
+    parser.add_argument("--small-size", type=int, default=1024,
+                        help="Size for smaller matrix operations (default: 1024)")
     parser.add_argument("--iterations", type=int, default=3,
                         help="Number of iterations to profile (default: 3)")
     parser.add_argument("--output-dir", type=str, default="./profiles/comprehensive_profile",
                         help="Directory to save profiling data (default: ./profiles/comprehensive_profile)")
+    parser.add_argument("--mode", type=str, choices=["all", "annotated", "simple", "small"], 
+                        default="all", help="Which profiling mode to run")
     return parser.parse_args()
 
 # Context manager for annotating sections of the profile
@@ -81,6 +86,24 @@ def simple_matrix_operations(size):
     
     return z1, z2, z3, z4, z5
 
+def run_profile_session(func, profile_dir, iterations, name):
+    """Run a profiling session for the given function."""
+    print(f"\nStarting profile for {name}...")
+    
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    start_trace(str(profile_dir))
+    
+    for i in range(iterations):
+        print(f"Running {name} iteration {i+1}/{iterations}...")
+        results = func()
+        # Force execution by blocking on all results
+        for r in results:
+            r.block_until_ready()
+    
+    stop_trace()
+    print(f"{name} profiling completed!")
+    return profile_dir
+
 def main():
     args = parse_args()
     
@@ -89,77 +112,83 @@ def main():
     profile_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"JAX devices: {jax.devices()}")
-    print(f"Matrix size: {args.size}x{args.size}")
+    print(f"Large matrix size: {args.size}x{args.size}")
+    print(f"Small matrix size: {args.small_size}x{args.small_size}")
     print(f"Profile directory: {os.path.abspath(profile_dir)}")
     
-    # Create JIT-compiled versions of both functions
+    # Create JIT-compiled versions of all functions
     jitted_annotated = jax.jit(lambda: annotated_matrix_operations(args.size))
     jitted_simple = jax.jit(lambda: simple_matrix_operations(args.size))
+    jitted_small = jax.jit(lambda: simple_matrix_operations(args.small_size))
     
     # Warmup (compile the functions)
     print("\nCompiling functions (warmup)...")
-    annotated_results = jitted_annotated()
-    # Force execution by blocking on all results
-    for r in annotated_results:
-        r.block_until_ready()
+    if args.mode in ["all", "annotated"]:
+        annotated_results = jitted_annotated()
+        for r in annotated_results:
+            r.block_until_ready()
     
-    simple_results = jitted_simple()
-    # Force execution by blocking on all results
-    for r in simple_results:
-        r.block_until_ready()
+    if args.mode in ["all", "simple"]:
+        simple_results = jitted_simple()
+        for r in simple_results:
+            r.block_until_ready()
+    
+    if args.mode in ["all", "small"]:
+        small_results = jitted_small()
+        for r in small_results:
+            r.block_until_ready()
+            
     print("Compilation completed")
     
-    # First profile: Annotated matrix operations
-    annotated_profile_dir = profile_dir / "annotated"
-    annotated_profile_dir.mkdir(parents=True, exist_ok=True)
+    # Run the selected profile sessions
+    profile_dirs = []
     
-    print("\nStarting profile for annotated matrix operations...")
-    start_trace(str(annotated_profile_dir))
+    if args.mode in ["all", "annotated"]:
+        # Profile: Annotated matrix operations
+        annotated_profile_dir = profile_dir / "annotated"
+        profile_dirs.append(run_profile_session(
+            jitted_annotated, 
+            annotated_profile_dir, 
+            args.iterations, 
+            "annotated matrix operations"
+        ))
     
-    for i in range(args.iterations):
-        print(f"Running annotated iteration {i+1}/{args.iterations}...")
-        results = jitted_annotated()
-        # Force execution by blocking on all results
-        for r in results:
-            r.block_until_ready()
+    if args.mode in ["all", "simple"]:
+        # Profile: Simple large matrix operations
+        simple_profile_dir = profile_dir / "simple"
+        profile_dirs.append(run_profile_session(
+            jitted_simple,
+            simple_profile_dir,
+            args.iterations,
+            "simple large matrix operations"
+        ))
     
-    stop_trace()
-    print("Annotated profiling completed!")
-    
-    # Second profile: Simple matrix operations
-    simple_profile_dir = profile_dir / "simple"
-    simple_profile_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("\nStarting profile for simple matrix operations...")
-    start_trace(str(simple_profile_dir))
-    
-    for i in range(args.iterations):
-        print(f"Running simple iteration {i+1}/{args.iterations}...")
-        results = jitted_simple()
-        # Force execution by blocking on all results
-        for r in results:
-            r.block_until_ready()
-    
-    stop_trace()
-    print("Simple profiling completed!")
+    if args.mode in ["all", "small"]:
+        # Profile: Small matrix operations (from matrix_profile_demo.py)
+        small_profile_dir = profile_dir / "small"
+        profile_dirs.append(run_profile_session(
+            jitted_small,
+            small_profile_dir,
+            args.iterations,
+            "small matrix operations"
+        ))
     
     # Print viewing instructions
     print(f"\nProfiles saved to: {profile_dir}")
-    print("\nTo view the profiles, you can use either:")
-    
-    print("\n1. Our combined viewer (TensorBoard + Perfetto):")
+    print("\nTo view the profiles, use our unified viewer:")
     print(f"   python -m xax.examples.profiling.view_profile --profile-dir {profile_dir}")
     
-    print("\n2. TensorBoard only (with fixed Python 3.13 compatibility):")
-    print(f"   python -m xax.examples.profiling.view_tensorboard --profile-dir {profile_dir}")
-    print("   Then open http://localhost:6006 in your browser")
-    print("   Click on the 'Profile' tab in the navigation bar")
+    # Print additional options for viewing specific profiles
+    if profile_dirs:
+        print("\nOr view specific profile sessions:")
+        for i, dir_path in enumerate(profile_dirs, 1):
+            print(f"   {i}. {dir_path.name}: python -m xax.examples.profiling.view_profile --profile-dir {dir_path}")
     
-    print("\n3. Manually with Perfetto UI:")
-    print("   Go to https://ui.perfetto.dev")
-    print("   Click 'Open trace file' and select one of the trace files in:")
-    print(f"   - {annotated_profile_dir}/plugins/profile/*/traces/*.trace.json.gz")
-    print(f"   - {simple_profile_dir}/plugins/profile/*/traces/*.trace.json.gz")
+    print("\nOptions for the viewer:")
+    print("   --ui=tensorboard     View in TensorBoard only")
+    print("   --ui=perfetto        View in Perfetto UI only")
+    print("   --extract            Extract and decompress trace files for Perfetto UI")
+    print("   --list-only          Just list available trace files")
 
 if __name__ == "__main__":
     main() 
