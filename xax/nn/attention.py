@@ -652,13 +652,7 @@ class Transformer(eqx.Module):
 
         # Apply output layer if it exists
         if self.output_layer is not None:
-            # Safe way to handle output projection
-            def project_sequence(seq: Array) -> Array:
-                proj = self.output_layer
-                assert proj is not None  # For type checking
-                return jax.vmap(proj)(seq)
-
-            output = jax.vmap(project_sequence)(output)
+            output = jax.vmap(self.output_layer)(output)
 
         if update_cache:
             return output, updated_cache
@@ -694,7 +688,7 @@ class Transformer(eqx.Module):
         sequence = prompt_seq
 
         # Create causal mask for generation
-        causal_mask = jnp.tril(jnp.ones((self.max_seq_len, self.max_seq_len)))
+        causal_mask = jnp.tril(jnp.ones((self.max_seq_len, self.max_seq_len), dtype=jnp.bool_))
 
         # Initialize cache with the prompt
         _, cache = self(x=prompt_seq, mask=causal_mask[:prompt_len, :prompt_len], update_cache=True)
@@ -707,7 +701,13 @@ class Transformer(eqx.Module):
 
             # Get logits for next token
             rng, subrng = jax.random.split(rng)
-            logits, new_cache = self(x=last_token, positions=pos_tensor, key=subrng, cache=cur_cache, update_cache=True)
+            logits, new_cache = self(
+                x=last_token,
+                positions=pos_tensor,
+                key=subrng,
+                cache=cur_cache,
+                update_cache=True,
+            )
 
             # Extract final logits and apply temperature
             logits = logits[-1] / temperature
