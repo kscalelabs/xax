@@ -18,7 +18,6 @@ class SelfAttentionBlock(eqx.Module):
     output_proj: eqx.nn.Linear
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
-    dropout_rate: float = eqx.static_field()
     causal: bool = eqx.static_field()
 
     def __init__(
@@ -27,7 +26,6 @@ class SelfAttentionBlock(eqx.Module):
         num_heads: int,
         *,
         key: PRNGKeyArray,
-        dropout_rate: float = 0.0,
         causal: bool = False,
     ) -> None:
         keys = jax.random.split(key, 4)
@@ -41,7 +39,6 @@ class SelfAttentionBlock(eqx.Module):
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
 
-        self.dropout_rate = dropout_rate
         self.causal = causal
 
     def _reshape_for_multihead(self, x: Array) -> Array:
@@ -131,7 +128,6 @@ class CrossAttentionBlock(eqx.Module):
     output_proj: eqx.nn.Linear
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
-    dropout_rate: float = eqx.static_field()
 
     def __init__(
         self,
@@ -139,7 +135,6 @@ class CrossAttentionBlock(eqx.Module):
         num_heads: int,
         *,
         key: PRNGKeyArray,
-        dropout_rate: float = 0.0,
     ) -> None:
         keys = jax.random.split(key, 4)
 
@@ -151,8 +146,6 @@ class CrossAttentionBlock(eqx.Module):
         self.k_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[1])
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
-
-        self.dropout_rate = dropout_rate
 
     def _reshape_for_multihead(self, x: Array) -> Array:
         """Reshape from (seq_len, embed_dim) to (seq_len, num_heads, head_dim)."""
@@ -248,7 +241,6 @@ class TransformerBlock(eqx.Module):
         ff_dim: int,
         *,
         key: PRNGKeyArray,
-        dropout_rate: float = 0.0,
         causal: bool = False,
         cross_attention: bool = False,
     ) -> None:
@@ -258,7 +250,6 @@ class TransformerBlock(eqx.Module):
             embed_dim=embed_dim,
             num_heads=num_heads,
             key=keys[0],
-            dropout_rate=dropout_rate,
             causal=causal,
         )
 
@@ -267,7 +258,6 @@ class TransformerBlock(eqx.Module):
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 key=keys[1],
-                dropout_rate=dropout_rate,
             )
             self.layer_norm3 = eqx.nn.LayerNorm(embed_dim)
         else:
@@ -410,7 +400,6 @@ class Transformer(eqx.Module):
         output_size: int | None = None,
         *,
         key: PRNGKeyArray,
-        dropout_rate: float = 0.0,
         causal: bool = False,
         cross_attention: bool = False,
         use_absolute_position: bool = True,
@@ -431,7 +420,6 @@ class Transformer(eqx.Module):
                 num_heads=num_heads,
                 ff_dim=ff_dim,
                 key=keys[i + 2],
-                dropout_rate=dropout_rate,
                 causal=causal,
                 cross_attention=cross_attention,
             )
