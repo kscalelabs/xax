@@ -882,7 +882,7 @@ class TrainMixin(
             key, model_key = jax.random.split(key)
             models, optimizers, opt_states, state = self.load_initial_state(model_key, load_optimizer=True)
             logger.info("Model size: %s", f"{get_pytree_param_count(models):,}")
-            logger.info("Optimizer size: %s", f"{get_pytree_param_count(optimizers):,}")
+            logger.info("Optimizer size: %s", f"{get_pytree_param_count(opt_states):,}")
 
             state = self.on_training_start(state)
 
