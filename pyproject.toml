@@ -38,6 +38,7 @@ module = [
     "optax.*",
     "setuptools.*",
     "tensorboard.*",
+    "tensorflow_datasets.*",
     "transformers.*",
 ]
 

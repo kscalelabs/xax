@@ -250,6 +250,16 @@ class ShakespearePrediction(xax.Task[Config]):
                     discretize=False,
                     key=key,
                 )
+            case "attention":
+                return xax.Transformer(
+                    vocab_size=self.config.input_size,
+                    embed_dim=self.config.hidden_size,
+                    num_heads=self.config.hidden_size // 64,
+                    ff_dim=self.config.hidden_size * 4,
+                    num_layers=self.config.num_layers,
+                    max_seq_len=self.config.sequence_length,
+                    key=key,
+                )
             case _:
                 raise ValueError(f"Unknown model type: {self.config.model_type}")
 
