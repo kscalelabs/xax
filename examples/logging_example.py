@@ -77,5 +77,5 @@ class LoggingExample(xax.Task[Config]):
 
 
 if __name__ == "__main__":
-    # python -m examples.logging
-    LoggingExample.launch(Config())
+    # python -m examples.logging_example
+    LoggingExample.launch(Config()) 
