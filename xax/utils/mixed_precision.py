@@ -1,520 +1,419 @@
-"""Mixed precision utilities for XAX."""
+"""Mixed precision training utilities for XAX.
+
+This module provides utilities for mixed precision training in JAX, inspired by
+the DeepMind JMP library (https://github.com/google-deepmind/jmp).
+
+Mixed precision training is a technique that uses lower precision data types
+(like float16 or bfloat16) during computation to speed up training, while
+maintaining model weights in higher precision (like float32) to preserve
+accuracy.
+"""
 
 import functools
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from enum import Enum
+from typing import Any, Callable, Dict, Optional, TypeVar, Union, cast
 
 import jax
 import jax.numpy as jnp
-import jax.tree_util
+from jax import tree_util
 
-# Type for a half-precision dtype, either float16 or bfloat16
-HalfPrecisionDType = TypeVar("HalfPrecisionDType", jnp.float16, jnp.bfloat16)
+from xax.utils.pytree import PyTree
+
+# Type aliases for clarity
+DType = jnp.dtype
+T = TypeVar('T')
+Params = PyTree
 
 
-def get_default_half_dtype() -> HalfPrecisionDType:
-    """Get the default half-precision dtype for the current platform.
+class Precision(str, Enum):
+    """Precision types for mixed precision training."""
+    HIGHEST = "highest"  # Use highest precision (typically float32)
+    HIGH = "high"        # Use high precision (typically bfloat16 on TPU, float32 elsewhere)
+    MEDIUM = "medium"    # Use medium precision (typically bfloat16)
+    LOW = "low"          # Use low precision (typically float16)
+
+
+def get_default_half_dtype() -> DType:
+    """Return the default half-precision dtype for the current platform.
     
-    Returns float16 for GPU and bfloat16 for TPU.
-    Falls back to float16 on CPU.
-    
-    Returns:
-        The default half-precision dtype.
+    Returns float16 for GPUs and bfloat16 for TPUs.
     """
-    platform = jax.default_backend()
-    if platform == "tpu":
+    # Check if we're running on TPU
+    if jax.devices()[0].platform == "tpu":
         return jnp.bfloat16
-    else:
-        return jnp.float16
+    return jnp.float16
+
+
+def _parse_dtype(dtype_str: str) -> DType:
+    """Parse a dtype from a string."""
+    dtype_map = {
+        "float16": jnp.float16,
+        "float32": jnp.float32,
+        "float64": jnp.float64,
+        "bfloat16": jnp.bfloat16,
+        "f16": jnp.float16,
+        "f32": jnp.float32,
+        "f64": jnp.float64,
+        "bf16": jnp.bfloat16,
+        "half": get_default_half_dtype(),
+        "single": jnp.float32,
+        "double": jnp.float64,
+    }
+    
+    dtype_str = dtype_str.lower()
+    if dtype_str in dtype_map:
+        return dtype_map[dtype_str]
+    
+    raise ValueError(f"Unknown dtype: {dtype_str}")
 
 
 @dataclass
 class Policy:
     """A policy for mixed precision training.
     
-    This class specifies the data types to use for parameters, computation,
-    and output in a mixed precision training setup.
-    
     Attributes:
-        param_dtype: The data type for parameters
-        compute_dtype: The data type for computation
-        output_dtype: The data type for outputs
+        param_dtype: Data type for parameters (typically float32).
+        compute_dtype: Data type for computation (typically float16 or bfloat16).
+        output_dtype: Data type for output (typically same as compute_dtype).
     """
+    param_dtype: DType
+    compute_dtype: DType
+    output_dtype: DType
     
-    param_dtype: jnp.dtype
-    compute_dtype: jnp.dtype
-    output_dtype: jnp.dtype
-    
-    def __post_init__(self):
-        """Validate the policy."""
-        if not isinstance(self.param_dtype, jnp.dtype):
-            self.param_dtype = jnp.dtype(self.param_dtype)
-        if not isinstance(self.compute_dtype, jnp.dtype):
-            self.compute_dtype = jnp.dtype(self.compute_dtype)
-        if not isinstance(self.output_dtype, jnp.dtype):
-            self.output_dtype = jnp.dtype(self.output_dtype)
-    
-    def cast_to_param(self, x: Any) -> Any:
-        """Cast a value to the parameter data type.
+    @classmethod
+    def from_string(cls, policy_str: str) -> "Policy":
+        """Create a policy from a string.
         
-        Args:
-            x: The value to cast
-            
-        Returns:
-            The cast value
+        Example:
+            Policy.from_string("params=float32,compute=float16,output=float16")
+            Policy.from_string("float16")  # All in float16
         """
-        return tree_map_dtype(x, self.param_dtype)
-    
-    def cast_to_compute(self, x: Any) -> Any:
-        """Cast a value to the computation data type.
+        if "," in policy_str:
+            parts = {}
+            for part in policy_str.split(","):
+                key, value = part.split("=")
+                parts[key.strip()] = value.strip()
+            
+            param_dtype = _parse_dtype(parts.get("params", "float32"))
+            compute_dtype = _parse_dtype(parts.get("compute", "float16"))
+            output_dtype = _parse_dtype(parts.get("output", parts.get("compute", "float16")))
+        else:
+            # Single dtype for everything
+            dtype = _parse_dtype(policy_str)
+            param_dtype = dtype
+            compute_dtype = dtype
+            output_dtype = dtype
         
-        Args:
-            x: The value to cast
-            
-        Returns:
-            The cast value
-        """
-        return tree_map_dtype(x, self.compute_dtype)
+        return cls(
+            param_dtype=param_dtype,
+            compute_dtype=compute_dtype,
+            output_dtype=output_dtype,
+        )
     
-    def cast_to_output(self, x: Any) -> Any:
-        """Cast a value to the output data type.
-        
-        Args:
-            x: The value to cast
-            
-        Returns:
-            The cast value
-        """
-        return tree_map_dtype(x, self.output_dtype)
+    def with_output_dtype(self, output_dtype: DType) -> "Policy":
+        """Return a new policy with the specified output dtype."""
+        return Policy(
+            param_dtype=self.param_dtype,
+            compute_dtype=self.compute_dtype,
+            output_dtype=output_dtype,
+        )
     
-    def with_param_dtype(self, dtype: jnp.dtype) -> "Policy":
-        """Create a new policy with a different parameter data type.
-        
-        Args:
-            dtype: The new parameter data type
-            
-        Returns:
-            A new policy with the specified parameter data type
-        """
-        return Policy(dtype, self.compute_dtype, self.output_dtype)
+    def cast_to_compute(self, pytree: PyTree) -> PyTree:
+        """Cast a pytree to the compute dtype."""
+        return tree_map_dtype(self.compute_dtype, pytree)
     
-    def with_compute_dtype(self, dtype: jnp.dtype) -> "Policy":
-        """Create a new policy with a different computation data type.
-        
-        Args:
-            dtype: The new computation data type
-            
-        Returns:
-            A new policy with the specified computation data type
-        """
-        return Policy(self.param_dtype, dtype, self.output_dtype)
+    def cast_to_param(self, pytree: PyTree) -> PyTree:
+        """Cast a pytree to the parameter dtype."""
+        return tree_map_dtype(self.param_dtype, pytree)
     
-    def with_output_dtype(self, dtype: jnp.dtype) -> "Policy":
-        """Create a new policy with a different output data type.
-        
-        Args:
-            dtype: The new output data type
-            
-        Returns:
-            A new policy with the specified output data type
-        """
-        return Policy(self.param_dtype, self.compute_dtype, dtype)
+    def cast_to_output(self, pytree: PyTree) -> PyTree:
+        """Cast a pytree to the output dtype."""
+        return tree_map_dtype(self.output_dtype, pytree)
 
 
-def get_policy(policy_str: str) -> Policy:
-    """Create a policy from a string description.
+def tree_map_dtype(dtype: DType, pytree: PyTree) -> PyTree:
+    """Map a dtype over a pytree, casting all arrays to the specified dtype.
     
     Args:
-        policy_str: A string specifying the policy. Can be one of:
-            - "default": Use float32 for everything
-            - "float16": Use float16 for everything
-            - "bfloat16": Use bfloat16 for everything
-            - "half": Use the default half-precision dtype for everything
-            - "mixed": Use float32 for parameters and output, half-precision for computation
-            - A custom string like "params=float32,compute=float16,output=float32"
+        dtype: The target dtype.
+        pytree: A JAX pytree.
     
     Returns:
-        The corresponding policy
-        
-    Raises:
-        ValueError: If the policy string is invalid
+        A new pytree with all arrays cast to the specified dtype.
     """
-    full = jnp.float32
-    half = get_default_half_dtype()
-    
-    if policy_str == "default":
-        return Policy(full, full, full)
-    elif policy_str == "float16":
-        return Policy(jnp.float16, jnp.float16, jnp.float16)
-    elif policy_str == "bfloat16":
-        return Policy(jnp.bfloat16, jnp.bfloat16, jnp.bfloat16)
-    elif policy_str == "half":
-        return Policy(half, half, half)
-    elif policy_str == "mixed":
-        return Policy(full, half, full)
-    
-    # Parse a custom policy string
-    try:
-        parts = policy_str.split(",")
-        param_dtype = full
-        compute_dtype = full
-        output_dtype = full
-        
-        for part in parts:
-            key, value = part.split("=")
-            if key == "params":
-                param_dtype = _parse_dtype(value)
-            elif key == "compute":
-                compute_dtype = _parse_dtype(value)
-            elif key == "output":
-                output_dtype = _parse_dtype(value)
-            else:
-                raise ValueError(f"Unknown policy key: {key}")
-        
-        return Policy(param_dtype, compute_dtype, output_dtype)
-    except Exception as e:
-        raise ValueError(f"Invalid policy string: {policy_str}") from e
-
-
-def _parse_dtype(dtype_str: str) -> jnp.dtype:
-    """Parse a dtype string.
-    
-    Args:
-        dtype_str: A string specifying a dtype
-    
-    Returns:
-        The corresponding dtype
-        
-    Raises:
-        ValueError: If the dtype string is invalid
-    """
-    if dtype_str == "float32":
-        return jnp.float32
-    elif dtype_str == "float16":
-        return jnp.float16
-    elif dtype_str == "bfloat16":
-        return jnp.bfloat16
-    elif dtype_str == "half":
-        return get_default_half_dtype()
-    else:
-        raise ValueError(f"Unknown dtype: {dtype_str}")
-
-
-def tree_map_dtype(pytree: Any, dtype: jnp.dtype) -> Any:
-    """Apply dtype conversion to all arrays in a pytree.
-    
-    Args:
-        pytree: A pytree of arrays or scalars
-        dtype: The target data type
-    
-    Returns:
-        A new pytree with all arrays converted to the target data type
-    """
-    def _cast(x):
-        if hasattr(x, "dtype") and hasattr(x, "astype"):
+    def _cast_if_array(x):
+        if isinstance(x, (jnp.ndarray, jax.Array)):
             return x.astype(dtype)
         return x
     
-    return jax.tree_util.tree_map(_cast, pytree)
+    return jax.tree_util.tree_map(_cast_if_array, pytree)
+
+
+# Common policies
+DEFAULT = Policy(
+    param_dtype=jnp.float32,
+    compute_dtype=jnp.float32,
+    output_dtype=jnp.float32,
+)
+
+MIXED_PRECISION = Policy(
+    param_dtype=jnp.float32,
+    compute_dtype=get_default_half_dtype(),
+    output_dtype=jnp.float32,
+)
+
+FULL_HALF = Policy(
+    param_dtype=get_default_half_dtype(),
+    compute_dtype=get_default_half_dtype(),
+    output_dtype=get_default_half_dtype(),
+)
+
+
+def get_policy(policy_str: str) -> Policy:
+    """Get a policy from a string.
+    
+    Args:
+        policy_str: A string representation of the policy.
+    
+    Returns:
+        A Policy object.
+    """
+    # Handle predefined policies
+    if policy_str.lower() == "default":
+        return DEFAULT
+    elif policy_str.lower() == "mixed":
+        return MIXED_PRECISION
+    elif policy_str.lower() == "half" or policy_str.lower() == "float16":
+        return FULL_HALF
+    
+    # Parse the string
+    return Policy.from_string(policy_str)
 
 
 class LossScale:
-    """Base class for loss scaling strategies."""
+    """Base class for loss scaling strategies.
+    
+    Loss scaling is a technique used in mixed precision training where the loss
+    is multiplied by a scaling factor before backpropagation. This helps prevent
+    gradients from underflowing in reduced precision.
+    """
+    
+    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
+        """Scale the loss by the loss scale factor."""
+        raise NotImplementedError
+    
+    def unscale(self, grads: PyTree) -> PyTree:
+        """Unscale the gradients by the loss scale factor."""
+        raise NotImplementedError
+    
+    def adjust(self, grads_finite: jnp.ndarray) -> "LossScale":
+        """Adjust the loss scale based on whether gradients are finite."""
+        return self
     
     @property
     def loss_scale(self) -> jnp.ndarray:
         """Get the current loss scale value."""
-        raise NotImplementedError("Subclasses must implement loss_scale")
-    
-    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
-        """Scale the loss.
-        
-        Args:
-            loss: The loss to scale
-            
-        Returns:
-            The scaled loss
-        """
-        raise NotImplementedError("Subclasses must implement scale")
-    
-    def unscale(self, grads: Any) -> Any:
-        """Unscale the gradients.
-        
-        Args:
-            grads: The gradients to unscale
-            
-        Returns:
-            The unscaled gradients
-        """
-        raise NotImplementedError("Subclasses must implement unscale")
-    
-    def adjust(self, grads_finite: jnp.ndarray) -> "LossScale":
-        """Adjust the loss scale based on whether gradients are finite.
-        
-        Args:
-            grads_finite: A boolean indicating whether all gradients are finite
-            
-        Returns:
-            The updated loss scale
-        """
-        raise NotImplementedError("Subclasses must implement adjust")
+        raise NotImplementedError
 
 
 class NoOpLossScale(LossScale):
     """A loss scale that does nothing.
     
-    This is used when loss scaling is disabled.
+    This is useful as a drop-in replacement when loss scaling is not needed.
     """
+    
+    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
+        return loss
+    
+    def unscale(self, grads: PyTree) -> PyTree:
+        return grads
     
     @property
     def loss_scale(self) -> jnp.ndarray:
-        """Get the current loss scale value."""
         return jnp.array(1.0, dtype=jnp.float32)
-    
-    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
-        """Scale the loss (no-op).
-        
-        Args:
-            loss: The loss to scale
-            
-        Returns:
-            The unmodified loss
-        """
-        return loss
-    
-    def unscale(self, grads: Any) -> Any:
-        """Unscale the gradients (no-op).
-        
-        Args:
-            grads: The gradients to unscale
-            
-        Returns:
-            The unmodified gradients
-        """
-        return grads
-    
-    def adjust(self, grads_finite: jnp.ndarray) -> "NoOpLossScale":
-        """Adjust the loss scale (no-op).
-        
-        Args:
-            grads_finite: A boolean indicating whether all gradients are finite
-            
-        Returns:
-            self
-        """
-        return self
 
 
 class StaticLossScale(LossScale):
-    """A loss scale with a fixed value.
+    """A static loss scale with a fixed value."""
     
-    This is a simple loss scaling strategy that uses a fixed scaling factor.
-    
-    Attributes:
-        scale_value: The fixed scaling factor
-    """
-    
-    def __init__(self, scale_value: float):
-        """Initialize the loss scale.
+    def __init__(self, scale: Union[float, jnp.ndarray]):
+        """Initialize the static loss scale.
         
         Args:
-            scale_value: The fixed scaling factor
+            scale: The fixed loss scale value.
         """
-        self._scale_value = jnp.array(scale_value, dtype=jnp.float32)
+        self._scale = jnp.array(scale, dtype=jnp.float32)
+    
+    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
+        return loss * self._scale
+    
+    def unscale(self, grads: PyTree) -> PyTree:
+        return jax.tree_util.tree_map(lambda g: g / self._scale, grads)
     
     @property
     def loss_scale(self) -> jnp.ndarray:
-        """Get the current loss scale value."""
-        return self._scale_value
-    
-    def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
-        """Scale the loss.
-        
-        Args:
-            loss: The loss to scale
-            
-        Returns:
-            The scaled loss
-        """
-        return loss * self._scale_value
-    
-    def unscale(self, grads: Any) -> Any:
-        """Unscale the gradients.
-        
-        Args:
-            grads: The gradients to unscale
-            
-        Returns:
-            The unscaled gradients
-        """
-        def _unscale(g):
-            return g / self._scale_value
-        
-        return jax.tree_util.tree_map(_unscale, grads)
-    
-    def adjust(self, grads_finite: jnp.ndarray) -> "StaticLossScale":
-        """Adjust the loss scale (no-op for static loss scale).
-        
-        Args:
-            grads_finite: A boolean indicating whether all gradients are finite
-            
-        Returns:
-            self
-        """
-        return self
+        return self._scale
 
 
 class DynamicLossScale(LossScale):
-    """A loss scale that dynamically adjusts its value.
+    """A dynamic loss scale that adjusts itself during training.
     
-    This loss scaling strategy increases the scaling factor when gradients
-    are consistently finite, and decreases it when gradients contain infinities
-    or NaNs.
-    
-    Attributes:
-        initial_scale: The initial scaling factor
-        growth_interval: Number of consecutive finite gradient steps before increasing the scale
-        growth_factor: Factor by which to increase the scale
-        backoff_factor: Factor by which to decrease the scale
-        max_scale: Maximum allowed scale value (or None for no limit)
-        counter: Counter for consecutive finite gradient steps
+    The scale is increased by a factor of 2 after a certain number of consecutive
+    steps with finite gradients, and is decreased by a factor of 2 when non-finite
+    gradients are encountered.
     """
     
     def __init__(
         self,
-        initial_scale: float = 2**15,
+        initial_scale: Union[float, jnp.ndarray] = 2**15,
         growth_interval: int = 2000,
         growth_factor: float = 2.0,
         backoff_factor: float = 0.5,
         max_scale: Optional[float] = None,
-        counter: Optional[int] = None,
-        dtype: jnp.dtype = jnp.float32,
+        dtype: DType = jnp.float32,
     ):
-        """Initialize the loss scale.
+        """Initialize the dynamic loss scale.
         
         Args:
-            initial_scale: The initial scaling factor
-            growth_interval: Number of consecutive finite gradient steps before increasing the scale
-            growth_factor: Factor by which to increase the scale
-            backoff_factor: Factor by which to decrease the scale
-            max_scale: Maximum allowed scale value (or None for no limit)
-            counter: Counter for consecutive finite gradient steps
+            initial_scale: The initial loss scale value.
+            growth_interval: Number of consecutive steps with finite gradients before
+                increasing the loss scale.
+            growth_factor: Factor by which to increase the loss scale.
+            backoff_factor: Factor by which to decrease the loss scale when non-finite
+                gradients are encountered.
+            max_scale: Maximum allowed loss scale value.
+            dtype: Data type for the loss scale.
         """
-        self._scale_value = jnp.array(initial_scale, dtype=dtype)
+        self._current_scale = jnp.array(initial_scale, dtype=dtype)
         self._growth_interval = growth_interval
         self._growth_factor = growth_factor
         self._backoff_factor = backoff_factor
-        self._max_scale = jnp.array(max_scale, dtype=dtype) if max_scale is not None else None
-        self._counter = jnp.array(0 if counter is None else counter, dtype=jnp.int32)
-    
-    @property
-    def loss_scale(self) -> jnp.ndarray:
-        """Get the current loss scale value."""
-        return self._scale_value
+        self._max_scale = jnp.array(max_scale if max_scale is not None else float('inf'), dtype=dtype)
+        self._steps_since_finite = 0
     
     def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
-        """Scale the loss.
-        
-        Args:
-            loss: The loss to scale
-            
-        Returns:
-            The scaled loss
-        """
-        return loss * self._scale_value
+        return loss * self._current_scale
     
-    def unscale(self, grads: Any) -> Any:
-        """Unscale the gradients.
-        
-        Args:
-            grads: The gradients to unscale
-            
-        Returns:
-            The unscaled gradients
-        """
-        def _unscale(g):
-            return g / self._scale_value
-        
-        return jax.tree_util.tree_map(_unscale, grads)
+    def unscale(self, grads: PyTree) -> PyTree:
+        inv_scale = 1.0 / self._current_scale
+        return jax.tree_util.tree_map(lambda g: g * inv_scale, grads)
     
     def adjust(self, grads_finite: jnp.ndarray) -> "DynamicLossScale":
         """Adjust the loss scale based on whether gradients are finite.
         
-        If gradients are finite, increment the counter. If the counter reaches
-        the growth interval, increase the scale and reset the counter.
-        
-        If gradients are not finite, decrease the scale and reset the counter.
-        
         Args:
-            grads_finite: A boolean indicating whether all gradients are finite
-            
+            grads_finite: A boolean indicating whether all gradients are finite.
+        
         Returns:
-            The updated loss scale
+            An updated DynamicLossScale instance.
         """
-        if hasattr(grads_finite, "item") and callable(grads_finite.item):
-            grads_finite = bool(grads_finite.item())
-        
-        if not grads_finite:
-            # Decrease the scale and reset the counter
-            new_scale = self._scale_value * self._backoff_factor
-            new_counter = jnp.array(0, dtype=jnp.int32)
-        else:
-            # Increment the counter
-            new_counter = self._counter + 1
-            
-            if new_counter >= self._growth_interval:
-                # Increase the scale and reset the counter
-                new_scale = self._scale_value * self._growth_factor
-                if self._max_scale is not None:
-                    new_scale = jnp.minimum(new_scale, self._max_scale)
-                new_counter = jnp.array(0, dtype=jnp.int32)
-            else:
-                # Keep the same scale
-                new_scale = self._scale_value
-        
-        return DynamicLossScale(
-            initial_scale=new_scale,
+        # Create a new instance with updated values
+        result = DynamicLossScale(
+            initial_scale=self._current_scale,
             growth_interval=self._growth_interval,
             growth_factor=self._growth_factor,
             backoff_factor=self._backoff_factor,
-            max_scale=self._max_scale.item() if self._max_scale is not None else None,
-            counter=new_counter.item(),
-            dtype=self._scale_value.dtype,
+            max_scale=self._max_scale,
+            dtype=self._current_scale.dtype,
         )
+        
+        # Adjust the scale based on whether gradients are finite
+        if grads_finite:
+            result._steps_since_finite = self._steps_since_finite + 1
+            if result._steps_since_finite >= self._growth_interval:
+                new_scale = jnp.minimum(
+                    self._current_scale * self._growth_factor,
+                    self._max_scale
+                )
+                result._current_scale = new_scale
+                result._steps_since_finite = 0
+        else:
+            result._current_scale = self._current_scale * self._backoff_factor
+            result._steps_since_finite = 0
+        
+        return result
+    
+    @property
+    def loss_scale(self) -> jnp.ndarray:
+        return self._current_scale
 
 
-def all_finite(tree: Any) -> jnp.ndarray:
+def all_finite(pytree: PyTree) -> jnp.ndarray:
     """Check if all values in a pytree are finite.
     
     Args:
-        tree: A pytree of arrays or scalars
+        pytree: A JAX pytree containing arrays.
     
     Returns:
-        A boolean indicating whether all values are finite
+        A boolean JAX array indicating whether all values are finite.
     """
-    def _check_finite(x):
-        if hasattr(x, "dtype") and jnp.issubdtype(x.dtype, jnp.inexact):
+    def _is_finite(x):
+        if isinstance(x, (jnp.ndarray, jax.Array)):
             return jnp.all(jnp.isfinite(x))
         return jnp.array(True)
     
-    leaves = jax.tree_util.tree_map(_check_finite, tree)
-    leaves_flat = jax.tree_util.tree_leaves(leaves)
-    return jnp.all(jnp.stack(leaves_flat))
+    finite_flags = jax.tree_util.tree_map(_is_finite, pytree)
+    return jax.tree_util.tree_reduce(lambda a, b: a & b, finite_flags, jnp.array(True))
 
 
-def select_tree(pred: jnp.ndarray, on_true: Any, on_false: Any) -> Any:
+def select_tree(pred: jnp.ndarray, a: PyTree, b: PyTree) -> PyTree:
     """Select between two pytrees based on a predicate.
     
     Args:
-        pred: A boolean predicate
-        on_true: The pytree to select if pred is True
-        on_false: The pytree to select if pred is False
+        pred: A boolean predicate.
+        a: First pytree, selected when pred is True.
+        b: Second pytree, selected when pred is False.
     
     Returns:
-        Either on_true or on_false, based on pred
+        A pytree with values from either a or b based on pred.
     """
     return jax.tree_util.tree_map(
-        lambda t, f: jnp.where(pred, t, f),
-        on_true,
-        on_false
-    ) 
+        lambda a_val, b_val: jnp.where(pred, a_val, b_val),
+        a, b
+    )
+
+
+def apply_mixed_precision(
+    func: Callable[..., T],
+    policy: Policy,
+    static_argnums: Optional[Union[int, tuple[int, ...]]] = None
+) -> Callable[..., T]:
+    """Apply mixed precision to a function.
+    
+    This decorator applies the specified precision policy to a function's inputs
+    and outputs.
+    
+    Args:
+        func: The function to decorate.
+        policy: The precision policy to apply.
+        static_argnums: Indices of arguments that should not be cast.
+    
+    Returns:
+        A decorated function that applies the precision policy.
+    """
+    if static_argnums is None:
+        static_argnums = ()
+    elif isinstance(static_argnums, int):
+        static_argnums = (static_argnums,)
+    
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        # Cast args except for static args
+        cast_args = []
+        for i, arg in enumerate(args):
+            if i in static_argnums:
+                cast_args.append(arg)
+            else:
+                cast_args.append(policy.cast_to_compute(arg))
+        
+        # Cast kwargs
+        cast_kwargs = {k: policy.cast_to_compute(v) for k, v in kwargs.items()}
+        
+        # Call the function
+        result = func(*cast_args, **cast_kwargs)
+        
+        # Cast the result
+        return policy.cast_to_output(result)
+    
+    return wrapped 
