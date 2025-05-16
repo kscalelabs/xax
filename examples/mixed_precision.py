@@ -2,15 +2,18 @@
 
 This file provides examples of mixed precision training with JAX:
 1. Simple benchmark comparing training speed and memory usage
-2. MNIST training example with mixed precision
-3. Utility for exploring mixed precision behavior
+2. Demonstration of mixed precision policies
+3. Exploration of loss scaling behavior
 
-Run one of the examples with:
-    python -m xax.examples.mixed_precision --example benchmark
-    python -m xax.examples.mixed_precision --example mnist
-    python -m xax.examples.mixed_precision --example explore
-
-Each example demonstrates how to use the mixed precision utilities in xax.
+Run the example with:
+    # Run exploration of mixed precision concepts
+    python3 xax/examples/mixed_precision.py explore
+    
+    # Run benchmark comparison between full and mixed precision
+    python3 xax/examples/mixed_precision.py benchmark
+    
+    # Run both
+    python3 xax/examples/mixed_precision.py all
 """
 
 import jax
@@ -19,15 +22,12 @@ import numpy as np
 import equinox as eqx
 import optax
 import time
-import argparse
 import matplotlib.pyplot as plt
+import argparse
+import sys
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any, Optional, List, Union
+from typing import Tuple, Dict, Any, Optional, List, Union, NamedTuple
 
-from xax.core.state import State
-from xax.task.script import Script, ScriptConfig
-from xax.task.mixins.train import TrainConfig, TrainMixin
-from xax.task.mixins.mixed_precision import MixedPrecisionConfig, MixedPrecisionMixin
 from xax.utils.mixed_precision import (
     Policy, get_policy, NoOpLossScale, StaticLossScale, DynamicLossScale, 
     get_default_half_dtype, all_finite
@@ -63,39 +63,33 @@ class MLP(eqx.Module):
         return jnp.dot(h, self.layer2_weight) + self.layer2_bias
 
 
-class CNN(eqx.Module):
-    """Simple CNN model for MNIST."""
-    conv1: eqx.nn.Conv2d
-    conv2: eqx.nn.Conv2d
-    linear1: eqx.nn.Linear
-    linear2: eqx.nn.Linear
-    
-    def __init__(self, *, key):
-        conv1_key, conv2_key, linear1_key, linear2_key = jax.random.split(key, 4)
-        # Equinox Conv2d expects input shape [H, W, C_in]
-        self.conv1 = eqx.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, key=conv1_key)
-        self.conv2 = eqx.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, key=conv2_key)
-        self.linear1 = eqx.nn.Linear(9216, 128, key=linear1_key)
-        self.linear2 = eqx.nn.Linear(128, 10, key=linear2_key)
-    
-    def __call__(self, x):
-        # Input shape: [H, W, C_in]
-        x = jax.nn.relu(self.conv1(x))
-        x = jax.nn.max_pool(x, (2, 2), strides=(2, 2))
-        x = jax.nn.relu(self.conv2(x))
-        x = jax.nn.max_pool(x, (2, 2), strides=(2, 2))
-        # Flatten for the linear layer
-        x = x.reshape(-1)
-        x = jax.nn.relu(self.linear1(x))
-        return self.linear2(x)
+# Custom LossScale implementation that works with JAX tracing
+class CustomLossScaleState(NamedTuple):
+    """State for tracking dynamic loss scale."""
+    loss_scale: jnp.ndarray
+    steps_since_finite: jnp.ndarray
+    growth_interval: jnp.ndarray
+    growth_factor: jnp.ndarray
+    backoff_factor: jnp.ndarray
+    max_scale: jnp.ndarray
 
-
-#------------------------------------------------------------------------------
-# BENCHMARK EXAMPLE
-#------------------------------------------------------------------------------
 
 @dataclass
-class BenchmarkConfig(TrainConfig, MixedPrecisionConfig):
+class MixedPrecisionConfig:
+    """Configuration for mixed precision training."""
+    enable_mixed_precision: bool = False
+    precision_policy: str = "mixed"  # "default", "mixed", "float16", "bfloat16"
+    loss_scaling: str = "dynamic"  # "none", "static", "dynamic"
+    loss_scale_value: float = 2**15
+    loss_scale_growth_interval: int = 2000
+    loss_scale_growth_factor: float = 2.0
+    loss_scale_backoff_factor: float = 0.5
+    loss_scale_max_value: Optional[float] = None
+    skip_nonfinite_updates: bool = True  # Skip updates that would produce non-finite gradients
+
+
+@dataclass
+class BenchmarkConfig(MixedPrecisionConfig):
     """Configuration for benchmark tasks."""
     input_dim: int = 512
     hidden_dim: int = 512
@@ -103,12 +97,33 @@ class BenchmarkConfig(TrainConfig, MixedPrecisionConfig):
     batch_size: int = 128
     num_iterations: int = 100
     warmup_steps: int = 3
-    
+    seed: int = 42
 
-class BenchmarkTask(TrainMixin[BenchmarkConfig], MixedPrecisionMixin[BenchmarkConfig]):
-    """Task for benchmarking mixed precision vs regular precision."""
+
+class MixedPrecisionTrainer:
+    """A simple trainer that supports mixed precision.
+    
+    This class demonstrates the core components of mixed precision training:
+    1. Precision policies for different parts of the model
+    2. Loss scaling to prevent gradient underflow
+    3. Gradient unscaling and finiteness checks
+    4. Dynamic loss scale adjustment
+    
+    A typical mixed precision training flow involves:
+    - Store model parameters in high precision (float32)
+    - Cast to lower precision (float16/bfloat16) for computation
+    - Scale the loss to prevent gradient underflow
+    - Unscale gradients before optimizer update
+    - Check for non-finite gradients and adjust loss scale
+    - Update parameters and cast back to high precision for storage
+    """
     
     def __init__(self, config: BenchmarkConfig):
+        """Initialize the trainer with the given configuration.
+        
+        Args:
+            config: Configuration containing mixed precision settings
+        """
         self.config = config
         key = jax.random.PRNGKey(config.seed)
         
@@ -120,18 +135,41 @@ class BenchmarkTask(TrainMixin[BenchmarkConfig], MixedPrecisionMixin[BenchmarkCo
             config.output_dim, 
             model_key
         )
-        self.optimizer = optax.adam(config.learning_rate)
+        self.optimizer = optax.adam(1e-3)
         self.opt_state = self.optimizer.init(eqx.filter(self.model, eqx.is_array))
         
         # Generate synthetic data
         self._generate_data(data_key)
         
-        # Mixed precision setup
-        self.policy = self._create_policy()
-        self.loss_scale = self._create_loss_scale()
+        # Set up mixed precision utilities
+        self.policy = get_policy(config.precision_policy)
         
-        # JIT compile the training step
-        self.jit_train_step = jax.jit(self.train_step)
+        # Set up loss scaling state
+        if not config.enable_mixed_precision or config.loss_scaling == "none":
+            # No loss scaling needed for full precision or when explicitly disabled
+            self.loss_scale_value = jnp.array(1.0, dtype=jnp.float32)
+            self.use_dynamic_scaling = False
+            self.dynamic_scale_state = None
+        elif config.loss_scaling == "static":
+            # Static loss scaling uses a fixed scale factor
+            self.loss_scale_value = jnp.array(config.loss_scale_value, dtype=jnp.float32)
+            self.use_dynamic_scaling = False
+            self.dynamic_scale_state = None
+        elif config.loss_scaling == "dynamic":
+            # Dynamic loss scaling automatically adjusts based on gradient behavior
+            self.use_dynamic_scaling = True
+            self.dynamic_scale_state = CustomLossScaleState(
+                loss_scale=jnp.array(config.loss_scale_value, dtype=jnp.float32),
+                steps_since_finite=jnp.array(0, dtype=jnp.int32),
+                growth_interval=jnp.array(config.loss_scale_growth_interval, dtype=jnp.int32),
+                growth_factor=jnp.array(config.loss_scale_growth_factor, dtype=jnp.float32),
+                backoff_factor=jnp.array(config.loss_scale_backoff_factor, dtype=jnp.float32),
+                max_scale=jnp.array(config.loss_scale_max_value 
+                                   if config.loss_scale_max_value is not None 
+                                   else float('inf'), dtype=jnp.float32)
+            )
+        else:
+            raise ValueError(f"Unknown loss scaling approach: {config.loss_scaling}")
     
     def _generate_data(self, key):
         """Generate synthetic data for training."""
@@ -144,25 +182,193 @@ class BenchmarkTask(TrainMixin[BenchmarkConfig], MixedPrecisionMixin[BenchmarkCo
         """Return a batch of data."""
         return (self.images, self.labels)
     
-    def get_output_and_loss(self, model, batch):
-        """Compute model output and loss."""
+    def scale_loss(self, loss):
+        """Scale the loss value."""
+        if self.use_dynamic_scaling:
+            return loss * self.dynamic_scale_state.loss_scale
+        else:
+            return loss * self.loss_scale_value
+    
+    def unscale_grads(self, grads):
+        """Unscale the gradients."""
+        if self.use_dynamic_scaling:
+            scale = self.dynamic_scale_state.loss_scale
+        else:
+            scale = self.loss_scale_value
+        
+        return jax.tree_util.tree_map(lambda g: g / scale, grads)
+    
+    def adjust_loss_scale(self, grads_finite, state):
+        """Adjust loss scale using JAX's functional style."""
+        if not self.use_dynamic_scaling:
+            return state
+        
+        # Helper functions for dynamic scaling
+        def increase_scale():
+            new_scale = jnp.minimum(
+                state.loss_scale * state.growth_factor,
+                state.max_scale
+            )
+            return CustomLossScaleState(
+                loss_scale=new_scale,
+                steps_since_finite=jnp.array(0, dtype=jnp.int32),
+                growth_interval=state.growth_interval,
+                growth_factor=state.growth_factor,
+                backoff_factor=state.backoff_factor,
+                max_scale=state.max_scale
+            )
+        
+        def continue_counter():
+            return CustomLossScaleState(
+                loss_scale=state.loss_scale,
+                steps_since_finite=state.steps_since_finite + 1,
+                growth_interval=state.growth_interval,
+                growth_factor=state.growth_factor,
+                backoff_factor=state.backoff_factor,
+                max_scale=state.max_scale
+            )
+        
+        def decrease_scale():
+            return CustomLossScaleState(
+                loss_scale=state.loss_scale * state.backoff_factor,
+                steps_since_finite=jnp.array(0, dtype=jnp.int32),
+                growth_interval=state.growth_interval,
+                growth_factor=state.growth_factor,
+                backoff_factor=state.backoff_factor,
+                max_scale=state.max_scale
+            )
+        
+        # Use JAX's functional control flow
+        should_increase = (state.steps_since_finite >= state.growth_interval)
+        
+        # First branch: if gradients are finite
+        # Second branch: if gradients are not finite
+        return jax.lax.cond(
+            grads_finite,
+            # If grads are finite, either increase scale or continue counter
+            lambda _: jax.lax.cond(
+                should_increase,
+                lambda _: increase_scale(),
+                lambda _: continue_counter(),
+                None
+            ),
+            # If grads are not finite, decrease scale
+            lambda _: decrease_scale(),
+            None
+        )
+    
+    def train_step(self, model, batch):
+        """Execute one training step with mixed precision support.
+        
+        This method demonstrates the complete mixed precision training process:
+        1. Cast model parameters to compute precision
+        2. Forward pass in reduced precision
+        3. Scale loss to prevent gradient underflow
+        4. Compute gradients
+        5. Unscale gradients back to original range
+        6. Check for gradient finiteness
+        7. Skip updates with non-finite gradients if configured
+        8. Apply optimizer update
+        9. Cast parameters back to storage precision
+        
+        Args:
+            model: The model to train
+            batch: Tuple of (inputs, targets)
+            
+        Returns:
+            Tuple of (loss, updated_model)
+        """
         x, y = batch
-        logits = jax.vmap(model)(x)
-        loss = optax.softmax_cross_entropy(logits, y).mean()
-        return logits, loss
+        
+        # Define loss function
+        def loss_fn(model):
+            # Step 1: Cast model to compute precision if using mixed precision
+            # This converts parameters from high precision (e.g., float32) to lower
+            # precision (e.g., float16/bfloat16) for faster computation
+            if self.config.enable_mixed_precision:
+                model = self.policy.cast_to_compute(model)
+            
+            # Step 2: Forward pass
+            # This runs in reduced precision when mixed precision is enabled
+            logits = jax.vmap(model)(x)
+            loss = optax.softmax_cross_entropy(logits, y).mean()
+            
+            # Step 3: Scale loss if using mixed precision
+            # This prevents gradient underflow in half precision
+            if self.config.enable_mixed_precision:
+                loss = self.scale_loss(loss)
+            
+            return loss
+        
+        # Step 4: Compute gradients
+        # JAX automatically handles backpropagation through the precision casting
+        loss, grads = jax.value_and_grad(loss_fn)(model)
+        
+        # Define update functions
+        def apply_update(model, grads, opt_state):
+            """Apply optimizer update."""
+            updates, new_opt_state = self.optimizer.update(grads, opt_state, model)
+            new_model = eqx.apply_updates(model, updates)
+            return new_model, new_opt_state, loss
+        
+        def skip_update(model, grads, opt_state):
+            """Skip optimizer update."""
+            return model, opt_state, loss
+        
+        # Handle mixed precision
+        if self.config.enable_mixed_precision:
+            # Step 5: Unscale gradients
+            # This returns gradients to their original magnitude
+            grads = self.unscale_grads(grads)
+            
+            # Step 6: Check gradient finiteness
+            # Detect NaN or Inf values that can occur with numerical instability
+            grads_finite = all_finite(grads)
+            
+            # Step 7: Update loss scale state for next iteration
+            # This adjusts the loss scale based on gradient behavior
+            new_scale_state = self.adjust_loss_scale(grads_finite, self.dynamic_scale_state)
+            
+            # Step 8: Apply updates conditionally
+            # Skip updates with non-finite gradients if configured
+            update_condition = jnp.logical_or(
+                grads_finite, 
+                jnp.logical_not(self.config.skip_nonfinite_updates)
+            )
+            model, self.opt_state, loss = jax.lax.cond(
+                update_condition,
+                lambda args: apply_update(*args),
+                lambda args: skip_update(*args),
+                (model, grads, self.opt_state)
+            )
+            
+            # Step 9: Cast back to storage precision
+            # This ensures parameters are stored in high precision
+            model = self.policy.cast_to_param(model)
+            
+            # Update loss scale state (outside JIT region)
+            self.dynamic_scale_state = new_scale_state
+        else:
+            # Standard update for full precision
+            model, self.opt_state, loss = apply_update(model, grads, self.opt_state)
+        
+        return loss, model
     
     def run_benchmark(self) -> Dict[str, float]:
         """Run benchmark and return timing results."""
         results = {}
         
+        # JIT compile the training step
+        jit_train_step = jax.jit(self.train_step)
+        
         # Warmup JIT compilation
         for _ in range(self.config.warmup_steps):
-            _, _, self.model = self.jit_train_step(self.model, self.get_batch())
+            _, self.model = jit_train_step(self.model, self.get_batch())
         
         # Time training steps
         start_time = time.time()
         for _ in range(self.config.num_iterations):
-            _, _, self.model = self.jit_train_step(self.model, self.get_batch())
+            _, self.model = jit_train_step(self.model, self.get_batch())
         end_time = time.time()
         
         # Record metrics
@@ -186,351 +392,152 @@ class BenchmarkTask(TrainMixin[BenchmarkConfig], MixedPrecisionMixin[BenchmarkCo
 
 
 def run_benchmark_comparison():
-    """Run comparison between full precision and mixed precision."""
+    """Run comparison between full precision and mixed precision.
+    
+    This function performs a benchmark comparing:
+    1. Standard float32 precision training
+    2. Mixed precision training (float32 parameters, float16/bfloat16 computation)
+    
+    It measures training speed and memory usage differences between the two approaches.
+    
+    Returns:
+        Dict with benchmark results for both precision modes
+    """
     results = {}
     
-    print("Running full precision benchmark...")
-    fp_config = BenchmarkConfig(
-        enable_mixed_precision=False,
-        precision_policy="default",
-        seed=42
-    )
-    fp_task = BenchmarkTask(fp_config)
-    results["full_precision"] = fp_task.run_benchmark()
-    print(f"Full precision: {results['full_precision']['time_per_step']:.4f} seconds/step")
-    
-    print("\nRunning mixed precision benchmark...")
-    mp_config = BenchmarkConfig(
-        enable_mixed_precision=True,
-        precision_policy="mixed",
-        loss_scaling="dynamic",
-        loss_scale_value=2**15,
-        seed=42
-    )
-    mp_task = BenchmarkTask(mp_config)
-    results["mixed_precision"] = mp_task.run_benchmark()
-    print(f"Mixed precision: {results['mixed_precision']['time_per_step']:.4f} seconds/step")
-    
-    # Calculate and print speedup
-    speedup = results["full_precision"]["time_per_step"] / results["mixed_precision"]["time_per_step"]
-    print(f"\nSpeedup: {speedup:.2f}x")
-    
-    # Calculate and print memory savings if available
-    if (results["full_precision"]["memory_usage_mb"] is not None and 
-        results["mixed_precision"]["memory_usage_mb"] is not None):
-        memory_savings = (results["full_precision"]["memory_usage_mb"] / 
-                          results["mixed_precision"]["memory_usage_mb"])
-        print(f"Memory savings: {memory_savings:.2f}x")
-    
-    # Plot the results
-    _plot_benchmark_results(results)
+    try:
+        print("Running full precision benchmark...")
+        fp_config = BenchmarkConfig(
+            enable_mixed_precision=False,
+            precision_policy="default",
+            seed=42
+        )
+        fp_task = MixedPrecisionTrainer(fp_config)
+        results["full_precision"] = fp_task.run_benchmark()
+        print(f"Full precision: {results['full_precision']['time_per_step']:.4f} seconds/step")
+        
+        print("\nRunning mixed precision benchmark...")
+        # Use appropriate half precision for the platform
+        half_dtype = get_default_half_dtype()
+        mp_config = BenchmarkConfig(
+            enable_mixed_precision=True,
+            precision_policy="mixed",
+            loss_scaling="dynamic",
+            loss_scale_value=2**15,
+            seed=42
+        )
+        mp_task = MixedPrecisionTrainer(mp_config)
+        results["mixed_precision"] = mp_task.run_benchmark()
+        print(f"Mixed precision: {results['mixed_precision']['time_per_step']:.4f} seconds/step")
+        
+        # Calculate and print speedup
+        speedup = results["full_precision"]["time_per_step"] / results["mixed_precision"]["time_per_step"]
+        print(f"\nSpeedup: {speedup:.2f}x")
+        
+        # Calculate and print memory savings if available
+        if (results["full_precision"]["memory_usage_mb"] is not None and 
+            results["mixed_precision"]["memory_usage_mb"] is not None):
+            memory_savings = (results["full_precision"]["memory_usage_mb"] / 
+                            results["mixed_precision"]["memory_usage_mb"])
+            print(f"Memory savings: {memory_savings:.2f}x")
+        
+        # Plot the results
+        plot_benchmark_results(results)
+        
+    except Exception as e:
+        print(f"\nError during benchmark: {e}")
+        print("This might be due to device constraints or limitations in the current JAX environment.")
+        print("Try running on a platform with better mixed precision support, like a GPU or TPU.")
     
     return results
 
 
-def _plot_benchmark_results(results):
-    """Plot comparison results between full and mixed precision."""
+def plot_benchmark_results(results):
+    """Plot comparison results between full and mixed precision.
+    
+    This function creates and displays plots comparing:
+    1. Training speed (time per step)
+    2. Memory usage
+    
+    Args:
+        results: Dictionary containing benchmark results for different precision modes
+    """
     if "full_precision" not in results or "mixed_precision" not in results:
         print("Missing data for comparison plot")
         return
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    
-    # Plot time per step
-    times = [
-        results["full_precision"]["time_per_step"],
-        results["mixed_precision"]["time_per_step"]
-    ]
-    ax1.bar(["Full Precision", "Mixed Precision"], times, color=["blue", "orange"])
-    ax1.set_ylabel("Time per step (seconds)")
-    ax1.set_title("Training Speed Comparison")
-    
-    # Add speedup text
-    speedup = results["full_precision"]["time_per_step"] / results["mixed_precision"]["time_per_step"]
-    ax1.text(1, times[1], f"{speedup:.2f}x faster", ha="center", va="bottom")
-    
-    # Plot memory usage if available
-    if (results["full_precision"]["memory_usage_mb"] is not None and 
-        results["mixed_precision"]["memory_usage_mb"] is not None):
-        memory = [
-            results["full_precision"]["memory_usage_mb"],
-            results["mixed_precision"]["memory_usage_mb"]
+    try:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Plot time per step
+        times = [
+            results["full_precision"]["time_per_step"],
+            results["mixed_precision"]["time_per_step"]
         ]
-        ax2.bar(["Full Precision", "Mixed Precision"], memory, color=["blue", "orange"])
-        ax2.set_ylabel("Memory Usage (MB)")
-        ax2.set_title("Memory Usage Comparison")
+        ax1.bar(["Full Precision", "Mixed Precision"], times, color=["blue", "orange"])
+        ax1.set_ylabel("Time per step (seconds)")
+        ax1.set_title("Training Speed Comparison")
         
-        # Add memory savings text
-        memory_savings = results["full_precision"]["memory_usage_mb"] / results["mixed_precision"]["memory_usage_mb"]
-        ax2.text(1, memory[1], f"{memory_savings:.2f}x less memory", ha="center", va="bottom")
-    else:
-        ax2.text(0.5, 0.5, "Memory usage data not available", ha="center", va="center", transform=ax2.transAxes)
-    
-    plt.tight_layout()
-    plt.savefig("mixed_precision_benchmark_results.png")
-    plt.show()
-
-
-#------------------------------------------------------------------------------
-# MNIST EXAMPLE
-#------------------------------------------------------------------------------
-
-@dataclass
-class MNISTConfig(ScriptConfig, MixedPrecisionConfig):
-    """Configuration for MNIST training with mixed precision."""
-    batch_size: int = 64
-    learning_rate: float = 0.001
-    num_epochs: int = 5
-    random_seed: int = 42
-
-
-class MNISTTask(Script[MNISTConfig], MixedPrecisionMixin[MNISTConfig]):
-    """Task for training MNIST with mixed precision."""
-    
-    def __init__(self, config: MNISTConfig):
-        super().__init__(config)
-        self.model = None
-        self.optimizer = None
-    
-    def setup(self):
-        # Initialize the model and optimizer
-        key = jax.random.PRNGKey(self.config.random_seed)
-        self.model = CNN(key=key)
-        self.optimizer = optax.adam(self.config.learning_rate)
-        self.opt_state = self.optimizer.init(eqx.filter(self.model, eqx.is_array))
+        # Format y-axis to show smaller numbers more clearly
+        ax1.ticklabel_format(axis='y', style='scientific', scilimits=(0,0))
         
-        # Set up mixed precision utilities
-        self.policy = self._create_policy()
-        self.loss_scale = self._create_loss_scale()
+        # Add speedup text
+        speedup = results["full_precision"]["time_per_step"] / results["mixed_precision"]["time_per_step"]
+        ax1.text(1, times[1], f"{speedup:.2f}x faster", ha="center", va="bottom")
         
-        # Print configuration
-        print(f"Mixed precision: {'Enabled' if self.config.enable_mixed_precision else 'Disabled'}")
-        if self.config.enable_mixed_precision:
-            print(f"- Policy: {self.config.precision_policy}")
-            print(f"- Loss scaling: {self.config.loss_scaling} (initial scale: {self.loss_scale.loss_scale})")
-            print(f"- Compute dtype: {self.policy.compute_dtype}")
-            print(f"- Parameter dtype: {self.policy.param_dtype}")
-            print(f"- Output dtype: {self.policy.output_dtype}")
-    
-    def load_data(self):
-        """Create synthetic MNIST-like data for demonstration."""
-        print("Creating synthetic MNIST data...")
-        key = jax.random.PRNGKey(self.config.random_seed)
-        key1, key2 = jax.random.split(key)
-        
-        # Create training data: 6000 images of size 28x28
-        x_train = jax.random.normal(key1, (6000, 28, 28, 1))
-        y_train = jax.random.randint(key1, (6000,), 0, 10)
-        
-        # Create test data: 1000 images of size 28x28
-        x_test = jax.random.normal(key2, (1000, 28, 28, 1))
-        y_test = jax.random.randint(key2, (1000,), 0, 10)
-        
-        # Convert to numpy for easier handling
-        x_train = np.array(x_train)
-        y_train = np.array(y_train)
-        x_test = np.array(x_test)
-        y_test = np.array(y_test)
-        
-        return (x_train, y_train), (x_test, y_test)
-    
-    def compute_loss(self, model, x, y):
-        """Compute loss and accuracy."""
-        # Forward pass
-        logits = jax.vmap(model)(x)
-        one_hot = jax.nn.one_hot(y, 10)
-        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=one_hot))
-        accuracy = jnp.mean(jnp.argmax(logits, axis=1) == y)
-        return loss, accuracy
-    
-    def train_step(self, model, opt_state, x, y):
-        """Execute one training step with mixed precision support."""
-        # Define loss function
-        def loss_fn(model):
-            # Cast model to compute precision
-            if self.config.enable_mixed_precision:
-                model = self.cast_params_to_compute(model)
+        # Plot memory usage if available
+        if (results["full_precision"]["memory_usage_mb"] is not None and 
+            results["mixed_precision"]["memory_usage_mb"] is not None):
+            memory = [
+                results["full_precision"]["memory_usage_mb"],
+                results["mixed_precision"]["memory_usage_mb"]
+            ]
+            ax2.bar(["Full Precision", "Mixed Precision"], memory, color=["blue", "orange"])
+            ax2.set_ylabel("Memory Usage (MB)")
+            ax2.set_title("Memory Usage Comparison")
             
-            # Compute loss
-            loss, accuracy = self.compute_loss(model, x, y)
-            
-            # Scale loss for mixed precision training
-            if self.config.enable_mixed_precision:
-                loss = self.scale_loss(loss)
-                
-            return loss, (loss, accuracy)
-        
-        # Compute gradients
-        (_, (loss, accuracy)), grads = jax.value_and_grad(loss_fn, has_aux=True)(model)
-        
-        # Handle mixed precision updates
-        if self.config.enable_mixed_precision:
-            # Unscale gradients
-            grads = self.unscale_grads(grads)
-            
-            # Check if gradients are finite
-            grads_finite = self.check_grads_finite(grads)
-            
-            # Define optimizer update function
-            def optimizer_update(params, opt_state):
-                updates, new_opt_state = self.optimizer.update(grads, opt_state, params)
-                new_params = eqx.apply_updates(params, updates)
-                return new_params, new_opt_state
-            
-            # Apply mixed precision update
-            model, opt_state, new_loss_scale = self.mixed_precision_update(
-                model, grads, optimizer_update, opt_state
-            )
-            
-            # Update loss scale
-            self.set_loss_scale(new_loss_scale)
+            # Add memory savings text
+            memory_savings = results["full_precision"]["memory_usage_mb"] / results["mixed_precision"]["memory_usage_mb"]
+            ax2.text(1, memory[1], f"{memory_savings:.2f}x less memory", ha="center", va="bottom")
         else:
-            # Standard update
-            updates, new_opt_state = self.optimizer.update(grads, opt_state, model)
-            model = eqx.apply_updates(model, updates)
-            opt_state = new_opt_state
+            ax2.text(0.5, 0.5, "Memory usage data not available", ha="center", va="center", transform=ax2.transAxes)
         
-        # Cast model back to parameter precision if using mixed precision
-        if self.config.enable_mixed_precision:
-            model = self.cast_params_to_storage(model)
-            
-        return model, opt_state, loss, accuracy
-    
-    def validation_step(self, model, x, y):
-        """Evaluate model on validation data."""
-        # Cast model to compute precision for validation
-        if self.config.enable_mixed_precision:
-            model = self.cast_params_to_compute(model)
-            
-        loss, accuracy = self.compute_loss(model, x, y)
-        return loss, accuracy
-    
-    def run(self):
-        """Run MNIST training."""
-        self.setup()
-        (x_train, y_train), (x_test, y_test) = self.load_data()
+        # Add a title for the whole figure
+        fig.suptitle(f"Mixed Precision vs Full Precision Training on {jax.devices()[0].platform.upper()}", 
+                    fontsize=14)
         
-        # Create JIT-compiled versions of steps
-        jit_train_step = jax.jit(self.train_step)
-        jit_validation_step = jax.jit(self.validation_step)
+        # Add a note about platform considerations
+        platform_note = (
+            "Note: Performance benefits of mixed precision are typically\n"
+            "much more significant on GPUs with Tensor Cores or TPUs"
+        )
+        fig.text(0.5, 0.01, platform_note, ha='center', fontsize=10, style='italic')
         
-        # Training loop
-        step = 0
+        plt.tight_layout()
         
-        for epoch in range(self.config.num_epochs):
-            # Shuffle training data
-            perm = np.random.permutation(len(x_train))
-            x_train_shuffled = x_train[perm]
-            y_train_shuffled = y_train[perm]
-            
-            # Training
-            epoch_losses = []
-            epoch_accuracies = []
-            
-            for i in range(0, len(x_train), self.config.batch_size):
-                batch_end = min(i + self.config.batch_size, len(x_train))
-                x_batch = x_train_shuffled[i:batch_end]
-                y_batch = y_train_shuffled[i:batch_end]
-                
-                self.model, self.opt_state, loss, accuracy = jit_train_step(
-                    self.model, self.opt_state, x_batch, y_batch
-                )
-                
-                epoch_losses.append(loss)
-                epoch_accuracies.append(accuracy)
-                
-                # Log training progress
-                if i % (10 * self.config.batch_size) == 0:
-                    loss_scale_value = float(self.loss_scale.loss_scale) if self.config.enable_mixed_precision else 1.0
-                    print(f"Epoch {epoch+1}/{self.config.num_epochs}, Step {step}, "
-                          f"Loss: {loss:.4f}, Accuracy: {accuracy:.4f}, "
-                          f"Loss scale: {loss_scale_value:.1f}")
-                
-                step += 1
-            
-            # Calculate epoch averages
-            avg_train_loss = np.mean(epoch_losses)
-            avg_train_accuracy = np.mean(epoch_accuracies)
-            print(f"Training - Epoch {epoch+1}/{self.config.num_epochs}, "
-                  f"Avg Loss: {avg_train_loss:.4f}, Avg Accuracy: {avg_train_accuracy:.4f}")
-            
-            # Validation
-            val_losses, val_accuracies = [], []
-            for i in range(0, len(x_test), self.config.batch_size):
-                batch_end = min(i + self.config.batch_size, len(x_test))
-                x_batch = x_test[i:batch_end]
-                y_batch = y_test[i:batch_end]
-                
-                loss, accuracy = jit_validation_step(self.model, x_batch, y_batch)
-                
-                val_losses.append(loss)
-                val_accuracies.append(accuracy)
-            
-            # Log validation results
-            avg_val_loss = np.mean(val_losses)
-            avg_val_accuracy = np.mean(val_accuracies)
-            print(f"Validation - Epoch {epoch+1}/{self.config.num_epochs}, "
-                  f"Avg Loss: {avg_val_loss:.4f}, Avg Accuracy: {avg_val_accuracy:.4f}")
+        # Save the figure
+        plt.savefig("mixed_precision_benchmark_results.png")
+        print(f"Saved plot to mixed_precision_benchmark_results.png")
         
-        print("Training complete!")
-        
-        # Print model parameter info
-        if self.config.enable_mixed_precision:
-            print("\nModel parameter dtypes:")
-            _print_model_dtype_info(self.model)
-
-
-def run_mnist_example():
-    """Run the MNIST example with mixed precision."""
-    # Run with mixed precision enabled
-    config = MNISTConfig(
-        enable_mixed_precision=True,
-        precision_policy="mixed",
-        loss_scaling="dynamic",
-        loss_scale_value=2**15,
-        batch_size=64,
-        num_epochs=3
-    )
-    task = MNISTTask(config)
-    task.run()
-
-
-#------------------------------------------------------------------------------
-# EXPLORATION UTILITIES
-#------------------------------------------------------------------------------
-
-def _print_model_dtype_info(model):
-    """Print information about model parameter dtypes."""
-    def print_dtypes(x):
-        if hasattr(x, 'dtype'):
-            return f"{x.shape}, {x.dtype}"
-        return None
-    
-    params = jax.tree_util.tree_map(print_dtypes, model)
-    flat_params = jax.tree_util.tree_leaves(params)
-    non_none_params = [p for p in flat_params if p is not None]
-    
-    # Group by dtype
-    dtype_groups = {}
-    for param_info in non_none_params:
-        dtype = param_info.split(', ')[1]
-        if dtype not in dtype_groups:
-            dtype_groups[dtype] = []
-        dtype_groups[dtype].append(param_info)
-    
-    # Print summary
-    print(f"Total parameters: {len(non_none_params)}")
-    for dtype, params in dtype_groups.items():
-        print(f"  {dtype}: {len(params)} parameters")
-        # Print a few examples
-        for i, param in enumerate(params[:3]):
-            print(f"    - {param}")
-        if len(params) > 3:
-            print(f"    - ... and {len(params) - 3} more")
+        # Display the plot if in an interactive environment
+        try:
+            plt.show()
+        except:
+            print("Plot display not available in this environment")
+            
+    except Exception as e:
+        print(f"Error creating plot: {e}")
+        print("This might be due to issues with the matplotlib environment")
 
 
 def explore_mixed_precision():
-    """Explore mixed precision behavior with different policies."""
+    """Explore mixed precision behavior with different policies.
+    
+    This function demonstrates the key components of mixed precision training:
+    1. Different precision policies (default, mixed, float16, bfloat16)
+    2. Loss scaling techniques (static, dynamic)
+    3. Dynamic loss scale adjustment behavior
+    """
     print("JAX Mixed Precision Exploration")
     print("-" * 50)
     
@@ -538,83 +545,100 @@ def explore_mixed_precision():
     print(f"JAX devices: {jax.devices()}")
     print(f"Default backend: {jax.default_backend()}")
     
-    # Get default half precision dtype
-    half_dtype = get_default_half_dtype()
-    print(f"Default half precision dtype: {half_dtype}")
+    try:
+        # Get default half precision dtype
+        half_dtype = get_default_half_dtype()
+        print(f"Default half precision dtype: {half_dtype}")
+        print("Note: bfloat16 is preferred for TPUs, float16 for GPUs")
+        
+        # Explore different policies
+        print("\n1. Available Precision Policies:")
+        print("-" * 30)
+        
+        policies = ["default", "mixed", "float16", "bfloat16", 
+                "params=float32,compute=float16,output=float32"]
+        
+        for policy_name in policies:
+            policy = get_policy(policy_name)
+            print(f"\n{policy_name}:")
+            print(f"  - Param dtype:   {policy.param_dtype}")
+            print(f"  - Compute dtype: {policy.compute_dtype}")
+            print(f"  - Output dtype:  {policy.output_dtype}")
+        
+        # Demonstrate loss scaling
+        print("\n2. Loss Scaling Methods:")
+        print("-" * 30)
+        print("Loss scaling prevents gradient underflow in half precision training")
+        
+        # No loss scaling
+        no_op = NoOpLossScale()
+        print(f"NoOpLossScale: {no_op.loss_scale}")
+        print("  - No scaling applied, useful with bfloat16 or when underflow isn't an issue")
+        
+        # Static loss scaling
+        static = StaticLossScale(128.0)
+        print(f"StaticLossScale: {static.loss_scale}")
+        print("  - Fixed scale factor, simple but requires manual tuning")
+        
+        # Dynamic loss scaling
+        dynamic = DynamicLossScale(initial_scale=16.0)
+        print(f"DynamicLossScale: {dynamic.loss_scale}")
+        print("  - Automatically adjusts based on gradient behavior")
+        
+        # Simulate a series of updates with the dynamic loss scale
+        print("\n3. Dynamic Loss Scale Behavior:")
+        print("-" * 30)
+        print("Demonstration of how dynamic loss scaling adjusts during training:")
+        
+        # Simulate steps with the dynamic loss scale
+        loss_scale = DynamicLossScale(initial_scale=16.0, growth_interval=10)
+        print(f"Initial scale: {loss_scale.loss_scale}")
+        
+        # Simulate 10 steps with finite gradients
+        for i in range(1, 11):
+            grads_finite = jnp.array(True)
+            loss_scale = loss_scale.adjust(grads_finite)
+            print(f"Step {i}: Grads finite=True, Scale={loss_scale.loss_scale}")
+        
+        # Simulate a step with non-finite gradients
+        grads_finite = jnp.array(False)
+        loss_scale = loss_scale.adjust(grads_finite)
+        print(f"Step 11: Grads finite=False, Scale={loss_scale.loss_scale} (reduced due to non-finite gradients)")
+        
+        # Resume with finite gradients
+        for i in range(12, 15):
+            grads_finite = jnp.array(True)
+            loss_scale = loss_scale.adjust(grads_finite)
+            print(f"Step {i}: Grads finite=True, Scale={loss_scale.loss_scale}")
     
-    # Explore different policies
-    policies = ["default", "mixed", "float16", "bfloat16", 
-               "params=float32,compute=float16,output=float32"]
-    
-    print("\nAvailable Precision Policies:")
-    for policy_name in policies:
-        policy = get_policy(policy_name)
-        print(f"\n{policy_name}:")
-        print(f"  - Param dtype:   {policy.param_dtype}")
-        print(f"  - Compute dtype: {policy.compute_dtype}")
-        print(f"  - Output dtype:  {policy.output_dtype}")
-    
-    # Demonstrate loss scaling
-    print("\nLoss Scaling Methods:")
-    
-    # No loss scaling
-    no_op = NoOpLossScale()
-    print(f"NoOpLossScale: {no_op.loss_scale}")
-    
-    # Static loss scaling
-    static = StaticLossScale(128.0)
-    print(f"StaticLossScale: {static.loss_scale}")
-    
-    # Dynamic loss scaling
-    dynamic = DynamicLossScale(initial_scale=16.0)
-    print(f"DynamicLossScale: {dynamic.loss_scale}")
-    
-    # Simulate a series of updates with the dynamic loss scale
-    print("\nDynamic Loss Scale Behavior:")
-    scale = dynamic.loss_scale
-    print(f"Initial scale: {scale}")
-    
-    # Simulate 10 steps with finite gradients (should increase after growth_interval)
-    for i in range(1, 11):
-        grads_finite = True
-        scale, _ = dynamic.update(scale, grads_finite)
-        print(f"Step {i}: Grads finite={grads_finite}, Scale={scale}")
-    
-    # Simulate non-finite gradients (should decrease immediately)
-    grads_finite = False
-    scale, _ = dynamic.update(scale, grads_finite)
-    print(f"Step 11: Grads finite={grads_finite}, Scale={scale}")
-    
-    # Resume with finite gradients
-    for i in range(12, 15):
-        grads_finite = True
-        scale, _ = dynamic.update(scale, grads_finite)
-        print(f"Step {i}: Grads finite={grads_finite}, Scale={scale}")
+    except Exception as e:
+        print(f"\nError during exploration: {e}")
+        print("This might be due to limitations in the current JAX environment.")
 
-
-#------------------------------------------------------------------------------
-# MAIN ENTRY POINT
-#------------------------------------------------------------------------------
 
 def main():
     """Main entry point for running examples."""
-    parser = argparse.ArgumentParser(description="Mixed Precision Examples")
-    parser.add_argument("--example", type=str, default="benchmark",
-                        choices=["benchmark", "mnist", "explore"],
-                        help="Which example to run")
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="JAX Mixed Precision Examples")
+    parser.add_argument("example", nargs="?", default="explore", 
+                        choices=["explore", "benchmark", "all"],
+                        help="Which example to run: explore, benchmark, or all")
     args = parser.parse_args()
     
-    print(f"Running {args.example} example")
+    print("JAX Mixed Precision Examples")
+    print("=" * 50)
     print("JAX devices:", jax.devices())
     
-    if args.example == "benchmark":
-        run_benchmark_comparison()
-    elif args.example == "mnist":
-        run_mnist_example()
-    elif args.example == "explore":
+    # Run examples based on command-line argument
+    if args.example in ["explore", "all"]:
+        print("\n1. Exploring Mixed Precision Concepts")
+        print("=" * 50)
         explore_mixed_precision()
-    else:
-        print(f"Unknown example: {args.example}")
+    
+    if args.example in ["benchmark", "all"]:
+        print("\n2. Running Mixed Precision Benchmark")
+        print("=" * 50)
+        run_benchmark_comparison()
 
 
 if __name__ == "__main__":

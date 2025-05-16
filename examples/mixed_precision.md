@@ -2,6 +2,29 @@
 
 This document explains how to use the mixed precision training feature in XAX. Mixed precision training is a technique that uses lower precision data types (like float16 or bfloat16) during computation to speed up training, while maintaining model weights in higher precision (like float32) to preserve accuracy.
 
+## Running the Mixed Precision Examples
+
+The mixed precision examples demonstrate key concepts and provide benchmarks:
+
+```bash
+# Run exploration of mixed precision concepts
+python3 xax/examples/mixed_precision.py explore
+
+# Run benchmark comparing full vs. mixed precision
+python3 xax/examples/mixed_precision.py benchmark 
+
+# Run both examples
+python3 xax/examples/mixed_precision.py all
+
+# Show help
+python3 xax/examples/mixed_precision.py --help
+```
+
+The examples demonstrate:
+1. Different precision policies (default, mixed, float16, bfloat16)
+2. Loss scaling techniques (static, dynamic)
+3. Performance comparison between full and mixed precision training
+
 ## Benefits of Mixed Precision Training
 
 - **Faster training**: Lower precision computations are faster, especially on GPUs with hardware support for these operations.
@@ -42,6 +65,21 @@ class MyTask(TrainMixin[MyTaskConfig], MixedPrecisionMixin[MyTaskConfig]):
 ```
 
 If you're using the standard `TrainMixin`, it already includes `MixedPrecisionMixin`, so you don't need to add it explicitly.
+
+## Mixed Precision Training Process
+
+The mixed precision training process follows these steps:
+
+1. **Store parameters in high precision** (typically float32)
+2. **Cast to low precision for computation** (float16/bfloat16) 
+3. **Scale the loss** to prevent gradient underflow
+4. **Compute gradients** in low precision
+5. **Unscale gradients** back to their original magnitude
+6. **Check for non-finite gradients** (NaN/Inf)
+7. **Update parameters** using the optimizer
+8. **Cast back to high precision** for storage
+
+This process is demonstrated in detail in the `mixed_precision.py` example.
 
 ## Precision Policies
 
@@ -171,7 +209,11 @@ unscaled_grads = loss_scale.unscale(grads)
 
 ## Example
 
-See the `examples/mixed_precision_mnist.py` file for a complete example of mixed precision training with MNIST.
+See the `xax/examples/mixed_precision.py` file for a complete example of mixed precision training. It includes:
+
+1. **Exploration of mixed precision concepts**
+2. **Benchmarking** full vs. mixed precision performance
+3. **Detailed documentation** of the mixed precision training process
 
 ## Platform-Specific Considerations
 
