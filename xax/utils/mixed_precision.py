@@ -10,13 +10,33 @@ accuracy.
 """
 
 import functools
+import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Optional, TypeVar, Union, cast, Tuple
 
 import jax
 import jax.numpy as jnp
 from jax import tree_util
+
+# Set XLA flags to optimize mixed precision performance
+# These flags help with kernel fusion and performance on both GPUs and TPUs
+# Only set them if they haven't been set already
+if "XLA_FLAGS" not in os.environ:
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_enable_fast_min_max=true "
+        "--xla_gpu_enable_cublaslt=true "  # For newer NVIDIA GPUs
+        # "--xla_tpu_enable_bfloat16_mmt=true "  # Remove unsupported flag
+        # "--xla_gpu_enable_triton_softmax_fusion=true "  # Remove unsupported flag
+    )
+elif not any(flag in os.environ["XLA_FLAGS"] for flag in 
+             ["xla_gpu_enable_fast_min_max", "xla_gpu_enable_cublaslt"]):
+    os.environ["XLA_FLAGS"] += (
+        " --xla_gpu_enable_fast_min_max=true"
+        " --xla_gpu_enable_cublaslt=true"
+        # " --xla_tpu_enable_bfloat16_mmt=true"  # Remove unsupported flag
+        # " --xla_gpu_enable_triton_softmax_fusion=true"  # Remove unsupported flag
+    )
 
 from xax.utils.pytree import PyTree
 
@@ -147,7 +167,7 @@ def tree_map_dtype(dtype: DType, pytree: PyTree) -> PyTree:
             return x.astype(dtype)
         return x
     
-    return jax.tree_util.tree_map(_cast_if_array, pytree)
+    return jax.tree.map(_cast_if_array, pytree)
 
 
 # Common policies
@@ -243,16 +263,35 @@ class StaticLossScale(LossScale):
         Args:
             scale: The fixed loss scale value.
         """
-        self._scale = jnp.array(scale, dtype=jnp.float32)
+        if isinstance(scale, float):
+            scale = jnp.array(scale)
+        self._scale = scale
     
     def scale(self, loss: jnp.ndarray) -> jnp.ndarray:
+        """Scale the loss by the scale factor.
+        
+        Args:
+            loss: The loss to scale.
+            
+        Returns:
+            The scaled loss.
+        """
         return loss * self._scale
     
     def unscale(self, grads: PyTree) -> PyTree:
-        return jax.tree_util.tree_map(lambda g: g / self._scale, grads)
+        """Unscale the gradients by the scale factor.
+        
+        Args:
+            grads: The gradients to unscale.
+            
+        Returns:
+            The unscaled gradients.
+        """
+        return jax.tree.map(lambda g: g / self._scale, grads)
     
     @property
     def loss_scale(self) -> jnp.ndarray:
+        """Get the current loss scale value."""
         return self._scale
 
 
@@ -296,8 +335,16 @@ class DynamicLossScale(LossScale):
         return loss * self._current_scale
     
     def unscale(self, grads: PyTree) -> PyTree:
+        """Unscale the gradients by the current scale factor.
+        
+        Args:
+            grads: The gradients to unscale.
+            
+        Returns:
+            The unscaled gradients.
+        """
         inv_scale = 1.0 / self._current_scale
-        return jax.tree_util.tree_map(lambda g: g * inv_scale, grads)
+        return jax.tree.map(lambda g: g * inv_scale, grads)
     
     def adjust(self, grads_finite: jnp.ndarray) -> "DynamicLossScale":
         """Adjust the loss scale based on whether gradients are finite.
@@ -343,34 +390,33 @@ def all_finite(pytree: PyTree) -> jnp.ndarray:
     """Check if all values in a pytree are finite.
     
     Args:
-        pytree: A JAX pytree containing arrays.
-    
+        pytree: The pytree to check.
+        
     Returns:
-        A boolean JAX array indicating whether all values are finite.
+        A boolean indicating whether all values are finite.
     """
     def _is_finite(x):
-        if isinstance(x, (jnp.ndarray, jax.Array)):
-            return jnp.all(jnp.isfinite(x))
-        return jnp.array(True)
+        if not isinstance(x, (jnp.ndarray, jax.Array)):
+            return True
+        return jnp.all(jnp.isfinite(x))
     
-    finite_flags = jax.tree_util.tree_map(_is_finite, pytree)
-    return jax.tree_util.tree_reduce(lambda a, b: a & b, finite_flags, jnp.array(True))
+    finite_flags = jax.tree.map(_is_finite, pytree)
+    return jax.tree_util.tree_reduce(jnp.logical_and, finite_flags, True)
 
 
 def select_tree(pred: jnp.ndarray, a: PyTree, b: PyTree) -> PyTree:
     """Select between two pytrees based on a predicate.
     
     Args:
-        pred: A boolean predicate.
-        a: First pytree, selected when pred is True.
-        b: Second pytree, selected when pred is False.
-    
+        pred: A boolean indicating which pytree to select.
+        a: The pytree to select if pred is True.
+        b: The pytree to select if pred is False.
+        
     Returns:
-        A pytree with values from either a or b based on pred.
+        Either a or b depending on the value of pred.
     """
-    return jax.tree_util.tree_map(
-        lambda a_val, b_val: jnp.where(pred, a_val, b_val),
-        a, b
+    return jax.tree.map(
+        lambda a_val, b_val: jnp.where(pred, a_val, b_val), a, b
     )
 
 
@@ -416,4 +462,141 @@ def apply_mixed_precision(
         # Cast the result
         return policy.cast_to_output(result)
     
-    return wrapped 
+    return wrapped
+
+
+# Performance monitoring utilities for mixed precision training
+
+def compute_gradient_stats(grads: PyTree) -> Dict[str, jnp.ndarray]:
+    """Compute statistics about gradients to help diagnose mixed precision issues.
+    
+    Args:
+        grads: PyTree of gradients.
+        
+    Returns:
+        Dictionary with gradient statistics like global norm, max, min, and 
+        statistics about finite values.
+    """
+    # Convert any non-array leaves to arrays
+    def preprocess(x):
+        if not isinstance(x, (jnp.ndarray, jax.Array)):
+            return jnp.array(0.0, dtype=jnp.float32)
+        if not jnp.issubdtype(x.dtype, jnp.inexact):
+            return jnp.array(0.0, dtype=jnp.float32)
+        return x.astype(jnp.float32)  # Cast to float32 for stable computation
+    
+    # Get flattened list of arrays
+    flat_grads = jax.tree_util.tree_leaves(jax.tree.map(preprocess, grads))
+    if not flat_grads:  # If empty
+        return {
+            "grad_norm": jnp.array(0.0),
+            "max_abs_grad": jnp.array(0.0),
+            "min_abs_grad_nonzero": jnp.array(0.0),
+            "has_nan": jnp.array(False),
+            "has_inf": jnp.array(False),
+            "finite_ratio": jnp.array(1.0),
+        }
+    
+    # Compute global norm
+    grad_norm = jnp.sqrt(sum(jnp.sum(jnp.square(g)) for g in flat_grads))
+    
+    # Compute max absolute gradient
+    max_abs_grad = jnp.max(jnp.stack([jnp.max(jnp.abs(g)) if g.size > 0 else jnp.array(0.0) 
+                                      for g in flat_grads]))
+    
+    # Compute min absolute non-zero gradient (useful for detecting underflow)
+    def min_abs_nonzero(arr):
+        abs_arr = jnp.abs(arr)
+        abs_arr_nonzero = jnp.where(abs_arr > 0, abs_arr, jnp.full_like(abs_arr, jnp.inf))
+        min_val = jnp.min(abs_arr_nonzero)
+        return jnp.where(jnp.isinf(min_val), jnp.array(0.0), min_val)
+    
+    mins = jnp.stack([min_abs_nonzero(g) if g.size > 0 else jnp.array(jnp.inf) 
+                      for g in flat_grads])
+    min_abs_grad_nonzero = jnp.min(mins)
+    min_abs_grad_nonzero = jnp.where(jnp.isinf(min_abs_grad_nonzero), 
+                                     jnp.array(0.0), 
+                                     min_abs_grad_nonzero)
+    
+    # Check for non-finite values
+    has_nan = any(jnp.any(jnp.isnan(g)) for g in flat_grads)
+    has_inf = any(jnp.any(jnp.isinf(g)) for g in flat_grads)
+    
+    # Compute ratio of finite values
+    total_elements = sum(g.size for g in flat_grads)
+    finite_elements = sum(jnp.sum(jnp.isfinite(g)) for g in flat_grads)
+    finite_ratio = finite_elements / total_elements if total_elements > 0 else jnp.array(1.0)
+    
+    return {
+        "grad_norm": grad_norm,
+        "max_abs_grad": max_abs_grad,
+        "min_abs_grad_nonzero": min_abs_grad_nonzero,
+        "has_nan": has_nan,
+        "has_inf": has_inf,
+        "finite_ratio": finite_ratio,
+    }
+
+
+def get_loss_scale_metrics(loss_scale: LossScale) -> Dict[str, jnp.ndarray]:
+    """Get monitoring metrics for a loss scale.
+    
+    Args:
+        loss_scale: Loss scale object.
+        
+    Returns:
+        Dictionary with metrics about the loss scale.
+    """
+    metrics = {
+        "loss_scale_value": loss_scale.loss_scale,
+    }
+    
+    # Add specific metrics for dynamic loss scale
+    if isinstance(loss_scale, DynamicLossScale):
+        metrics.update({
+            "loss_scale_growth_interval": jnp.array(loss_scale._growth_interval),
+            "loss_scale_growth_factor": jnp.array(loss_scale._growth_factor),
+            "loss_scale_backoff_factor": jnp.array(loss_scale._backoff_factor),
+            "loss_scale_steps": jnp.array(loss_scale._steps_since_finite),
+        })
+    
+    return metrics
+
+
+def should_warn_about_precision(
+    grads_stats: Dict[str, jnp.ndarray],
+    loss_scale_value: jnp.ndarray,
+    dtype: DType
+) -> Tuple[bool, str]:
+    """Check if there are potential precision issues based on gradient statistics.
+    
+    Args:
+        grads_stats: Gradient statistics from compute_gradient_stats.
+        loss_scale_value: Current loss scale value.
+        dtype: Compute data type being used.
+        
+    Returns:
+        Tuple of (should_warn, warning_message)
+    """
+    if grads_stats["has_nan"] or grads_stats["has_inf"]:
+        return True, "Non-finite values detected in gradients."
+    
+    # For float16, check if loss scale might be too low/high
+    if dtype == jnp.float16:
+        max_representable = 65504.0
+        
+        # Check if we might be close to overflow
+        if grads_stats["max_abs_grad"] * loss_scale_value > max_representable * 0.5:
+            return True, (
+                f"Loss scale ({loss_scale_value}) might be too high. "
+                f"Max gradient ({grads_stats['max_abs_grad']}) * loss scale "
+                f"is approaching float16 limit."
+            )
+            
+        # Check if we might have underflow
+        if grads_stats["min_abs_grad_nonzero"] < 1e-7 and grads_stats["grad_norm"] > 1e-5:
+            return True, (
+                f"Very small gradient values detected ({grads_stats['min_abs_grad_nonzero']}). "
+                f"Consider increasing loss scale ({loss_scale_value})."
+            )
+    
+    return False, "" 
