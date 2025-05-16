@@ -234,4 +234,5 @@ On TPUs, bfloat16 is the preferred half-precision format. XAX automatically sele
 
 ## Implementation Details
 
+
 XAX's mixed precision training is inspired by the [JMP library](https://github.com/google-deepmind/jmp) from DeepMind but is integrated directly into the XAX framework for a seamless experience. 
