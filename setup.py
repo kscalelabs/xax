@@ -14,12 +14,6 @@ with open("xax/requirements.txt", "r", encoding="utf-8") as f:
 with open("xax/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
-requirements_export: list[str] = [
-    "flax",
-    "orbax-export",
-    "tensorflow",
-]
-
 with open("xax/__init__.py", "r", encoding="utf-8") as fh:
     version_re = re.search(r"^__version__ = \"([^\"]*)\"", fh.read(), re.MULTILINE)
 assert version_re is not None, "Could not find version in xax/__init__.py"

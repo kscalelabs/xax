@@ -12,7 +12,7 @@ and running the update script:
     python -m scripts.update_api --inplace
 """
 
-__version__ = "0.2.19"
+__version__ = "0.3.0"
 
 # This list shouldn't be modified by hand; instead, run the update script.
 __all__ = [
@@ -23,6 +23,10 @@ __all__ = [
     "get_run_dir",
     "load_user_config",
     "State",
+    "CrossAttentionBlock",
+    "SelfAttentionBlock",
+    "Transformer",
+    "TransformerBlock",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -34,12 +38,6 @@ __all__ = [
     "get_positional_embeddings",
     "get_rotary_embeddings",
     "rotary_embeddings",
-    "MLPHyperParams",
-    "export_eqx_mlp",
-    "load_eqx",
-    "load_eqx_mlp",
-    "make_eqx_mlp",
-    "save_eqx",
     "cubic_bezier_interpolation",
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
@@ -118,8 +116,10 @@ __all__ = [
     "save_config",
     "stage_environment",
     "to_markdown_table",
+    "grad",
     "jit",
     "scan",
+    "vmap",
     "save_jaxpr_dot",
     "ColoredFormatter",
     "configure_logging",
@@ -204,6 +204,10 @@ NAME_MAP: dict[str, str] = {
     "get_run_dir": "core.conf",
     "load_user_config": "core.conf",
     "State": "core.state",
+    "CrossAttentionBlock": "nn.attention",
+    "SelfAttentionBlock": "nn.attention",
+    "Transformer": "nn.attention",
+    "TransformerBlock": "nn.attention",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -215,12 +219,6 @@ NAME_MAP: dict[str, str] = {
     "get_positional_embeddings": "nn.embeddings",
     "get_rotary_embeddings": "nn.embeddings",
     "rotary_embeddings": "nn.embeddings",
-    "MLPHyperParams": "nn.equinox",
-    "export_eqx_mlp": "nn.equinox",
-    "load_eqx": "nn.equinox",
-    "load_eqx_mlp": "nn.equinox",
-    "make_eqx_mlp": "nn.equinox",
-    "save_eqx": "nn.equinox",
     "cubic_bezier_interpolation": "nn.geom",
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
@@ -299,8 +297,10 @@ NAME_MAP: dict[str, str] = {
     "save_config": "utils.experiments",
     "stage_environment": "utils.experiments",
     "to_markdown_table": "utils.experiments",
+    "grad": "utils.jax",
     "jit": "utils.jax",
     "scan": "utils.jax",
+    "vmap": "utils.jax",
     "save_jaxpr_dot": "utils.jaxpr",
     "ColoredFormatter": "utils.logging",
     "configure_logging": "utils.logging",
@@ -378,6 +378,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State
+    from xax.nn.attention import CrossAttentionBlock, SelfAttentionBlock, Transformer, TransformerBlock
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -391,16 +392,6 @@ if IMPORT_ALL or TYPE_CHECKING:
         get_positional_embeddings,
         get_rotary_embeddings,
         rotary_embeddings,
-    )
-    from xax.nn.equinox import (
-        DTYPE,
-        ActivationFunction,
-        MLPHyperParams,
-        export_eqx_mlp,
-        load_eqx,
-        load_eqx_mlp,
-        make_eqx_mlp,
-        save_eqx,
     )
     from xax.nn.geom import (
         cubic_bezier_interpolation,
@@ -482,7 +473,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         stage_environment,
         to_markdown_table,
     )
-    from xax.utils.jax import jit, scan
+    from xax.utils.jax import grad, jit, scan, vmap
     from xax.utils.jaxpr import save_jaxpr_dot
     from xax.utils.logging import (
         LOG_ERROR_SUMMARY,

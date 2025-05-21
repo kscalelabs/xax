@@ -38,8 +38,8 @@ module = [
     "optax.*",
     "setuptools.*",
     "tensorboard.*",
+    "tensorflow_datasets.*",
     "transformers.*",
-    "orbax.export.*",
 ]
 
 ignore_missing_imports = true

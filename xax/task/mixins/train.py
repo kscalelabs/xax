@@ -121,7 +121,7 @@ class ValidStepTimer:
         self.last_valid_step = state.num_steps.item()
 
     def __call__(self, state: State) -> bool:
-        if state.num_steps < self.valid_first_n_steps and state.num_valid_steps < self.valid_first_n_steps:
+        if state.num_steps < self.valid_first_n_steps:
             return True
 
         if self.last_valid_time is None or self.last_valid_step is None:
@@ -130,18 +130,15 @@ class ValidStepTimer:
 
         # Step-based validation.
         valid_every_n_steps = self.valid_every_n_steps
-        if valid_every_n_steps is not None and (
-            state.num_steps >= valid_every_n_steps + self.last_valid_step
-            or state.num_valid_steps >= valid_every_n_steps + self.last_valid_step
-        ):
+        if valid_every_n_steps is not None and state.num_steps >= valid_every_n_steps + self.last_valid_step:
             self._reset(state)
             return True
 
         # Time-based validation.
         valid_every_n_seconds = self.valid_every_n_seconds
-        if valid_every_n_seconds is not None and (
-            state.elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
-            or state.valid_elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
+        if (
+            valid_every_n_seconds is not None
+            and state.elapsed_time_s.item() - self.last_valid_time >= valid_every_n_seconds
         ):
             self._reset(state)
             return True
@@ -149,10 +146,7 @@ class ValidStepTimer:
         # Time-based validation for first validation step.
         if self.first_valid_step_flag:
             valid_first_n_seconds = self.valid_first_n_seconds
-            if valid_first_n_seconds is not None and (
-                state.elapsed_time_s.item() >= valid_first_n_seconds
-                or state.valid_elapsed_time_s.item() >= valid_first_n_seconds
-            ):
+            if valid_first_n_seconds is not None and state.elapsed_time_s.item() >= valid_first_n_seconds:
                 self._reset(state)
                 self.first_valid_step_flag = False
                 return True
@@ -625,9 +619,13 @@ class TrainMixin(
         grad_metrics = {"grad_norm": grad_norm}
 
         def apply(grads: PyTree, grad_norm: Array) -> tuple[PyTree, optax.OptState]:
-            # Clip the global gradient norm to some desired range.
-            grad_factor = self.config.global_grad_clip / jnp.maximum(grad_norm, 1e-6)
-            grads = jax.tree.map(lambda x: x * grad_factor, grads)
+            # Clip gradients based on global norm, similar to optax.clip_by_global_norm
+            trigger = jnp.squeeze(grad_norm < self.config.global_grad_clip)
+
+            def clip_fn(t: Array) -> Array:
+                return jax.lax.select(trigger, t, (t / grad_norm.astype(t.dtype)) * self.config.global_grad_clip)
+
+            grads = jax.tree.map(clip_fn, grads)
 
             # Apply the gradient updates.
             updates, new_opt_state = optimizer.update(grads, opt_state, model_arr)
@@ -773,12 +771,12 @@ class TrainMixin(
                     self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
 
                     state = state.replace(
-                        num_valid_steps=state.num_valid_steps + 1,
-                        num_valid_samples=state.num_valid_samples + (self.get_size_of_batch(valid_batch) or 0),
+                        num_steps=state.num_steps + 1,
+                        num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
                     )
 
                 state = state.replace(
-                    valid_elapsed_time_s=state.valid_elapsed_time_s + timer.elapsed_time,
+                    elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
                 )
 
             with ContextTimer() as timer:
@@ -878,7 +876,7 @@ class TrainMixin(
             key, model_key = jax.random.split(key)
             models, optimizers, opt_states, state = self.load_initial_state(model_key, load_optimizer=True)
             logger.info("Model size: %s", f"{get_pytree_param_count(models):,}")
-            logger.info("Optimizer size: %s", f"{get_pytree_param_count(optimizers):,}")
+            logger.info("Optimizer size: %s", f"{get_pytree_param_count(opt_states):,}")
 
             state = self.on_training_start(state)
 
