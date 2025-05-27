@@ -333,11 +333,13 @@ def test_quat_mul() -> None:
     quat_batch_result = xax.quat_mul(quat_batch_lhs, quat_batch_rhs)
 
     # Expected results from scalar multiplications
-    expected_batch_result = jnp.stack([
-        xax.quat_mul(quat_identity, quat_identity),
-        xax.quat_mul(quat_x_90, quat_x_90),
-        xax.quat_mul(quat_y_90, quat_z_90),
-    ])
+    expected_batch_result = jnp.stack(
+        [
+            xax.quat_mul(quat_identity, quat_identity),
+            xax.quat_mul(quat_x_90, quat_x_90),
+            xax.quat_mul(quat_y_90, quat_z_90),
+        ]
+    )
     assert jnp.allclose(quat_batch_result, expected_batch_result, atol=1e-6)
 
     # Ensure all batch outputs are unit quaternions

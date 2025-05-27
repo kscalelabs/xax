@@ -253,22 +253,22 @@ def rotation_matrix_to_rotation6d(rotation_matrix: jnp.ndarray) -> jnp.ndarray:
     return r6d.reshape(shape[:-2] + (6,))
 
 
-def quat_mul(q2, q1):
+def quat_mul(q2: Array, q1: Array) -> Array:
     """Multiply two quaternions (supports batching).
-    
+
     Args:
         q2: Second quaternion (w, x, y, z), shape (..., 4)
         q1: First quaternion (w, x, y, z), shape (..., 4)
-        
+
     Returns:
         Product quaternion, shape (..., 4)
     """
     w1, x1, y1, z1 = jnp.split(q1, 4, axis=-1)
     w2, x2, y2, z2 = jnp.split(q2, 4, axis=-1)
-    
-    w = w2*w1 - x2*x1 - y2*y1 - z2*z1
-    x = w2*x1 + x2*w1 + y2*z1 - z2*y1
-    y = w2*y1 - x2*z1 + y2*w1 + z2*x1
-    z = w2*z1 + x2*y1 - y2*x1 + z2*w1
-    
+
+    w = w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1
+    x = w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1
+    y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
+    z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
+
     return jnp.concatenate([w, x, y, z], axis=-1)
