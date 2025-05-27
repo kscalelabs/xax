@@ -299,3 +299,49 @@ def test_rotation_conversion_roundtrip() -> None:
         # det(R) should be 1
         det = jnp.linalg.det(rotmat[i])
         assert jnp.isclose(det, 1.0, atol=1e-5)
+
+
+def test_quat_mul() -> None:
+    """Test quaternion multiplication function."""
+    # Identity quaternion (no rotation)
+    quat_identity = jnp.array([1.0, 0.0, 0.0, 0.0])
+
+    # Basic identity test: identity * identity = identity
+    quat_result = xax.quat_mul(quat_identity, quat_identity)
+    assert jnp.allclose(quat_result, quat_identity, atol=1e-6)
+    assert jnp.isclose(jnp.linalg.norm(quat_result), 1.0, atol=1e-6)
+
+    # 90-degree rotations around principal axes
+    quat_x_90 = jnp.array([0.7071068, 0.7071068, 0.0, 0.0])  # 90° about X-axis
+    quat_y_90 = jnp.array([0.7071068, 0.0, 0.7071068, 0.0])  # 90° about Y-axis
+    quat_z_90 = jnp.array([0.7071068, 0.0, 0.0, 0.7071068])  # 90° about Z-axis
+
+    # 90° X followed by 90° X should equal 180° X rotation
+    quat_x_180 = xax.quat_mul(quat_x_90, quat_x_90)
+    expected_quat_x_180 = jnp.array([0.0, 1.0, 0.0, 0.0])
+    assert jnp.allclose(quat_x_180, expected_quat_x_180, atol=1e-6)
+    assert jnp.isclose(jnp.linalg.norm(quat_x_180), 1.0, atol=1e-6)
+
+    # Test non-commutativity of quaternion multiplication
+    quat_x_then_y = xax.quat_mul(quat_x_90, quat_y_90)
+    quat_y_then_x = xax.quat_mul(quat_y_90, quat_x_90)
+    assert not jnp.allclose(quat_x_then_y, quat_y_then_x, atol=1e-6)
+
+    # Batch multiplication test
+    quat_batch_lhs = jnp.stack([quat_identity, quat_x_90, quat_y_90])
+    quat_batch_rhs = jnp.stack([quat_identity, quat_x_90, quat_z_90])
+    quat_batch_result = xax.quat_mul(quat_batch_lhs, quat_batch_rhs)
+
+    # Expected results from scalar multiplications
+    expected_batch_result = jnp.stack(
+        [
+            xax.quat_mul(quat_identity, quat_identity),
+            xax.quat_mul(quat_x_90, quat_x_90),
+            xax.quat_mul(quat_y_90, quat_z_90),
+        ]
+    )
+    assert jnp.allclose(quat_batch_result, expected_batch_result, atol=1e-6)
+
+    # Ensure all batch outputs are unit quaternions
+    quat_norms = jnp.linalg.norm(quat_batch_result, axis=1)
+    assert jnp.allclose(quat_norms, 1.0, atol=1e-6)
