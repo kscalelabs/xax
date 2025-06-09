@@ -82,6 +82,9 @@ class BaseTask(Generic[Config]):
     def on_after_checkpoint_save(self, ckpt_path: Path, state: State | None) -> State | None:
         return state
 
+    def add_logger_handlers(self, logger: logging.Logger) -> None:
+        pass
+
     @functools.cached_property
     def task_class_name(self) -> str:
         return self.__class__.__name__
