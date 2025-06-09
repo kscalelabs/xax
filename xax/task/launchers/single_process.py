@@ -15,8 +15,9 @@ def run_single_process_training(
     *cfgs: RawConfigType,
     use_cli: bool | list[str] = True,
 ) -> None:
-    configure_logging()
+    logger = configure_logging()
     task_obj = task.get_task(*cfgs, use_cli=use_cli)
+    task_obj.add_logger_handlers(logger)
     task_obj.run()
 
 
