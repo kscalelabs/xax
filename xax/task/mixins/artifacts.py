@@ -14,7 +14,7 @@ from xax.core.state import State
 from xax.nn.parallel import is_master
 from xax.task.base import BaseConfig, BaseTask
 from xax.utils.experiments import stage_environment
-from xax.utils.logging import LOG_STATUS
+from xax.utils.logging import LOG_STATUS, RankFilter
 from xax.utils.text import show_info
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ArtifactsConfig(BaseConfig):
     exp_dir: str | None = field(None, help="The fixed experiment directory")
+    log_to_file: bool = field(True, help="If set, add a file handler to the logger to write all logs to the exp dir")
 
 
 Config = TypeVar("Config", bound=ArtifactsConfig)
@@ -38,6 +39,14 @@ class ArtifactsMixin(BaseTask[Config]):
 
         self._exp_dir = None
         self._stage_dir = None
+
+    def add_logger_handlers(self, logger: logging.Logger) -> None:
+        super().add_logger_handlers(logger)
+        if is_master() and self.config.log_to_file:
+            file_handler = logging.FileHandler(self.exp_dir / "logs.txt")
+            file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+            file_handler.addFilter(RankFilter(rank=0))
+            logger.addHandler(file_handler)
 
     @functools.cached_property
     def run_dir(self) -> Path:
