@@ -10,6 +10,7 @@ import jax
 
 from xax.task.base import BaseConfig, BaseTask, RawConfigType
 from xax.task.launchers.base import BaseLauncher
+from xax.task.launchers.cli import CliLauncher
 
 
 @jax.tree_util.register_dataclass
@@ -45,8 +46,6 @@ class RunnableMixin(BaseTask[Config], ABC):
         use_cli: bool | list[str] = True,
     ) -> None:
         if launcher is None:
-            from xax.task.launchers.cli import CliLauncher
-
             launcher = CliLauncher()
         launcher.launch(cls, *cfgs, use_cli=use_cli)
 

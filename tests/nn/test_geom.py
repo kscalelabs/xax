@@ -187,6 +187,36 @@ def test_quat_to_rotmat() -> None:
     assert jnp.allclose(batch_rotmat, expected_batch, atol=1e-5)
 
 
+def test_rotation_matrix_to_quat() -> None:
+    """Test conversion from rotation matrix to quaternion."""
+    # Test with identity matrix
+    rotmat = jnp.eye(3)
+    quat = xax.rotation_matrix_to_quat(rotmat)
+    assert jnp.allclose(quat, jnp.array([1.0, 0.0, 0.0, 0.0]), atol=1e-5)
+
+    # Test with 90 degree rotation around Z-axis
+    rotmat = jnp.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    quat = xax.rotation_matrix_to_quat(rotmat)
+    assert jnp.allclose(quat, jnp.array([jnp.cos(jnp.pi / 4), 0.0, 0.0, jnp.sin(jnp.pi / 4)]), atol=1e-5)
+
+    # Test with batch of rotation matrices
+    batch_rotmat = jnp.array([jnp.eye(3), rotmat])
+    batch_quat = jax.vmap(xax.rotation_matrix_to_quat)(batch_rotmat)
+    expected_batch = jnp.array([[1.0, 0.0, 0.0, 0.0], [jnp.cos(jnp.pi / 4), 0.0, 0.0, jnp.sin(jnp.pi / 4)]])
+    assert jnp.allclose(batch_quat, expected_batch, atol=1e-5)
+
+
+def test_rotation_matrix_to_quat_bijection() -> None:
+    rng = jax.random.PRNGKey(0)
+    batch_size = 10
+    quat = jax.random.normal(rng, (batch_size, 4))
+    rotmat = xax.quat_to_rotmat(quat)
+    quat_again = xax.rotation_matrix_to_quat(rotmat)
+    rotmat_again = xax.quat_to_rotmat(quat_again)
+
+    assert jnp.allclose(rotmat, rotmat_again, atol=1e-5)
+
+
 def test_normalize() -> None:
     """Test vector normalization function."""
     # Test with a simple vector

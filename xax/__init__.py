@@ -12,7 +12,7 @@ and running the update script:
     python -m scripts.update_api --inplace
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # This list shouldn't be modified by hand; instead, run the update script.
 __all__ = [
@@ -42,11 +42,12 @@ __all__ = [
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "normalize",
+    "quat_mul",
     "quat_to_euler",
     "quat_to_rotmat",
-    "quat_mul",
     "rotate_vector_by_quat",
     "rotation6d_to_rotation_matrix",
+    "rotation_matrix_to_quat",
     "rotation_matrix_to_rotation6d",
     "cross_entropy",
     "cast_norm_type",
@@ -224,11 +225,12 @@ NAME_MAP: dict[str, str] = {
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "normalize": "nn.geom",
+    "quat_mul": "nn.geom",
     "quat_to_euler": "nn.geom",
     "quat_to_rotmat": "nn.geom",
-    "quat_mul": "nn.geom",
     "rotate_vector_by_quat": "nn.geom",
     "rotation6d_to_rotation_matrix": "nn.geom",
+    "rotation_matrix_to_quat": "nn.geom",
     "rotation_matrix_to_rotation6d": "nn.geom",
     "cross_entropy": "nn.losses",
     "cast_norm_type": "nn.metrics",
@@ -405,6 +407,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         quat_to_rotmat,
         rotate_vector_by_quat,
         rotation6d_to_rotation_matrix,
+        rotation_matrix_to_quat,
         rotation_matrix_to_rotation6d,
     )
     from xax.nn.losses import cross_entropy
