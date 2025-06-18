@@ -20,6 +20,7 @@ gitpython
 
 # Monitoring and logging
 tensorboard
+tensorboard-plugin-profile
 psutil
 
 # Networking
