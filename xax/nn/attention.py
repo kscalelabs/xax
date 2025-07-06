@@ -93,7 +93,7 @@ class SelfAttentionBlock(eqx.Module):
         if self.context_length is not None:
             neg_mask = 1 - jnp.tril(jnp.ones((seq_len, seq_len)), -self.context_length)
             mask = mask * neg_mask
-        return mask.astype(jnp.bool_)
+        return mask.astype(jnp.bool_).transpose()
 
     def forward(
         self,
@@ -128,6 +128,8 @@ class SelfAttentionBlock(eqx.Module):
             k_cache = cache["k"]
             v_cache = cache["v"]
             seq_len = k.shape[0]
+            if seq_len > k_cache.shape[0]:
+                raise ValueError("seq_len is greater than context_length")
 
             # Roll left by seq_len, insert new k/v at the end
             k_cache = jnp.roll(k_cache, -seq_len, axis=0).at[-seq_len:].set(k)
@@ -319,10 +321,9 @@ class TransformerBlock(eqx.Module):
 
     def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> CacheDict:
         """Initialize cache for the input."""
-        cache = {}
         if dtype is None and x_tn is not None:
             dtype = x_tn.dtype
-        cache["self_attn"] = self.self_attn.init_cache(dtype=dtype)
+        cache: CacheDict = {"self_attn": self.self_attn.init_cache(dtype=dtype)}
         if self.cross_attn is not None:
             if x_tn is None:
                 raise ValueError("x_tn must be provided if cross_attn is not None")
@@ -355,19 +356,15 @@ class TransformerBlock(eqx.Module):
         """
         chex.assert_rank(x_tn, 2)
 
-        # Initialize cache if needed
-        updated_cache: CacheDict = {}
-        if cache is None:
-            cache = {}
-
         # Self-attention block with pre-norm
         norm_x = jax.vmap(self.layer_norm1)(x_tn)
 
-        attn_output, updated_cache["self_attn"] = self.self_attn.forward(
+        attn_output, self_attn_cache = self.self_attn.forward(
             x_tn=norm_x,
             mask=self_mask,
-            cache=cache.get("self_attn"),
+            cache=None if cache is None else cache["self_attn"],
         )
+        updated_cache: CacheDict = {"self_attn": self_attn_cache}
 
         x_tn = x_tn + attn_output
 
@@ -381,7 +378,7 @@ class TransformerBlock(eqx.Module):
                 q_tn=norm_x,
                 kv_sn=context_sn,
                 mask=cross_mask,
-                cache=cache.get("cross_attn"),
+                cache=None if cache is None else cache.get("cross_attn"),
             )
 
             x_tn = x_tn + cross_attn_output
@@ -470,23 +467,22 @@ class TransformerStack(eqx.Module):
         """
         # Initialize layer caches
         if cache is None:
-            cache = {"layers": {f"layer_{i}": {} for i in range(self.num_layers)}}
+            cache = {"layers": {}}
 
         # Updated cache will be built
-        updated_cache = {"layers": {}}
+        updated_cache: TransformerCache = {"layers": {}}
 
         # Apply transformer layers
         for i, layer in enumerate(self.layers):
-            layer_cache = cache["layers"][f"layer_{i}"]
+            layer_cache = cache["layers"].get(f"layer_{i}")
 
-            x_tn, layer_updated_cache = layer.forward(
+            x_tn, updated_cache["layers"][f"layer_{i}"] = layer.forward(
                 x_tn,
                 context_sn=context_sn,
                 self_mask=self_mask,
                 cross_mask=cross_mask,
                 cache=layer_cache,
             )
-            updated_cache["layers"][f"layer_{i}"] = layer_updated_cache
 
         return x_tn, updated_cache
 
