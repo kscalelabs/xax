@@ -55,6 +55,7 @@ class SelfAttentionBlock(eqx.Module):
         self,
         x: Array,
         *,
+        key: PRNGKeyArray | None = None,
         mask: Array | None = None,
         cache: dict[str, Array] | None = None,
         update_cache: bool = False,
@@ -63,6 +64,7 @@ class SelfAttentionBlock(eqx.Module):
 
         Args:
             x: Input tensor of shape (seq_len, embed_dim)
+            key: Optional PRNG key for dropout
             mask: Optional mask tensor of shape (seq_len, seq_len) or broadcastable
             cache: Optional dictionary containing cached key and value tensors
             update_cache: Whether to update the cache and return it
@@ -160,6 +162,7 @@ class CrossAttentionBlock(eqx.Module):
         q_input: Array,
         kv_input: Array,
         *,
+        key: PRNGKeyArray | None = None,
         mask: Array | None = None,
         cache: dict[str, Array] | None = None,
         update_cache: bool = False,
@@ -169,6 +172,7 @@ class CrossAttentionBlock(eqx.Module):
         Args:
             q_input: Query input tensor of shape (q_seq_len, embed_dim)
             kv_input: Key/value input tensor of shape (kv_seq_len, embed_dim)
+            key: Optional PRNG key for dropout
             mask: Optional mask tensor
             cache: Optional dictionary containing cached key and value tensors
             update_cache: Whether to update the cache and return it
@@ -566,6 +570,7 @@ class Transformer(eqx.Module):
         self,
         x: Array,
         context: Array,
+        *,
         self_mask: Array | None = None,
         cross_mask: Array | None = None,
         positions: Array | None = None,
@@ -753,7 +758,7 @@ class Transformer(eqx.Module):
         # Define scan function for autoregressive generation
         def scan_fn(
             carry: tuple[Array, int, dict[str, dict[str, dict[str, Array]]], PRNGKeyArray],
-            _: None,
+            _: Array,
         ) -> tuple[tuple[Array, int, dict[str, dict[str, dict[str, Array]]], PRNGKeyArray], Array]:
             seq, pos, cur_cache, rng = carry
 
