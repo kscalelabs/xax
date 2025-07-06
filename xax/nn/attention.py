@@ -55,7 +55,6 @@ class SelfAttentionBlock(eqx.Module):
         self,
         x: Array,
         *,
-        key: PRNGKeyArray | None = None,
         mask: Array | None = None,
         cache: dict[str, Array] | None = None,
         update_cache: bool = False,
@@ -64,7 +63,6 @@ class SelfAttentionBlock(eqx.Module):
 
         Args:
             x: Input tensor of shape (seq_len, embed_dim)
-            key: PRNGKey for dropout randomness
             mask: Optional mask tensor of shape (seq_len, seq_len) or broadcastable
             cache: Optional dictionary containing cached key and value tensors
             update_cache: Whether to update the cache and return it
@@ -162,7 +160,6 @@ class CrossAttentionBlock(eqx.Module):
         q_input: Array,
         kv_input: Array,
         *,
-        key: PRNGKeyArray | None = None,
         mask: Array | None = None,
         cache: dict[str, Array] | None = None,
         update_cache: bool = False,
@@ -172,7 +169,6 @@ class CrossAttentionBlock(eqx.Module):
         Args:
             q_input: Query input tensor of shape (q_seq_len, embed_dim)
             kv_input: Key/value input tensor of shape (kv_seq_len, embed_dim)
-            key: PRNGKey for dropout randomness
             mask: Optional mask tensor
             cache: Optional dictionary containing cached key and value tensors
             update_cache: Whether to update the cache and return it
@@ -345,7 +341,11 @@ class TransformerBlock(eqx.Module):
         self_attn_cache = cache.get("self_attn")
         if update_cache:
             attn_output, self_attn_cache = self.self_attn(
-                norm_x, key=key1, mask=self_mask, cache=self_attn_cache, update_cache=True
+                norm_x,
+                key=key1,
+                mask=self_mask,
+                cache=self_attn_cache,
+                update_cache=True,
             )
             updated_cache["self_attn"] = self_attn_cache
         else:
@@ -362,7 +362,12 @@ class TransformerBlock(eqx.Module):
 
             if update_cache:
                 cross_attn_output, cross_attn_cache = self.cross_attn(
-                    norm_x, context, key=key2, mask=cross_mask, cache=cross_attn_cache, update_cache=True
+                    norm_x,
+                    context,
+                    key=key2,
+                    mask=cross_mask,
+                    cache=cross_attn_cache,
+                    update_cache=True,
                 )
                 updated_cache["cross_attn"] = cross_attn_cache
             else:
@@ -450,7 +455,7 @@ class Transformer(eqx.Module):
         return x_embedded + pos_embedded
 
     @overload
-    def __call__(
+    def encode(
         self,
         x: Array,
         *,
@@ -462,7 +467,7 @@ class Transformer(eqx.Module):
     ) -> tuple[Array, dict[str, dict[str, dict[str, Array]]]]: ...
 
     @overload
-    def __call__(
+    def encode(
         self,
         x: Array,
         *,
@@ -543,7 +548,7 @@ class Transformer(eqx.Module):
         return output
 
     @overload
-    def __call__(
+    def decode(
         self,
         x: Array,
         context: Array,
@@ -557,7 +562,7 @@ class Transformer(eqx.Module):
     ) -> tuple[Array, dict[str, dict[str, dict[str, Array]]]]: ...
 
     @overload
-    def __call__(
+    def decode(
         self,
         x: Array,
         context: Array,
@@ -738,7 +743,6 @@ class Transformer(eqx.Module):
             key = jax.random.PRNGKey(0)
 
         prompt_len = prompt_seq.shape[0]
-        sequence = prompt_seq
 
         # Create causal mask for generation
         causal_mask = jnp.tril(jnp.ones((self.max_seq_len, self.max_seq_len), dtype=jnp.bool_))
@@ -746,11 +750,16 @@ class Transformer(eqx.Module):
         # Initialize cache with the prompt
         _, cache = self(x=prompt_seq, mask=causal_mask[:prompt_len, :prompt_len], update_cache=True)
 
-        # Define decode step function (for clarity)
-        def decode_step(seq: Array, pos: int, cur_cache: dict, rng: PRNGKeyArray) -> tuple[Array, dict, PRNGKeyArray]:
-            # Get the next position and last token
-            pos_tensor = jnp.array([pos])
+        # Define scan function for autoregressive generation
+        def scan_fn(
+            carry: tuple[Array, int, dict[str, dict[str, dict[str, Array]]], PRNGKeyArray],
+            _: None,
+        ) -> tuple[tuple[Array, int, dict[str, dict[str, dict[str, Array]]], PRNGKeyArray], Array]:
+            seq, pos, cur_cache, rng = carry
+
+            # Get the last token
             last_token = seq[-1:]
+            pos_tensor = jnp.array([pos])
 
             # Get logits for next token
             rng, subrng = jax.random.split(rng)
@@ -777,15 +786,14 @@ class Transformer(eqx.Module):
 
             # Add token to sequence
             new_seq = jnp.concatenate([seq, next_token[None]], axis=0)
-            return new_seq, new_cache, rng
 
-        # Generate tokens one by one
-        for _ in range(max_len):
-            # Break if max sequence length reached
-            if sequence.shape[0] >= self.max_seq_len:
-                break
+            return (new_seq, pos + 1, new_cache, rng), next_token
 
-            # Decode next token
-            sequence, cache, key = decode_step(seq=sequence, pos=sequence.shape[0] - 1, cur_cache=cache, rng=key)
+        # Initialize carry state
+        init_carry = (prompt_seq, prompt_len - 1, cache, key)
 
-        return sequence
+        # Use scan for the generation loop
+        max_gen_len = min(max_len, self.max_seq_len - prompt_len)
+        (final_seq, _, _, _), tokens = jax.lax.scan(scan_fn, init_carry, jnp.arange(max_gen_len))
+
+        return final_seq
