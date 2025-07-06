@@ -406,7 +406,7 @@ def test_generate_sequence_feedback() -> None:
         num_layers=2,
         max_seq_len=50,
         causal=True,
-        context_length=5,
+        context_length=15,
         key=key,
     )
 
@@ -414,11 +414,11 @@ def test_generate_sequence_feedback() -> None:
     generated = model.generate_sequence(prompt, max_len=10, top_k=1, key=key)
 
     # Feed the generated sequence back into the model
-    mask = model.init_mask(generated.shape[0] - 1)
-    output, _ = model.forward(generated[:-1], mask=mask)
+    cache = model.init_cache()
+    output, _ = model.forward(generated[:-1], cache=cache)
     output_argmax = jnp.argmax(output, axis=-1)
 
-    assert jnp.array_equal(output_argmax, generated)
+    assert jnp.array_equal(output_argmax, generated[1:])
 
 
 def test_generate_sequence_max_length_respect() -> None:

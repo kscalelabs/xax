@@ -727,7 +727,8 @@ class Transformer(eqx.Module):
         output_seq = output_seq.at[:prompt_len].set(prompt_seq)
 
         # Initialize cache with prompt
-        _, cache = self.encode(prompt_seq)
+        cache = self.init_cache()
+        _, cache = self.encode(prompt_seq, cache=cache)
 
         # Define scan function for autoregressive generation
         def scan_fn(

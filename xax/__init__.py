@@ -162,8 +162,6 @@ __all__ = [
     "hashable_array",
 ]
 
-__all__.insert(__all__.index("TransformerBlock") + 1, "TransformerStack")
-
 __all__ += [
     "Batch",
     "CollateMode",
