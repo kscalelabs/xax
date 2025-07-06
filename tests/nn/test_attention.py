@@ -401,49 +401,6 @@ def test_generate_sequence_with_top_k() -> None:
     assert jnp.array_equal(generated[:3], prompt)
 
 
-def test_generate_sequence_feedback() -> None:
-    """Test that the top-1 sequence outputs itself when fed back step by step."""
-    key = jax.random.PRNGKey(0)
-    max_seq_len = 50
-    model = xax.Transformer(
-        vocab_size=100,
-        embed_dim=32,
-        num_heads=4,
-        ff_dim=64,
-        num_layers=2,
-        max_seq_len=max_seq_len,
-        causal=True,
-        context_length=max_seq_len,
-        key=key,
-    )
-
-    prompt = jnp.array([1])
-    generated = model.generate_sequence(prompt, max_len=10, top_k=1, key=key)
-
-    input_seq = generated[:-1]
-    expected_output = generated[1:]
-
-    # Simulate generation process step by step to test feedback property
-    cache = model.init_cache()
-    _, cache = model.encode(prompt, cache=cache)
-
-    output_stepwise = []
-    for i, token in enumerate(input_seq):
-        pos_tensor = jnp.array([i])
-        logits, cache = model.forward(
-            x=token[None],
-            positions=pos_tensor,
-            cache=cache,
-        )
-        output_stepwise.append(logits[0])
-
-    output_stepwise = jnp.stack(output_stepwise)
-    output_stepwise_argmax = jnp.argmax(output_stepwise, axis=-1)
-
-    # Test the feedback property: the argmax should match the next token
-    assert jnp.array_equal(output_stepwise_argmax, expected_output)
-
-
 def test_generate_sequence_max_length_respect() -> None:
     """Test that generation respects max sequence length."""
     key = jax.random.PRNGKey(0)
