@@ -449,9 +449,34 @@ class Transformer(eqx.Module):
 
         return x_embedded + pos_embedded
 
+    @overload
+    def __call__(
+        self,
+        x: Array,
+        *,
+        mask: Array | None = None,
+        positions: Array | None = None,
+        key: PRNGKeyArray | None = None,
+        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
+        update_cache: Literal[True],
+    ) -> tuple[Array, dict[str, dict[str, dict[str, Array]]]]: ...
+
+    @overload
+    def __call__(
+        self,
+        x: Array,
+        *,
+        mask: Array | None = None,
+        positions: Array | None = None,
+        key: PRNGKeyArray | None = None,
+        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
+        update_cache: Literal[False] = False,
+    ) -> Array: ...
+
     def encode(
         self,
         x: Array,
+        *,
         mask: Array | None = None,
         positions: Array | None = None,
         key: PRNGKeyArray | None = None,
@@ -517,10 +542,38 @@ class Transformer(eqx.Module):
             return output, updated_cache
         return output
 
+    @overload
+    def __call__(
+        self,
+        x: Array,
+        context: Array,
+        *,
+        self_mask: Array | None = None,
+        cross_mask: Array | None = None,
+        positions: Array | None = None,
+        key: PRNGKeyArray | None = None,
+        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
+        update_cache: Literal[True],
+    ) -> tuple[Array, dict[str, dict[str, dict[str, Array]]]]: ...
+
+    @overload
+    def __call__(
+        self,
+        x: Array,
+        context: Array,
+        self_mask: Array | None = None,
+        cross_mask: Array | None = None,
+        positions: Array | None = None,
+        key: PRNGKeyArray | None = None,
+        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
+        update_cache: Literal[False] = False,
+    ) -> Array: ...
+
     def decode(
         self,
         x: Array,
         context: Array,
+        *,
         self_mask: Array | None = None,
         cross_mask: Array | None = None,
         positions: Array | None = None,
