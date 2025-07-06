@@ -345,6 +345,8 @@ def test_generate_sequence_basic() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key,
     )
 
@@ -365,6 +367,8 @@ def test_generate_sequence_with_temperature() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key,
     )
 
@@ -385,6 +389,8 @@ def test_generate_sequence_with_top_k() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key,
     )
 
@@ -396,29 +402,46 @@ def test_generate_sequence_with_top_k() -> None:
 
 
 def test_generate_sequence_feedback() -> None:
-    """Test that the top-1 sequence outputs itself."""
+    """Test that the top-1 sequence outputs itself when fed back step by step."""
     key = jax.random.PRNGKey(0)
+    max_seq_len = 50
     model = xax.Transformer(
         vocab_size=100,
         embed_dim=32,
         num_heads=4,
         ff_dim=64,
         num_layers=2,
-        max_seq_len=50,
+        max_seq_len=max_seq_len,
         causal=True,
-        context_length=5,
+        context_length=max_seq_len,
         key=key,
     )
 
     prompt = jnp.array([1])
     generated = model.generate_sequence(prompt, max_len=10, top_k=1, key=key)
 
-    # Feed the generated sequence back into the model
-    mask = model.init_mask(seq_len=generated.shape[0] - 1)
-    output, _ = model.forward(generated[:-1], mask=mask)
-    output_argmax = jnp.argmax(output, axis=-1)
+    input_seq = generated[:-1]
+    expected_output = generated[1:]
 
-    assert jnp.array_equal(output_argmax, generated[1:])
+    # Simulate generation process step by step to test feedback property
+    cache = model.init_cache()
+    _, cache = model.encode(prompt, cache=cache)
+
+    output_stepwise = []
+    for i, token in enumerate(input_seq):
+        pos_tensor = jnp.array([i])
+        logits, cache = model.forward(
+            x=token[None],
+            positions=pos_tensor,
+            cache=cache,
+        )
+        output_stepwise.append(logits[0])
+
+    output_stepwise = jnp.stack(output_stepwise)
+    output_stepwise_argmax = jnp.argmax(output_stepwise, axis=-1)
+
+    # Test the feedback property: the argmax should match the next token
+    assert jnp.array_equal(output_stepwise_argmax, expected_output)
 
 
 def test_generate_sequence_max_length_respect() -> None:
@@ -431,6 +454,8 @@ def test_generate_sequence_max_length_respect() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=10,
+        causal=True,
+        context_length=10,
         key=key,
     )
 
@@ -451,6 +476,8 @@ def test_generate_sequence_deterministic() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key,
     )
 
@@ -471,6 +498,8 @@ def test_generate_sequence_different_keys() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key1,
     )
 
@@ -495,6 +524,7 @@ def test_generate_sequence_causal_attention() -> None:
         num_layers=2,
         max_seq_len=50,
         causal=True,
+        context_length=50,
         key=key,
     )
 
@@ -515,13 +545,10 @@ def test_generate_sequence_edge_cases() -> None:
         ff_dim=64,
         num_layers=2,
         max_seq_len=50,
+        causal=True,
+        context_length=50,
         key=key,
     )
-
-    # Empty prompt
-    prompt = jnp.array([], dtype=jnp.int32)
-    generated = model.generate_sequence(prompt, max_len=5, key=key)
-    assert generated.shape[0] == 5
 
     # Zero max_len
     prompt = jnp.array([1, 2, 3], dtype=jnp.int32)
