@@ -395,6 +395,32 @@ def test_generate_sequence_with_top_k() -> None:
     assert jnp.array_equal(generated[:3], prompt)
 
 
+def test_generate_sequence_feedback() -> None:
+    """Test that the top-1 sequence outputs itself."""
+    key = jax.random.PRNGKey(0)
+    model = xax.Transformer(
+        vocab_size=100,
+        embed_dim=32,
+        num_heads=4,
+        ff_dim=64,
+        num_layers=2,
+        max_seq_len=50,
+        causal=True,
+        context_length=5,
+        key=key,
+    )
+
+    prompt = jnp.array([1])
+    generated = model.generate_sequence(prompt, max_len=10, top_k=1, key=key)
+
+    # Feed the generated sequence back into the model
+    mask = model.init_mask(generated.shape[0] - 1)
+    output, _ = model.forward(generated[:-1], mask=mask)
+    output_argmax = jnp.argmax(output, axis=-1)
+
+    assert jnp.array_equal(output_argmax, generated)
+
+
 def test_generate_sequence_max_length_respect() -> None:
     """Test that generation respects max sequence length."""
     key = jax.random.PRNGKey(0)
@@ -431,7 +457,6 @@ def test_generate_sequence_deterministic() -> None:
     prompt = jnp.array([1, 2, 3])
     generated1 = model.generate_sequence(prompt, max_len=5, key=key)
     generated2 = model.generate_sequence(prompt, max_len=5, key=key)
-
     assert jnp.array_equal(generated1, generated2)
 
 

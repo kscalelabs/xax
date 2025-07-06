@@ -70,34 +70,30 @@ class SelfAttentionBlock(eqx.Module):
         _, n, h = x.shape
         return x.reshape(-1, n * h)
 
-    def init_cache(self, x_tn: Array) -> Cache:
+    def init_cache(self, dtype: jnp.dtype | None = None) -> Cache:
         """Initialize cache for the input.
 
         Args:
-            x_tn: Input tensor of shape (seq_len, embed_dim)
+            dtype: The dtype of the cache
 
         Returns:
             Cache with fixed-length k and v tensors
         """
-        chex.assert_rank(x_tn, 2)
         if self.context_length is None:
             raise ValueError("context_length must be set for caching")
 
-        k = jax.vmap(self.k_proj)(x_tn)
-        v = jax.vmap(self.v_proj)(x_tn)
-        k = self._reshape_for_multihead(k)
-        v = self._reshape_for_multihead(v)
-
         # Create fixed-length cache
-        k_cache = jnp.zeros((self.context_length, self.num_heads, self.head_dim), dtype=k.dtype)
-        v_cache = jnp.zeros((self.context_length, self.num_heads, self.head_dim), dtype=v.dtype)
-
-        # Fill cache with initial values (up to the length of input or context_length, whichever is smaller)
-        seq_len = min(k.shape[0], self.context_length)
-        k_cache = k_cache.at[:seq_len].set(k[:seq_len])
-        v_cache = v_cache.at[:seq_len].set(v[:seq_len])
+        k_cache = jnp.zeros((self.context_length, self.num_heads, self.head_dim), dtype=dtype)
+        v_cache = jnp.zeros((self.context_length, self.num_heads, self.head_dim), dtype=dtype)
 
         return {"k": k_cache, "v": v_cache}
+
+    def init_mask(self, seq_len: int) -> Array:
+        mask = jnp.tril(jnp.ones((seq_len, seq_len)))
+        if self.context_length is not None:
+            neg_mask = 1 - jnp.tril(jnp.ones((seq_len, seq_len)), -self.context_length)
+            mask = mask * neg_mask
+        return mask.astype(jnp.bool_)
 
     def forward(
         self,
@@ -134,13 +130,23 @@ class SelfAttentionBlock(eqx.Module):
             seq_len = k.shape[0]
 
             # Roll left by seq_len, insert new k/v at the end
-            k = jnp.roll(k_cache, -seq_len, axis=0).at[-seq_len:].set(k)
-            v = jnp.roll(v_cache, -seq_len, axis=0).at[-seq_len:].set(v)
+            k_cache = jnp.roll(k_cache, -seq_len, axis=0).at[-seq_len:].set(k)
+            v_cache = jnp.roll(v_cache, -seq_len, axis=0).at[-seq_len:].set(v)
+
+            # Use the updated cache for attention
+            k_attn = k_cache
+            v_attn = v_cache
+
+        else:
+            k_cache = k
+            v_cache = v
+            k_attn = k
+            v_attn = v
 
         attn_output = jax.nn.dot_product_attention(
             q,
-            k,
-            v,
+            k_attn,
+            v_attn,
             mask=mask,
             is_causal=self.causal and mask is None,
         )
@@ -148,7 +154,7 @@ class SelfAttentionBlock(eqx.Module):
         attn_output = self._combine_heads(attn_output)
         output = jax.vmap(self.output_proj)(attn_output)
 
-        return output, {"k": k, "v": v}
+        return output, {"k": k_cache, "v": v_cache}
 
 
 class CrossAttentionBlock(eqx.Module):
@@ -311,6 +317,21 @@ class TransformerBlock(eqx.Module):
             key=keys[2],
         )
 
+    def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> CacheDict:
+        """Initialize cache for the input."""
+        cache = {}
+        if dtype is None and x_tn is not None:
+            dtype = x_tn.dtype
+        cache["self_attn"] = self.self_attn.init_cache(dtype=dtype)
+        if self.cross_attn is not None:
+            if x_tn is None:
+                raise ValueError("x_tn must be provided if cross_attn is not None")
+            cache["cross_attn"] = self.cross_attn.init_cache(x_tn=x_tn)
+        return cache
+
+    def init_mask(self, seq_len: int) -> Array:
+        return self.self_attn.init_mask(seq_len)
+
     def forward(
         self,
         x_tn: Array,
@@ -384,6 +405,7 @@ class TransformerStack(eqx.Module):
 
     layers: list[TransformerBlock]
     num_layers: int = eqx.static_field()
+    causal: bool = eqx.static_field()
 
     def __init__(
         self,
@@ -413,6 +435,17 @@ class TransformerStack(eqx.Module):
         ]
 
         self.num_layers = num_layers
+        self.causal = causal
+
+    def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> TransformerCache:
+        """Initialize cache for the input."""
+        cache = {}
+        for i, layer in enumerate(self.layers):
+            cache[f"layer_{i}"] = layer.init_cache(dtype=dtype, x_tn=x_tn)
+        return {"layers": cache}
+
+    def init_mask(self, seq_len: int) -> Array:
+        return self.layers[0].init_mask(seq_len)
 
     def forward(
         self,
@@ -444,7 +477,7 @@ class TransformerStack(eqx.Module):
 
         # Apply transformer layers
         for i, layer in enumerate(self.layers):
-            layer_cache = cache["layers"].get(f"layer_{i}")
+            layer_cache = cache["layers"][f"layer_{i}"]
 
             x_tn, layer_updated_cache = layer.forward(
                 x_tn,
@@ -466,6 +499,7 @@ class Transformer(eqx.Module):
     layer_norm: eqx.nn.LayerNorm
     max_seq_len: int = eqx.static_field()
     embed_dim: int = eqx.static_field()
+    causal: bool = eqx.static_field()
 
     def __init__(
         self,
@@ -514,6 +548,7 @@ class Transformer(eqx.Module):
 
         self.max_seq_len = max_seq_len
         self.embed_dim = embed_dim
+        self.causal = causal
 
     def _add_positional_embedding(self, x_embedded: Array, positions: Array | None = None) -> Array:
         """Add positional embeddings to the token embeddings."""
@@ -527,6 +562,13 @@ class Transformer(eqx.Module):
         pos_embedded = jax.vmap(self.position_embedding)(positions)
 
         return x_embedded + pos_embedded
+
+    def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> TransformerCache:
+        """Initialize cache for the input."""
+        return self.layers.init_cache(dtype=dtype, x_tn=x_tn)
+
+    def init_mask(self, seq_len: int) -> Array:
+        return self.layers.init_mask(seq_len)
 
     def encode(
         self,
@@ -578,8 +620,8 @@ class Transformer(eqx.Module):
         """Decode with self-attention and cross-attention.
 
         Args:
-            x: Input token indices, shape (seq_len)
-            context: Context from encoder (token indices or embedded),
+            x_t: Input token indices, shape (seq_len)
+            context_s: Context from encoder (token indices or embedded),
                 shape (context_len, embed_dim)
             self_mask: Optional self-attention mask, shape (seq_len, seq_len)
             cross_mask: Optional cross-attention mask, shape (seq_len, context_len)
@@ -646,7 +688,7 @@ class Transformer(eqx.Module):
         return output, updated_cache
 
     def predict_sequence(self, x_seq: Array) -> Array:
-        output, _ = self(x=x_seq)
+        output, _ = self.forward(x=x_seq)
         return output
 
     def generate_sequence(
@@ -669,6 +711,9 @@ class Transformer(eqx.Module):
         Returns:
             Generated sequence of shape (prompt_len + max_len,)
         """
+        if not self.causal:
+            raise ValueError("generate_sequence is only supported for causal models")
+
         if key is None:
             key = jax.random.PRNGKey(0)
 
