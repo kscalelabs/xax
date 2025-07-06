@@ -27,6 +27,7 @@ __all__ = [
     "SelfAttentionBlock",
     "Transformer",
     "TransformerBlock",
+    "TransformerStack",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -161,6 +162,8 @@ __all__ = [
     "hashable_array",
 ]
 
+__all__.insert(__all__.index("TransformerBlock") + 1, "TransformerStack")
+
 __all__ += [
     "Batch",
     "CollateMode",
@@ -210,6 +213,7 @@ NAME_MAP: dict[str, str] = {
     "SelfAttentionBlock": "nn.attention",
     "Transformer": "nn.attention",
     "TransformerBlock": "nn.attention",
+    "TransformerStack": "nn.attention",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -362,6 +366,9 @@ NAME_MAP.update(
     },
 )
 
+# In NAME_MAP
+NAME_MAP["TransformerStack"] = "nn.attention"
+
 
 def __getattr__(name: str) -> object:
     if name not in NAME_MAP:
@@ -382,7 +389,13 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State
-    from xax.nn.attention import CrossAttentionBlock, SelfAttentionBlock, Transformer, TransformerBlock
+    from xax.nn.attention import (
+        CrossAttentionBlock,
+        SelfAttentionBlock,
+        Transformer,
+        TransformerBlock,
+        TransformerStack,
+    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -411,12 +424,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         rotation_matrix_to_rotation6d,
     )
     from xax.nn.losses import cross_entropy
-    from xax.nn.metrics import (
-        NormType,
-        cast_norm_type,
-        dynamic_time_warping,
-        get_norm,
-    )
+    from xax.nn.metrics import NormType, cast_norm_type, dynamic_time_warping, get_norm
     from xax.nn.parallel import is_master
     from xax.nn.ssm import SSM, BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType
