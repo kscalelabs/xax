@@ -13,6 +13,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
 
+from xax.utils.jax import scan as xax_scan
+
 
 class RotaryEmbedding(eqx.Module):
     """Rotary Position Embedding (RoPE) for transformer attention.
@@ -832,6 +834,7 @@ class Transformer(eqx.Module):
         temperature: float = 1.0,
         top_k: int | None = None,
         key: PRNGKeyArray | None = None,
+        jit_level: int | None = None,
     ) -> Array:
         """Generate a sequence autoregressively with KV caching.
 
@@ -841,6 +844,7 @@ class Transformer(eqx.Module):
             temperature: Sampling temperature
             top_k: Optional top-k sampling parameter
             key: PRNG key for sampling
+            jit_level: JIT level for the scan function
 
         Returns:
             Generated sequence of shape (prompt_len + max_len,)
@@ -884,5 +888,5 @@ class Transformer(eqx.Module):
             return (new_output_seq, pos + 1, new_cache, rng), next_token
 
         init_carry = (output_seq, prompt_len - 1, cache, key)
-        (final_seq, _, _, _), _ = jax.lax.scan(scan_fn, init_carry, length=max_len)
+        (final_seq, _, _, _), _ = xax_scan(scan_fn, init_carry, length=max_len, jit_level=jit_level)
         return final_seq
