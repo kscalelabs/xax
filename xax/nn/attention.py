@@ -388,19 +388,21 @@ class CrossAttentionBlock(eqx.Module):
             q_position = 0
         else:
             raise ValueError("Either `cache` or `kv_sn` must be provided.")
-        cache = {"k": k, "v": v, "position": q_position + q_seq_len}
 
         # Apply rotary embeddings to queries and keys if enabled
-        if self.rotary_emb is not None:
+        if self.rotary_emb is None:
+            q_rot = q
+            k_rot = k
+        else:
             q_positions = jnp.arange(q_seq_len) + q_position
             k_positions = jnp.arange(k.shape[0])
-            q = self.rotary_emb.apply_rotary_embeddings(q, positions=q_positions)
-            k = self.rotary_emb.apply_rotary_embeddings(k, positions=k_positions)
+            q_rot = self.rotary_emb.apply_rotary_embeddings(q, positions=q_positions)
+            k_rot = self.rotary_emb.apply_rotary_embeddings(k, positions=k_positions)
 
         # Apply dot product attention
         attn_output = jax.nn.dot_product_attention(
-            q,
-            k,
+            q_rot,
+            k_rot,
             v,
             mask=mask,
             is_causal=False,
@@ -412,7 +414,7 @@ class CrossAttentionBlock(eqx.Module):
         # Final projection
         output = jax.vmap(self.output_proj)(attn_output)
 
-        return output, cache
+        return output, {"k": k, "v": v, "position": q_position + q_seq_len}
 
 
 class TransformerBlock(eqx.Module):
