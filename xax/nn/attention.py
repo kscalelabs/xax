@@ -371,32 +371,29 @@ class CrossAttentionBlock(eqx.Module):
 
         # Project inputs to queries, keys, and values
         q = jax.vmap(self.q_proj)(q_tn)
+        q = self._reshape_for_multihead(q)
+        q_seq_len = q.shape[0]
 
         # Use cached key/value if provided
         if cache is not None:
             k = cache["k"]
             v = cache["v"]
-            k_position = cache["position"]
+            q_position = cache["position"]
         elif kv_sn is not None:
             chex.assert_rank(kv_sn, 2)
             k = jax.vmap(self.k_proj)(kv_sn)
             v = jax.vmap(self.v_proj)(kv_sn)
             k = self._reshape_for_multihead(k)
             v = self._reshape_for_multihead(v)
-            k_position = 0
-            cache = {"k": k, "v": v, "position": 0}
+            q_position = 0
         else:
             raise ValueError("Either `cache` or `kv_sn` must be provided.")
-
-        # Reshape to multihead format
-        q = self._reshape_for_multihead(q)
+        cache = {"k": k, "v": v, "position": q_position + q_seq_len}
 
         # Apply rotary embeddings to queries and keys if enabled
         if self.rotary_emb is not None:
-            q_seq_len = q.shape[0]
-            k_seq_len = k.shape[0]
-            q_positions = jnp.arange(0, q_seq_len)
-            k_positions = jnp.arange(k_position, k_position + k_seq_len)
+            q_positions = jnp.arange(q_seq_len) + q_position
+            k_positions = jnp.arange(k.shape[0])
             q = self.rotary_emb.apply_rotary_embeddings(q, positions=q_positions)
             k = self.rotary_emb.apply_rotary_embeddings(k, positions=k_positions)
 
@@ -415,10 +412,7 @@ class CrossAttentionBlock(eqx.Module):
         # Final projection
         output = jax.vmap(self.output_proj)(attn_output)
 
-        # Update position counter for cache
-        new_position = k_position + q.shape[0]
-
-        return output, {"k": k, "v": v, "position": new_position}
+        return output, cache
 
 
 class TransformerBlock(eqx.Module):
@@ -681,7 +675,6 @@ class Transformer(eqx.Module):
         causal: bool = False,
         cross_attention: bool = False,
         context_length: int | None = None,
-        use_absolute_position: bool = True,
         use_rotary_embeddings: bool = False,
         rotary_base: float = 10000.0,
     ) -> None:

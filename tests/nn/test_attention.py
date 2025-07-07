@@ -2,9 +2,9 @@
 
 import jax
 import jax.numpy as jnp
+import pytest
 from jax import Array
 
-import pytest
 import xax
 
 
@@ -46,7 +46,8 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
 
-def test_transformer_block_loopback() -> None:
+@pytest.mark.parametrize("use_rotary_embeddings", [True, False])
+def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)
 
@@ -57,6 +58,7 @@ def test_transformer_block_loopback() -> None:
         key=subkey,
         cross_attention=True,
         context_length=5,
+        use_rotary_embeddings=use_rotary_embeddings,
     )
 
     def scan_fn(
@@ -88,7 +90,8 @@ def test_transformer_block_loopback() -> None:
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
 
-def test_transformer_stack_loopback() -> None:
+@pytest.mark.parametrize("use_rotary_embeddings", [True, False])
+def test_transformer_stack_loopback(use_rotary_embeddings: bool) -> None:
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)
 
@@ -100,6 +103,7 @@ def test_transformer_stack_loopback() -> None:
         key=subkey,
         cross_attention=True,
         context_length=5,
+        use_rotary_embeddings=use_rotary_embeddings,
     )
 
     def scan_fn(
@@ -131,7 +135,8 @@ def test_transformer_stack_loopback() -> None:
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
 
-def test_transformer_loopback() -> None:
+@pytest.mark.parametrize("use_rotary_embeddings", [True, False])
+def test_transformer_loopback(use_rotary_embeddings: bool) -> None:
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)
 
@@ -144,6 +149,7 @@ def test_transformer_loopback() -> None:
         key=subkey,
         cross_attention=False,
         context_length=5,
+        use_rotary_embeddings=use_rotary_embeddings,
     )
 
     # Generates a random sequence.
