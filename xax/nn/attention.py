@@ -14,9 +14,101 @@ import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
 
 
+class RotaryEmbedding(eqx.Module):
+    """Rotary Position Embedding (RoPE) for transformer attention.
+
+    This implements the rotary position embedding as described in:
+    "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    https://arxiv.org/abs/2104.09864
+    """
+
+    head_dim: int = eqx.static_field()
+    base: float = eqx.static_field()
+
+    def __init__(
+        self,
+        head_dim: int,
+        base: float = 10000.0,
+    ) -> None:
+        """Initialize rotary embedding.
+
+        Args:
+            head_dim: Dimension of each attention head
+            base: Base for the frequency computation
+        """
+        self.head_dim = head_dim
+        self.base = base
+
+    def _get_rotary_embeddings(self, positions: Array, dtype: jnp.dtype) -> tuple[Array, Array]:
+        """Get rotary embeddings for a given sequence length.
+
+        Args:
+            positions: Positions of the sequence
+            dtype: Data type for the embeddings
+
+        Returns:
+            Tuple of (cos_embeddings, sin_embeddings) of shape (seq_len, head_dim//2)
+        """
+        # Create frequency bands
+        dim = self.head_dim // 2
+        freqs = jnp.exp(-jnp.arange(0, dim, dtype=dtype) * jnp.log(self.base) / dim)
+
+        # Compute angles
+        angles = positions[:, None] * freqs[None, :]  # (seq_len, dim)
+
+        # Compute cos and sin embeddings
+        cos_embeddings = jnp.cos(angles)
+        sin_embeddings = jnp.sin(angles)
+
+        return cos_embeddings, sin_embeddings
+
+    def apply_rotary_embeddings(
+        self,
+        x: Array,
+        positions: Array | None = None,
+    ) -> Array:
+        """Apply rotary embeddings to input tensor.
+
+        Args:
+            x: Input tensor of shape (seq_len, num_heads, head_dim)
+            positions: Optional position indices of shape (seq_len,)
+                If None, uses sequential positions starting from 0
+
+        Returns:
+            Tensor with rotary embeddings applied, same shape as input
+        """
+        seq_len, _, head_dim = x.shape
+        assert head_dim == self.head_dim, f"Expected head_dim {self.head_dim}, got {head_dim}"
+
+        # Get rotary embeddings
+        if positions is None:
+            positions = jnp.arange(seq_len, dtype=x.dtype)
+        cos_emb, sin_emb = self._get_rotary_embeddings(positions, x.dtype)
+
+        # Reshape to (seq_len, 1, head_dim//2) for broadcasting
+        cos_emb = cos_emb[:, None, :]  # (seq_len, 1, head_dim//2)
+        sin_emb = sin_emb[:, None, :]  # (seq_len, 1, head_dim//2)
+
+        # Split input into even and odd dimensions
+        x_even = x[..., ::2]  # (seq_len, num_heads, head_dim//2)
+        x_odd = x[..., 1::2]  # (seq_len, num_heads, head_dim//2)
+
+        # Apply rotation
+        rotated_even = x_even * cos_emb - x_odd * sin_emb
+        rotated_odd = x_even * sin_emb + x_odd * cos_emb
+
+        # Interleave back together
+        result = jnp.zeros_like(x)
+        result = result.at[..., ::2].set(rotated_even)
+        result = result.at[..., 1::2].set(rotated_odd)
+
+        return result
+
+
 class AttentionCache(TypedDict):
     k: Array
     v: Array
+    position: int  # Position counter for rotary embeddings
 
 
 class AttentionCacheDict(TypedDict):
@@ -37,6 +129,7 @@ class SelfAttentionBlock(eqx.Module):
     k_proj: eqx.nn.Linear
     v_proj: eqx.nn.Linear
     output_proj: eqx.nn.Linear
+    rotary_emb: RotaryEmbedding | None
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
     causal: bool = eqx.static_field()
@@ -50,6 +143,8 @@ class SelfAttentionBlock(eqx.Module):
         key: PRNGKeyArray,
         causal: bool = False,
         context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         if context_length is not None:
             assert context_length > 1, "context_length must be at least 2"
@@ -64,6 +159,15 @@ class SelfAttentionBlock(eqx.Module):
         self.k_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[1])
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
+
+        # Initialize rotary embeddings if requested
+        if use_rotary_embeddings:
+            self.rotary_emb = RotaryEmbedding(
+                head_dim=self.head_dim,
+                base=rotary_base,
+            )
+        else:
+            self.rotary_emb = None
 
         self.causal = causal
         self.context_length = context_length
@@ -98,7 +202,7 @@ class SelfAttentionBlock(eqx.Module):
         k_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
         v_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
 
-        return {"k": k_cache, "v": v_cache}
+        return {"k": k_cache, "v": v_cache, "position": 0}
 
     def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
         in_dim, out_dim = seq_len, seq_len
@@ -143,11 +247,26 @@ class SelfAttentionBlock(eqx.Module):
         k = self._reshape_for_multihead(k)
         v = self._reshape_for_multihead(v)
 
+        seq_len = q.shape[0]
+        if self.rotary_emb is not None:
+            # Determine position indices for rotary embeddings
+            if cache is not None:
+                start_pos = cache["position"]
+            else:
+                start_pos = 0
+            positions = jnp.arange(seq_len) + start_pos
+            q = self.rotary_emb.apply_rotary_embeddings(q, positions=positions)
+            k = self.rotary_emb.apply_rotary_embeddings(k, positions=positions)
+
         if cache is not None:
             k_cache = cache["k"]
             v_cache = cache["v"]
             k = jnp.concatenate([k_cache, k], axis=0)
             v = jnp.concatenate([v_cache, v], axis=0)
+            new_position = cache["position"] + seq_len
+
+        else:
+            new_position = seq_len
 
         attn_output = jax.nn.dot_product_attention(
             q,
@@ -164,7 +283,7 @@ class SelfAttentionBlock(eqx.Module):
             k = k[-(self.context_length - 1) :]
             v = v[-(self.context_length - 1) :]
 
-        return output, {"k": k, "v": v}
+        return output, {"k": k, "v": v, "position": new_position}
 
 
 class CrossAttentionBlock(eqx.Module):
@@ -174,6 +293,7 @@ class CrossAttentionBlock(eqx.Module):
     k_proj: eqx.nn.Linear
     v_proj: eqx.nn.Linear
     output_proj: eqx.nn.Linear
+    rotary_emb: RotaryEmbedding | None
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
 
@@ -183,6 +303,8 @@ class CrossAttentionBlock(eqx.Module):
         num_heads: int,
         *,
         key: PRNGKeyArray,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         keys = jax.random.split(key, 4)
 
@@ -194,6 +316,15 @@ class CrossAttentionBlock(eqx.Module):
         self.k_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[1])
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
+
+        # Initialize rotary embeddings if requested
+        if use_rotary_embeddings:
+            self.rotary_emb = RotaryEmbedding(
+                head_dim=self.head_dim,
+                base=rotary_base,
+            )
+        else:
+            self.rotary_emb = None
 
     def _reshape_for_multihead(self, x: Array) -> Array:
         """Reshape from (seq_len, embed_dim) to (seq_len, num_heads, head_dim)."""
@@ -210,7 +341,10 @@ class CrossAttentionBlock(eqx.Module):
         chex.assert_rank(kv_sn, 2)
         k = jax.vmap(self.k_proj)(kv_sn)
         v = jax.vmap(self.v_proj)(kv_sn)
-        return {"k": k, "v": v}
+        # Reshape to multihead format
+        k = self._reshape_for_multihead(k)
+        v = self._reshape_for_multihead(v)
+        return {"k": k, "v": v, "position": 0}
 
     def forward(
         self,
@@ -242,18 +376,29 @@ class CrossAttentionBlock(eqx.Module):
         if cache is not None:
             k = cache["k"]
             v = cache["v"]
+            k_position = cache["position"]
         elif kv_sn is not None:
             chex.assert_rank(kv_sn, 2)
             k = jax.vmap(self.k_proj)(kv_sn)
             v = jax.vmap(self.v_proj)(kv_sn)
-            cache = {"k": k, "v": v}
+            k = self._reshape_for_multihead(k)
+            v = self._reshape_for_multihead(v)
+            k_position = 0
+            cache = {"k": k, "v": v, "position": 0}
         else:
             raise ValueError("Either `cache` or `kv_sn` must be provided.")
 
         # Reshape to multihead format
         q = self._reshape_for_multihead(q)
-        k = self._reshape_for_multihead(k)
-        v = self._reshape_for_multihead(v)
+
+        # Apply rotary embeddings to queries and keys if enabled
+        if self.rotary_emb is not None:
+            q_seq_len = q.shape[0]
+            k_seq_len = k.shape[0]
+            q_positions = jnp.arange(0, q_seq_len)
+            k_positions = jnp.arange(k_position, k_position + k_seq_len)
+            q = self.rotary_emb.apply_rotary_embeddings(q, positions=q_positions)
+            k = self.rotary_emb.apply_rotary_embeddings(k, positions=k_positions)
 
         # Apply dot product attention
         attn_output = jax.nn.dot_product_attention(
@@ -270,7 +415,10 @@ class CrossAttentionBlock(eqx.Module):
         # Final projection
         output = jax.vmap(self.output_proj)(attn_output)
 
-        return output, cache
+        # Update position counter for cache
+        new_position = k_position + q.shape[0]
+
+        return output, {"k": k, "v": v, "position": new_position}
 
 
 class TransformerBlock(eqx.Module):
@@ -295,6 +443,8 @@ class TransformerBlock(eqx.Module):
         causal: bool = False,
         cross_attention: bool = False,
         context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         keys = jax.random.split(key, 3)
 
@@ -304,6 +454,8 @@ class TransformerBlock(eqx.Module):
             key=keys[0],
             causal=causal,
             context_length=context_length,
+            use_rotary_embeddings=use_rotary_embeddings,
+            rotary_base=rotary_base,
         )
 
         if cross_attention:
@@ -311,6 +463,8 @@ class TransformerBlock(eqx.Module):
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 key=keys[1],
+                use_rotary_embeddings=use_rotary_embeddings,
+                rotary_base=rotary_base,
             )
             self.layer_norm3 = eqx.nn.LayerNorm(embed_dim)
 
@@ -429,6 +583,8 @@ class TransformerStack(eqx.Module):
         causal: bool = False,
         cross_attention: bool = False,
         context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         keys = jax.random.split(key, num_layers)
 
@@ -441,6 +597,8 @@ class TransformerStack(eqx.Module):
                 causal=causal,
                 cross_attention=cross_attention,
                 context_length=context_length,
+                use_rotary_embeddings=use_rotary_embeddings,
+                rotary_base=rotary_base,
             )
             for i in range(num_layers)
         ]
@@ -524,6 +682,8 @@ class Transformer(eqx.Module):
         cross_attention: bool = False,
         context_length: int | None = None,
         use_absolute_position: bool = True,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         # Calculate number of keys needed
         num_keys = 3 if output_size is None else 4
@@ -540,6 +700,8 @@ class Transformer(eqx.Module):
             causal=causal,
             cross_attention=cross_attention,
             context_length=context_length,
+            use_rotary_embeddings=use_rotary_embeddings,
+            rotary_base=rotary_base,
         )
 
         self.layer_norm = eqx.nn.LayerNorm(embed_dim)

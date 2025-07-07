@@ -4,10 +4,12 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+import pytest
 import xax
 
 
-def test_self_attention_block_loopback() -> None:
+@pytest.mark.parametrize("use_rotary_embeddings", [True, False])
+def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)
 
@@ -16,6 +18,7 @@ def test_self_attention_block_loopback() -> None:
         num_heads=2,
         key=subkey,
         context_length=5,
+        use_rotary_embeddings=use_rotary_embeddings,
     )
 
     def scan_fn(
@@ -32,7 +35,7 @@ def test_self_attention_block_loopback() -> None:
 
     # Autoregressive unrolling.
     cache = block.init_cache(x.dtype)
-    _, xs = jax.lax.scan(scan_fn, (x, cache), length=10)
+    _, xs = xax.scan(scan_fn, (x, cache), length=10, jit_level=-1)
     xs = xs.squeeze(1)
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
@@ -74,7 +77,7 @@ def test_transformer_block_loopback() -> None:
 
     # Autoregressive unrolling.
     cache = block.init_cache(x.dtype, context_sn=context_sn)
-    _, xs = jax.lax.scan(scan_fn, (x, cache), length=10)
+    _, xs = xax.scan(scan_fn, (x, cache), length=10)
     xs = xs.squeeze(1)
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
@@ -117,7 +120,7 @@ def test_transformer_stack_loopback() -> None:
 
     # Autoregressive unrolling.
     cache = stack.init_cache(x.dtype, x_tn=context_sn)
-    _, xs = jax.lax.scan(scan_fn, (x, cache), length=10)
+    _, xs = xax.scan(scan_fn, (x, cache), length=10)
     xs = xs.squeeze(1)
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
