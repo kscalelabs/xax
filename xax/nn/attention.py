@@ -1,4 +1,9 @@
-"""Attention mechanisms for transformer models."""
+"""Attention mechanisms for transformer models.
+
+This module implements standard attention mechanisms for transformers, but
+supporting a fixed-size context window and caching that can be used to train
+transformers which can be unrolled with a fixed-length cache.
+"""
 
 from typing import NotRequired, TypedDict
 
