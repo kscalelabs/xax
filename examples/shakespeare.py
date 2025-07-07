@@ -257,7 +257,6 @@ class ShakespearePrediction(xax.Task[Config]):
                     num_heads=self.config.hidden_size // 64,
                     ff_dim=self.config.hidden_size * 4,
                     num_layers=self.config.num_layers,
-                    max_seq_len=self.config.sequence_length,
                     output_size=self.config.output_size,
                     key=key,
                 )

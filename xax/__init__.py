@@ -23,10 +23,14 @@ __all__ = [
     "get_run_dir",
     "load_user_config",
     "State",
+    "AttentionCache",
+    "AttentionCacheDict",
     "CrossAttentionBlock",
     "SelfAttentionBlock",
     "Transformer",
     "TransformerBlock",
+    "TransformerCache",
+    "TransformerStack",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -206,10 +210,14 @@ NAME_MAP: dict[str, str] = {
     "get_run_dir": "core.conf",
     "load_user_config": "core.conf",
     "State": "core.state",
+    "AttentionCache": "nn.attention",
+    "AttentionCacheDict": "nn.attention",
     "CrossAttentionBlock": "nn.attention",
     "SelfAttentionBlock": "nn.attention",
     "Transformer": "nn.attention",
     "TransformerBlock": "nn.attention",
+    "TransformerCache": "nn.attention",
+    "TransformerStack": "nn.attention",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -362,6 +370,9 @@ NAME_MAP.update(
     },
 )
 
+# In NAME_MAP
+NAME_MAP["TransformerStack"] = "nn.attention"
+
 
 def __getattr__(name: str) -> object:
     if name not in NAME_MAP:
@@ -382,7 +393,16 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State
-    from xax.nn.attention import CrossAttentionBlock, SelfAttentionBlock, Transformer, TransformerBlock
+    from xax.nn.attention import (
+        AttentionCache,
+        AttentionCacheDict,
+        CrossAttentionBlock,
+        SelfAttentionBlock,
+        Transformer,
+        TransformerBlock,
+        TransformerCache,
+        TransformerStack,
+    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -411,12 +431,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         rotation_matrix_to_rotation6d,
     )
     from xax.nn.losses import cross_entropy
-    from xax.nn.metrics import (
-        NormType,
-        cast_norm_type,
-        dynamic_time_warping,
-        get_norm,
-    )
+    from xax.nn.metrics import NormType, cast_norm_type, dynamic_time_warping, get_norm
     from xax.nn.parallel import is_master
     from xax.nn.ssm import SSM, BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType

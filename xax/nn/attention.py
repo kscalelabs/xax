@@ -1,12 +1,125 @@
-"""Attention mechanisms for transformer models."""
+"""Attention mechanisms for transformer models.
 
-from typing import Literal, cast, overload
+This module implements standard attention mechanisms for transformers, but
+supporting a fixed-size context window and caching that can be used to train
+transformers which can be unrolled with a fixed-length cache.
+"""
+
+from typing import NotRequired, TypedDict
 
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
+
+
+class RotaryEmbedding(eqx.Module):
+    """Rotary Position Embedding (RoPE) for transformer attention.
+
+    This implements the rotary position embedding as described in:
+    "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    https://arxiv.org/abs/2104.09864
+    """
+
+    head_dim: int = eqx.static_field()
+    base: float = eqx.static_field()
+
+    def __init__(
+        self,
+        head_dim: int,
+        base: float = 10000.0,
+    ) -> None:
+        """Initialize rotary embedding.
+
+        Args:
+            head_dim: Dimension of each attention head
+            base: Base for the frequency computation
+        """
+        self.head_dim = head_dim
+        self.base = base
+
+    def _get_rotary_embeddings(self, positions: Array, dtype: jnp.dtype) -> tuple[Array, Array]:
+        """Get rotary embeddings for a given sequence length.
+
+        Args:
+            positions: Positions of the sequence
+            dtype: Data type for the embeddings
+
+        Returns:
+            Tuple of (cos_embeddings, sin_embeddings) of shape (seq_len, head_dim//2)
+        """
+        # Create frequency bands
+        dim = self.head_dim // 2
+        freqs = jnp.exp(-jnp.arange(0, dim, dtype=dtype) * jnp.log(self.base) / dim)
+
+        # Compute angles
+        angles = positions[:, None] * freqs[None, :]  # (seq_len, dim)
+
+        # Compute cos and sin embeddings
+        cos_embeddings = jnp.cos(angles)
+        sin_embeddings = jnp.sin(angles)
+
+        return cos_embeddings, sin_embeddings
+
+    def apply_rotary_embeddings(
+        self,
+        x: Array,
+        positions: Array | None = None,
+    ) -> Array:
+        """Apply rotary embeddings to input tensor.
+
+        Args:
+            x: Input tensor of shape (seq_len, num_heads, head_dim)
+            positions: Optional position indices of shape (seq_len,)
+                If None, uses sequential positions starting from 0
+
+        Returns:
+            Tensor with rotary embeddings applied, same shape as input
+        """
+        seq_len, _, head_dim = x.shape
+        assert head_dim == self.head_dim, f"Expected head_dim {self.head_dim}, got {head_dim}"
+
+        # Get rotary embeddings
+        if positions is None:
+            positions = jnp.arange(seq_len, dtype=x.dtype)
+        cos_emb, sin_emb = self._get_rotary_embeddings(positions, x.dtype)
+
+        # Reshape to (seq_len, 1, head_dim//2) for broadcasting
+        cos_emb = cos_emb[:, None, :]  # (seq_len, 1, head_dim//2)
+        sin_emb = sin_emb[:, None, :]  # (seq_len, 1, head_dim//2)
+
+        # Split input into even and odd dimensions
+        x_even = x[..., ::2]  # (seq_len, num_heads, head_dim//2)
+        x_odd = x[..., 1::2]  # (seq_len, num_heads, head_dim//2)
+
+        # Apply rotation
+        rotated_even = x_even * cos_emb - x_odd * sin_emb
+        rotated_odd = x_even * sin_emb + x_odd * cos_emb
+
+        # Interleave back together
+        result = jnp.zeros_like(x)
+        result = result.at[..., ::2].set(rotated_even)
+        result = result.at[..., 1::2].set(rotated_odd)
+
+        return result
+
+
+class AttentionCache(TypedDict):
+    k: Array
+    v: Array
+    position: int  # Position counter for rotary embeddings
+
+
+class AttentionCacheDict(TypedDict):
+    self_attn: AttentionCache
+    cross_attn: NotRequired[AttentionCache]
+
+
+class TransformerCache(TypedDict):
+    """Cache for the entire transformer stack."""
+
+    layers: dict[str, AttentionCacheDict]
 
 
 class SelfAttentionBlock(eqx.Module):
@@ -16,9 +129,11 @@ class SelfAttentionBlock(eqx.Module):
     k_proj: eqx.nn.Linear
     v_proj: eqx.nn.Linear
     output_proj: eqx.nn.Linear
+    rotary_emb: RotaryEmbedding | None
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
     causal: bool = eqx.static_field()
+    context_length: int | None = eqx.static_field()
 
     def __init__(
         self,
@@ -27,7 +142,13 @@ class SelfAttentionBlock(eqx.Module):
         *,
         key: PRNGKeyArray,
         causal: bool = False,
+        context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
+        if context_length is not None:
+            assert context_length > 1, "context_length must be at least 2"
+
         keys = jax.random.split(key, 4)
 
         self.num_heads = num_heads
@@ -39,7 +160,21 @@ class SelfAttentionBlock(eqx.Module):
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
 
+        # Initialize rotary embeddings if requested
+        if use_rotary_embeddings:
+            self.rotary_emb = RotaryEmbedding(
+                head_dim=self.head_dim,
+                base=rotary_base,
+            )
+        else:
+            self.rotary_emb = None
+
         self.causal = causal
+        self.context_length = context_length
+
+    @property
+    def embed_dim(self) -> int:
+        return self.head_dim * self.num_heads
 
     def _reshape_for_multihead(self, x: Array) -> Array:
         """Reshape from (seq_len, embed_dim) to (seq_len, num_heads, head_dim)."""
@@ -48,58 +183,91 @@ class SelfAttentionBlock(eqx.Module):
 
     def _combine_heads(self, x: Array) -> Array:
         """Reshape from (seq_len, num_heads, head_dim) to (seq_len, embed_dim)."""
-        seq_len, _, _ = x.shape
-        return x.reshape(seq_len, -1)
+        _, n, h = x.shape
+        return x.reshape(-1, n * h)
 
-    def __call__(
-        self,
-        x: Array,
-        *,
-        key: PRNGKeyArray | None = None,
-        mask: Array | None = None,
-        cache: dict[str, Array] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, Array]]:
-        """Apply self-attention to the input.
+    def init_cache(self, dtype: jnp.dtype | None = None) -> AttentionCache:
+        """Initialize cache for the input.
 
         Args:
-            x: Input tensor of shape (seq_len, embed_dim)
-            key: PRNGKey for dropout randomness
-            mask: Optional mask tensor of shape (seq_len, seq_len) or broadcastable
-            cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
+            dtype: The dtype of the cache
 
         Returns:
-            If update_cache is False: Output tensor of shape (seq_len, embed_dim)
-            If update_cache is True: Tuple of (output tensor, updated cache)
+            Cache with fixed-length k and v tensors
         """
-        chex.assert_rank(x, 2)
+        if self.context_length is None:
+            raise ValueError("context_length must be set for caching")
+
+        # Create fixed-length cache
+        k_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
+        v_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
+
+        return {"k": k_cache, "v": v_cache, "position": 0}
+
+    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
+        in_dim, out_dim = seq_len, seq_len
+        if with_cache:
+            if self.context_length is None:
+                raise ValueError("context_length must be set for caching")
+            in_dim = in_dim + self.context_length - 1
+
+        mask = jnp.tril(jnp.ones((in_dim, out_dim)))
+        if self.context_length is not None:
+            neg_mask = 1 - jnp.tril(jnp.ones((in_dim, out_dim)), -self.context_length)
+            mask = mask * neg_mask
+
+        return mask.astype(jnp.bool_).transpose()
+
+    def forward(
+        self,
+        x_tn: Array,
+        *,
+        mask: Array | None = None,
+        cache: AttentionCache | None = None,
+    ) -> tuple[Array, AttentionCache]:
+        """Apply self-attention.
+
+        Args:
+            x_tn: Input tensor of shape (seq_len, embed_dim)
+            mask: Optional mask tensor
+            cache: The cached key and value tensors (fixed-length)
+
+        Returns:
+            The output tensor of shape (seq_len, embed_dim) and updated cache
+        """
+        chex.assert_rank(x_tn, 2)
 
         # Project inputs to queries, keys, and values
-        q = jax.vmap(self.q_proj)(x)
-
-        # Use cached key/value if provided and not updating cache
-        if cache is not None and not update_cache:
-            k = cache["k"]
-            v = cache["v"]
-        else:
-            k = jax.vmap(self.k_proj)(x)
-            v = jax.vmap(self.v_proj)(x)
-
-            # Update cache if needed
-            if update_cache:
-                if cache is None:
-                    cache = {}
-                cache = {"k": k, "v": v}
+        q = jax.vmap(self.q_proj)(x_tn)
+        k = jax.vmap(self.k_proj)(x_tn)
+        v = jax.vmap(self.v_proj)(x_tn)
 
         # Reshape to multihead format
         q = self._reshape_for_multihead(q)
         k = self._reshape_for_multihead(k)
         v = self._reshape_for_multihead(v)
 
-        # Apply dot product attention.
-        # Note that Apple Silicon struggles with this:
-        # https://github.com/jax-ml/jax/issues/20114
+        seq_len = q.shape[0]
+        if self.rotary_emb is not None:
+            # Determine position indices for rotary embeddings
+            if cache is not None:
+                start_pos = cache["position"]
+            else:
+                start_pos = 0
+            positions = jnp.arange(seq_len) + start_pos
+            q = self.rotary_emb.apply_rotary_embeddings(q, positions=positions)
+            k = self.rotary_emb.apply_rotary_embeddings(k, positions=positions)
+
+        if cache is not None:
+            k_cache = cache["k"]
+            v_cache = cache["v"]
+            k = jnp.concatenate([k_cache, k], axis=0)
+            v = jnp.concatenate([v_cache, v], axis=0)
+            new_position = cache["position"] + seq_len
+
+        else:
+            new_position = seq_len
+
         attn_output = jax.nn.dot_product_attention(
             q,
             k,
@@ -108,15 +276,14 @@ class SelfAttentionBlock(eqx.Module):
             is_causal=self.causal and mask is None,
         )
 
-        # Combine heads
         attn_output = self._combine_heads(attn_output)
-
-        # Final projection
         output = jax.vmap(self.output_proj)(attn_output)
 
-        if update_cache:
-            return output, cast(dict[str, Array], cache)
-        return output
+        if self.context_length is not None:
+            k = k[-(self.context_length - 1) :]
+            v = v[-(self.context_length - 1) :]
+
+        return output, {"k": k, "v": v, "position": new_position}
 
 
 class CrossAttentionBlock(eqx.Module):
@@ -126,6 +293,7 @@ class CrossAttentionBlock(eqx.Module):
     k_proj: eqx.nn.Linear
     v_proj: eqx.nn.Linear
     output_proj: eqx.nn.Linear
+    rotary_emb: RotaryEmbedding | None
     num_heads: int = eqx.static_field()
     head_dim: int = eqx.static_field()
 
@@ -135,6 +303,8 @@ class CrossAttentionBlock(eqx.Module):
         num_heads: int,
         *,
         key: PRNGKeyArray,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
         keys = jax.random.split(key, 4)
 
@@ -147,6 +317,15 @@ class CrossAttentionBlock(eqx.Module):
         self.v_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[2])
         self.output_proj = eqx.nn.Linear(embed_dim, embed_dim, key=keys[3])
 
+        # Initialize rotary embeddings if requested
+        if use_rotary_embeddings:
+            self.rotary_emb = RotaryEmbedding(
+                head_dim=self.head_dim,
+                base=rotary_base,
+            )
+        else:
+            self.rotary_emb = None
+
     def _reshape_for_multihead(self, x: Array) -> Array:
         """Reshape from (seq_len, embed_dim) to (seq_len, num_heads, head_dim)."""
         seq_len, _ = x.shape
@@ -157,59 +336,73 @@ class CrossAttentionBlock(eqx.Module):
         seq_len, _, _ = x.shape
         return x.reshape(seq_len, -1)
 
-    def __call__(
+    def init_cache(self, kv_sn: Array) -> AttentionCache:
+        """Initialize cache for the input."""
+        chex.assert_rank(kv_sn, 2)
+        k = jax.vmap(self.k_proj)(kv_sn)
+        v = jax.vmap(self.v_proj)(kv_sn)
+        # Reshape to multihead format
+        k = self._reshape_for_multihead(k)
+        v = self._reshape_for_multihead(v)
+        return {"k": k, "v": v, "position": 0}
+
+    def forward(
         self,
-        q_input: Array,
-        kv_input: Array,
+        q_tn: Array,
         *,
-        key: PRNGKeyArray | None = None,
+        kv_sn: Array | None = None,
+        cache: AttentionCache | None = None,
         mask: Array | None = None,
-        cache: dict[str, Array] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, Array]]:
+    ) -> tuple[Array, AttentionCache]:
         """Apply cross-attention.
 
         Args:
-            q_input: Query input tensor of shape (q_seq_len, embed_dim)
-            kv_input: Key/value input tensor of shape (kv_seq_len, embed_dim)
-            key: PRNGKey for dropout randomness
+            q_tn: Query input tensor of shape (q_seq_len, embed_dim)
+            kv_sn: Key/value input tensor of shape (kv_seq_len, embed_dim).
+                If not provided, then `cache` must be provided.
+            cache: The cached key and value tensors. If not provided, then
+                `kv_sn` must be provided.
             mask: Optional mask tensor
-            cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
 
         Returns:
-            If update_cache is False: Output tensor of shape (q_seq_len, embed_dim)
-            If update_cache is True: Tuple of (output tensor, updated cache)
+            The output tensor of shape (q_seq_len, embed_dim)
         """
-        chex.assert_rank(q_input, 2)
-        chex.assert_rank(kv_input, 2)
+        chex.assert_rank(q_tn, 2)
 
         # Project inputs to queries, keys, and values
-        q = jax.vmap(self.q_proj)(q_input)
+        q = jax.vmap(self.q_proj)(q_tn)
+        q = self._reshape_for_multihead(q)
+        q_seq_len = q.shape[0]
 
-        # Use cached key/value if provided and not updating cache
-        if cache is not None and not update_cache:
+        # Use cached key/value if provided
+        if cache is not None:
             k = cache["k"]
             v = cache["v"]
+            q_position = cache["position"]
+        elif kv_sn is not None:
+            chex.assert_rank(kv_sn, 2)
+            k = jax.vmap(self.k_proj)(kv_sn)
+            v = jax.vmap(self.v_proj)(kv_sn)
+            k = self._reshape_for_multihead(k)
+            v = self._reshape_for_multihead(v)
+            q_position = 0
         else:
-            k = jax.vmap(self.k_proj)(kv_input)
-            v = jax.vmap(self.v_proj)(kv_input)
+            raise ValueError("Either `cache` or `kv_sn` must be provided.")
 
-            # Update cache if needed
-            if update_cache:
-                if cache is None:
-                    cache = {}
-                cache = {"k": k, "v": v}
-
-        # Reshape to multihead format
-        q = self._reshape_for_multihead(q)
-        k = self._reshape_for_multihead(k)
-        v = self._reshape_for_multihead(v)
+        # Apply rotary embeddings to queries and keys if enabled
+        if self.rotary_emb is None:
+            q_rot = q
+            k_rot = k
+        else:
+            q_positions = jnp.arange(q_seq_len) + q_position
+            k_positions = jnp.arange(k.shape[0])
+            q_rot = self.rotary_emb.apply_rotary_embeddings(q, positions=q_positions)
+            k_rot = self.rotary_emb.apply_rotary_embeddings(k, positions=k_positions)
 
         # Apply dot product attention
         attn_output = jax.nn.dot_product_attention(
-            q,
-            k,
+            q_rot,
+            k_rot,
             v,
             mask=mask,
             is_causal=False,
@@ -221,9 +414,7 @@ class CrossAttentionBlock(eqx.Module):
         # Final projection
         output = jax.vmap(self.output_proj)(attn_output)
 
-        if update_cache:
-            return output, cast(dict[str, Array], cache)
-        return output
+        return output, {"k": k, "v": v, "position": q_position + q_seq_len}
 
 
 class TransformerBlock(eqx.Module):
@@ -233,6 +424,10 @@ class TransformerBlock(eqx.Module):
     layer_norm1: eqx.nn.LayerNorm
     layer_norm2: eqx.nn.LayerNorm
     layer_norm3: eqx.nn.LayerNorm | None
+    num_heads: int = eqx.static_field()
+    head_dim: int = eqx.static_field()
+    causal: bool = eqx.static_field()
+    context_length: int | None = eqx.static_field()
 
     def __init__(
         self,
@@ -243,14 +438,20 @@ class TransformerBlock(eqx.Module):
         key: PRNGKeyArray,
         causal: bool = False,
         cross_attention: bool = False,
+        context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
-        keys = jax.random.split(key, 4)
+        keys = jax.random.split(key, 3)
 
         self.self_attn = SelfAttentionBlock(
             embed_dim=embed_dim,
             num_heads=num_heads,
             key=keys[0],
             causal=causal,
+            context_length=context_length,
+            use_rotary_embeddings=use_rotary_embeddings,
+            rotary_base=rotary_base,
         )
 
         if cross_attention:
@@ -258,8 +459,11 @@ class TransformerBlock(eqx.Module):
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 key=keys[1],
+                use_rotary_embeddings=use_rotary_embeddings,
+                rotary_base=rotary_base,
             )
             self.layer_norm3 = eqx.nn.LayerNorm(embed_dim)
+
         else:
             self.cross_attn = None
             self.layer_norm3 = None
@@ -276,118 +480,189 @@ class TransformerBlock(eqx.Module):
             key=keys[2],
         )
 
-    @overload
-    def __call__(
-        self,
-        x: Array,
-        *,
-        context: Array | None = None,
-        self_mask: Array | None = None,
-        cross_mask: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, Array]] | None = None,
-        update_cache: Literal[True],
-    ) -> tuple[Array, dict[str, dict[str, Array]]]: ...
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.causal = causal
+        self.context_length = context_length
 
-    @overload
-    def __call__(
-        self,
-        x: Array,
-        *,
-        context: Array | None = None,
-        self_mask: Array | None = None,
-        cross_mask: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, Array]] | None = None,
-        update_cache: Literal[False] = False,
-    ) -> Array: ...
+    @property
+    def embed_dim(self) -> int:
+        return self.head_dim * self.num_heads
 
-    def __call__(
+    def init_cache(self, dtype: jnp.dtype | None = None, context_sn: Array | None = None) -> AttentionCacheDict:
+        """Initialize cache for the input."""
+        if dtype is None and context_sn is not None:
+            dtype = context_sn.dtype
+        cache: AttentionCacheDict = {"self_attn": self.self_attn.init_cache(dtype=dtype)}
+        if self.cross_attn is not None:
+            if context_sn is None:
+                raise ValueError("x_tn must be provided if cross_attn is not None")
+            cache["cross_attn"] = self.cross_attn.init_cache(kv_sn=context_sn)
+        return cache
+
+    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
+        return self.self_attn.init_mask(seq_len, with_cache=with_cache)
+
+    def forward(
         self,
-        x: Array,
+        x_tn: Array,
         *,
-        context: Array | None = None,
+        context_sn: Array | None = None,
         self_mask: Array | None = None,
         cross_mask: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, Array]] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, dict[str, Array]]]:
+        cache: AttentionCacheDict | None = None,
+    ) -> tuple[Array, AttentionCacheDict]:
         """Apply transformer block.
 
         Args:
-            x: Input tensor
-            context: Optional context for cross-attention
+            x_tn: Input tensor of shape (seq_len, embed_dim)
+            context_sn: Optional context for cross-attention
             self_mask: Mask for self-attention
             cross_mask: Mask for cross-attention
-            key: Optional PRNG key for dropout
             cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
 
         Returns:
-            If update_cache is False: Output tensor
-            If update_cache is True: Tuple of (output tensor, updated cache)
+            The output tensor and the updated cache
         """
-        chex.assert_rank(x, 2)
-        if key is not None:
-            key1, key2 = jax.random.split(key)
-        else:
-            key1 = key2 = None
-
-        # Initialize cache if needed
-        updated_cache = {}
-        if cache is None:
-            cache = {}
+        chex.assert_rank(x_tn, 2)
 
         # Self-attention block with pre-norm
-        norm_x = jax.vmap(self.layer_norm1)(x)
+        norm_x = jax.vmap(self.layer_norm1)(x_tn)
 
-        self_attn_cache = cache.get("self_attn")
-        if update_cache:
-            attn_output, self_attn_cache = self.self_attn(
-                norm_x, key=key1, mask=self_mask, cache=self_attn_cache, update_cache=True
-            )
-            updated_cache["self_attn"] = self_attn_cache
-        else:
-            attn_output = self.self_attn(norm_x, key=key1, mask=self_mask, cache=self_attn_cache)
+        attn_output, self_attn_cache = self.self_attn.forward(
+            x_tn=norm_x,
+            mask=self_mask,
+            cache=None if cache is None else cache["self_attn"],
+        )
+        updated_cache: AttentionCacheDict = {"self_attn": self_attn_cache}
 
-        x = x + attn_output
+        x_tn = x_tn + attn_output
 
         # Cross-attention block (if enabled) with pre-norm
-        if self.cross_attn is not None and context is not None:
+        if self.cross_attn is not None:
             assert self.layer_norm3 is not None
 
-            norm_x = jax.vmap(self.layer_norm3)(x)
-            cross_attn_cache = cache.get("cross_attn")
+            norm_x = jax.vmap(self.layer_norm3)(x_tn)
 
-            if update_cache:
-                cross_attn_output, cross_attn_cache = self.cross_attn(
-                    norm_x, context, key=key2, mask=cross_mask, cache=cross_attn_cache, update_cache=True
-                )
-                updated_cache["cross_attn"] = cross_attn_cache
-            else:
-                cross_attn_output = self.cross_attn(norm_x, context, key=key2, mask=cross_mask, cache=cross_attn_cache)
+            cross_attn_output, updated_cache["cross_attn"] = self.cross_attn.forward(
+                q_tn=norm_x,
+                kv_sn=context_sn,
+                mask=cross_mask,
+                cache=None if cache is None else cache.get("cross_attn"),
+            )
 
-            x = x + cross_attn_output
+            x_tn = x_tn + cross_attn_output
 
         # Feed-forward block with pre-norm
-        norm_x = jax.vmap(self.layer_norm2)(x)
+        norm_x = jax.vmap(self.layer_norm2)(x_tn)
         ff_output = jax.vmap(self.feed_forward)(norm_x)
-        x = x + ff_output
+        x_tn = x_tn + ff_output
 
-        if update_cache:
-            return x, updated_cache
-        return x
+        return x_tn, updated_cache
+
+
+class TransformerStack(eqx.Module):
+    """A stack of transformer blocks."""
+
+    layers: list[TransformerBlock]
+    num_layers: int = eqx.static_field()
+    causal: bool = eqx.static_field()
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        ff_dim: int,
+        num_layers: int,
+        *,
+        key: PRNGKeyArray,
+        causal: bool = False,
+        cross_attention: bool = False,
+        context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
+    ) -> None:
+        keys = jax.random.split(key, num_layers)
+
+        self.layers = [
+            TransformerBlock(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                ff_dim=ff_dim,
+                key=keys[i],
+                causal=causal,
+                cross_attention=cross_attention,
+                context_length=context_length,
+                use_rotary_embeddings=use_rotary_embeddings,
+                rotary_base=rotary_base,
+            )
+            for i in range(num_layers)
+        ]
+
+        self.num_layers = num_layers
+        self.causal = causal
+
+    def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> TransformerCache:
+        """Initialize cache for the input."""
+        cache = {}
+        for i, layer in enumerate(self.layers):
+            cache[f"layer_{i}"] = layer.init_cache(dtype=dtype, context_sn=x_tn)
+        return {"layers": cache}
+
+    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
+        return self.layers[0].init_mask(seq_len, with_cache=with_cache)
+
+    def forward(
+        self,
+        x_tn: Array,
+        *,
+        context_sn: Array | None = None,
+        self_mask: Array | None = None,
+        cross_mask: Array | None = None,
+        cache: TransformerCache | None = None,
+    ) -> tuple[Array, TransformerCache]:
+        """Apply transformer stack.
+
+        Args:
+            x_tn: Input tensor of shape (seq_len, embed_dim)
+            context_sn: Optional context for cross-attention
+            self_mask: Mask for self-attention
+            cross_mask: Mask for cross-attention
+            cache: Optional dictionary containing cached key and value tensors
+
+        Returns:
+            The output tensor and the updated cache
+        """
+        # Initialize layer caches
+        if cache is None:
+            cache = {"layers": {}}
+
+        # Updated cache will be built
+        updated_cache: TransformerCache = {"layers": {}}
+
+        # Apply transformer layers
+        for i, layer in enumerate(self.layers):
+            layer_cache = cache["layers"].get(f"layer_{i}")
+
+            x_tn, updated_cache["layers"][f"layer_{i}"] = layer.forward(
+                x_tn,
+                context_sn=context_sn,
+                self_mask=self_mask,
+                cross_mask=cross_mask,
+                cache=layer_cache,
+            )
+
+        return x_tn, updated_cache
 
 
 class Transformer(eqx.Module):
     token_embedding: eqx.nn.Embedding
-    position_embedding: eqx.nn.Embedding | None
-    layers: list[TransformerBlock]
+    layers: TransformerStack
     output_layer: eqx.nn.Linear | None
     layer_norm: eqx.nn.LayerNorm
-    max_seq_len: int = eqx.static_field()
     embed_dim: int = eqx.static_field()
+    causal: bool = eqx.static_field()
+    context_length: int | None = eqx.static_field()
 
     def __init__(
         self,
@@ -396,270 +671,159 @@ class Transformer(eqx.Module):
         num_heads: int,
         ff_dim: int,
         num_layers: int,
-        max_seq_len: int,
         output_size: int | None = None,
         *,
         key: PRNGKeyArray,
         causal: bool = False,
         cross_attention: bool = False,
-        use_absolute_position: bool = True,
+        context_length: int | None = None,
+        use_rotary_embeddings: bool = False,
+        rotary_base: float = 10000.0,
     ) -> None:
-        keys = jax.random.split(key, num_layers + 3)
+        # Calculate number of keys needed
+        num_keys = 3 if output_size is None else 4
+        keys = jax.random.split(key, num_keys)
 
         self.token_embedding = eqx.nn.Embedding(vocab_size, embed_dim, key=keys[0])
 
-        # Position embeddings can be disabled
-        if use_absolute_position:
-            self.position_embedding = eqx.nn.Embedding(max_seq_len, embed_dim, key=keys[1])
-        else:
-            self.position_embedding = None
-
-        self.layers = [
-            TransformerBlock(
-                embed_dim=embed_dim,
-                num_heads=num_heads,
-                ff_dim=ff_dim,
-                key=keys[i + 2],
-                causal=causal,
-                cross_attention=cross_attention,
-            )
-            for i in range(num_layers)
-        ]
+        self.layers = TransformerStack(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            ff_dim=ff_dim,
+            num_layers=num_layers,
+            key=keys[2],
+            causal=causal,
+            cross_attention=cross_attention,
+            context_length=context_length,
+            use_rotary_embeddings=use_rotary_embeddings,
+            rotary_base=rotary_base,
+        )
 
         self.layer_norm = eqx.nn.LayerNorm(embed_dim)
-
         if output_size is not None:
-            self.output_layer = eqx.nn.Linear(embed_dim, output_size, key=keys[-1])
+            self.output_layer = eqx.nn.Linear(embed_dim, output_size, key=keys[3])
         else:
             self.output_layer = None
 
-        self.max_seq_len = max_seq_len
         self.embed_dim = embed_dim
+        self.causal = causal
+        self.context_length = context_length
 
-    def _add_positional_embedding(self, x_embedded: Array, positions: Array | None = None) -> Array:
-        """Add positional embeddings to the token embeddings."""
-        if self.position_embedding is None:
-            return x_embedded
+    def init_cache(self, dtype: jnp.dtype | None = None, x_tn: Array | None = None) -> TransformerCache:
+        """Initialize cache for the input."""
+        return self.layers.init_cache(dtype=dtype, x_tn=x_tn)
 
-        seq_len, _ = x_embedded.shape
-
-        if positions is None:
-            positions = jnp.arange(seq_len)
-        pos_embedded = jax.vmap(self.position_embedding)(positions)
-
-        return x_embedded + pos_embedded
+    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
+        return self.layers.init_mask(seq_len, with_cache=with_cache)
 
     def encode(
         self,
         x: Array,
+        *,
         mask: Array | None = None,
-        positions: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, dict[str, dict[str, Array]]]]:
+        cache: TransformerCache | None = None,
+    ) -> tuple[Array, TransformerCache]:
         """Encode the input sequence.
 
         Args:
             x: Input token indices of shape (seq_len)
             mask: Optional attention mask
-            positions: Optional positions
-            key: Optional PRNG key for dropout
             cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
 
         Returns:
-            If update_cache is False: Encoded representation
-            If update_cache is True: Tuple of (encoded representation, updated cache)
+            The encoded representation and the updated cache
         """
         # Token embedding
         x_embedded = jax.vmap(self.token_embedding)(x)
 
-        # Add positional embedding
-        x_embedded = self._add_positional_embedding(x_embedded, positions)
-
-        # Initialize layer caches
-        if cache is None and update_cache:
-            cache = {f"layer_{i}": {} for i in range(len(self.layers))}
-
-        # Updated cache will be built if needed
-        updated_cache = {}
-
-        # Apply transformer layers
-        keys: Array | list[None] = [None] * len(self.layers)
-        if key is not None:
-            keys = jax.random.split(key, len(self.layers))
-
-        for i, (layer, layer_key) in enumerate(zip(self.layers, keys, strict=False)):
-            layer_cache = None if cache is None else cache.get(f"layer_{i}")
-
-            if update_cache:
-                x_embedded, layer_updated_cache = layer.__call__(
-                    x_embedded,
-                    self_mask=mask,
-                    key=layer_key,
-                    cache=layer_cache,
-                    update_cache=True,
-                )
-                updated_cache[f"layer_{i}"] = layer_updated_cache
-            else:
-                x_embedded = layer.__call__(
-                    x_embedded,
-                    self_mask=mask,
-                    key=layer_key,
-                    cache=layer_cache,
-                )
+        # Apply transformer stack
+        x_embedded, updated_cache = self.layers.forward(
+            x_embedded,
+            self_mask=mask,
+            cache=cache,
+        )
 
         # Apply final layer norm
         output = jax.vmap(self.layer_norm)(x_embedded)
 
-        if update_cache:
-            return output, updated_cache
-        return output
+        return output, updated_cache
 
     def decode(
         self,
-        x: Array,
-        context: Array,
+        x_t: Array,
+        context_s: Array,
+        *,
         self_mask: Array | None = None,
         cross_mask: Array | None = None,
-        positions: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, dict[str, dict[str, Array]]]]:
+        cache: TransformerCache | None = None,
+    ) -> tuple[Array, TransformerCache]:
         """Decode with self-attention and cross-attention.
 
         Args:
-            x: Input token indices
-            context: Context from encoder
-            self_mask: Optional self-attention mask
-            cross_mask: Optional cross-attention mask
-            positions: Optional positions
-            key: Optional PRNG key for dropout
+            x_t: Input token indices, shape (seq_len)
+            context_s: Context from encoder (token indices or embedded),
+                shape (context_len, embed_dim)
+            self_mask: Optional self-attention mask, shape (seq_len, seq_len)
+            cross_mask: Optional cross-attention mask, shape (seq_len, context_len)
             cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
 
         Returns:
-            If update_cache is False: Decoded representation
-            If update_cache is True: Tuple of (decoded representation, updated cache)
+            The decoded representation and the updated cache
         """
-        # Token embedding
-        x_embedded = jax.vmap(lambda x_seq: jax.vmap(self.token_embedding)(x_seq))(x)
+        # Token embedding for x
+        x_embedded = jax.vmap(self.token_embedding)(x_t)
 
-        # Add positional embedding
-        x_embedded = self._add_positional_embedding(x_embedded, positions)
+        # Token embedding for context if needed
+        context_embedded = jax.vmap(self.token_embedding)(context_s)
 
-        # Initialize layer caches
-        if cache is None and update_cache:
-            cache = {f"layer_{i}": {} for i in range(len(self.layers))}
-
-        # Updated cache will be built if needed
-        updated_cache = {}
-
-        # Apply transformer layers with cross-attention
-        keys: Array | list[None] = [None] * len(self.layers)
-        if key is not None:
-            keys = jax.random.split(key, len(self.layers))
-
-        for i, (layer, layer_key) in enumerate(zip(self.layers, keys, strict=False)):
-            layer_cache = None if cache is None else cache.get(f"layer_{i}")
-
-            if update_cache:
-                x_embedded, layer_updated_cache = layer.__call__(
-                    x_embedded,
-                    context=context,
-                    self_mask=self_mask,
-                    cross_mask=cross_mask,
-                    key=layer_key,
-                    cache=layer_cache,
-                    update_cache=True,
-                )
-                updated_cache[f"layer_{i}"] = layer_updated_cache
-            else:
-                x_embedded = layer(
-                    x_embedded,
-                    context=context,
-                    self_mask=self_mask,
-                    cross_mask=cross_mask,
-                    key=layer_key,
-                    cache=layer_cache,
-                )
+        # Apply transformer stack with cross-attention
+        x_embedded, updated_cache = self.layers.forward(
+            x_embedded,
+            context_sn=context_embedded,
+            self_mask=self_mask,
+            cross_mask=cross_mask,
+            cache=cache,
+        )
 
         # Apply final layer norm
         output = jax.vmap(self.layer_norm)(x_embedded)
 
-        if update_cache:
-            return output, updated_cache
-        return output
+        return output, updated_cache
 
-    @overload
-    def __call__(
+    def forward(
         self,
         x: Array,
         *,
         mask: Array | None = None,
-        positions: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
-        update_cache: Literal[True],
-    ) -> tuple[Array, dict[str, dict[str, dict[str, Array]]]]: ...
-
-    @overload
-    def __call__(
-        self,
-        x: Array,
-        *,
-        mask: Array | None = None,
-        positions: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
-        update_cache: Literal[False] = False,
-    ) -> Array: ...
-
-    def __call__(
-        self,
-        x: Array,
-        *,
-        mask: Array | None = None,
-        positions: Array | None = None,
-        key: PRNGKeyArray | None = None,
-        cache: dict[str, dict[str, dict[str, Array]]] | None = None,
-        update_cache: bool = False,
-    ) -> Array | tuple[Array, dict[str, dict[str, dict[str, Array]]]]:
+        cache: TransformerCache | None = None,
+    ) -> tuple[Array, TransformerCache]:
         """Forward pass for encoder-only or decoder-only transformers.
 
         Args:
             x: Input token indices of shape (seq_len)
             mask: Optional attention mask
-            positions: Optional positions
-            key: Optional PRNG key for dropout
             cache: Optional dictionary containing cached key and value tensors
-            update_cache: Whether to update the cache and return it
 
         Returns:
-            If update_cache is False: Output representation
-            If update_cache is True: Tuple of (output representation, updated cache)
+            The output representation and the updated cache
         """
         chex.assert_rank(x, 1)
 
-        if update_cache:
-            output, updated_cache = self.encode(
-                x, mask=mask, positions=positions, key=key, cache=cache, update_cache=True
-            )
-        else:
-            output = self.encode(x, mask=mask, positions=positions, key=key, cache=cache)
+        output, updated_cache = self.encode(
+            x,
+            mask=mask,
+            cache=cache,
+        )
 
         # Apply output layer if it exists
         if self.output_layer is not None:
             output = jax.vmap(self.output_layer)(output)
 
-        if update_cache:
-            return output, updated_cache
-        return output
+        return output, updated_cache
 
     def predict_sequence(self, x_seq: Array) -> Array:
-        return self(x=x_seq)
+        output, _ = self.forward(x=x_seq)
+        return output
 
     def generate_sequence(
         self,
@@ -685,54 +849,40 @@ class Transformer(eqx.Module):
             key = jax.random.PRNGKey(0)
 
         prompt_len = prompt_seq.shape[0]
-        sequence = prompt_seq
 
-        # Create causal mask for generation
-        causal_mask = jnp.tril(jnp.ones((self.max_seq_len, self.max_seq_len), dtype=jnp.bool_))
+        total_len = prompt_len + max_len
+        output_seq = jnp.zeros(total_len, dtype=prompt_seq.dtype)
+        output_seq = output_seq.at[:prompt_len].set(prompt_seq)
 
-        # Initialize cache with the prompt
-        _, cache = self(x=prompt_seq, mask=causal_mask[:prompt_len, :prompt_len], update_cache=True)
+        # Initialize cache with prompt
+        cache = self.init_cache()
+        _, cache = self.encode(prompt_seq, cache=cache)
 
-        # Define decode step function (for clarity)
-        def decode_step(seq: Array, pos: int, cur_cache: dict, rng: PRNGKeyArray) -> tuple[Array, dict, PRNGKeyArray]:
-            # Get the next position and last token
-            pos_tensor = jnp.array([pos])
-            last_token = seq[-1:]
+        # Define scan function for autoregressive generation
+        def scan_fn(
+            carry: tuple[Array, int, TransformerCache, PRNGKeyArray],
+            _: None,
+        ) -> tuple[tuple[Array, int, TransformerCache, PRNGKeyArray], Array]:
+            output_seq, pos, cache, rng = carry
+            current_token = jax.lax.dynamic_slice(output_seq, (pos,), (1,))
 
-            # Get logits for next token
-            rng, subrng = jax.random.split(rng)
-            logits, new_cache = self(
-                x=last_token,
-                positions=pos_tensor,
-                key=subrng,
-                cache=cur_cache,
-                update_cache=True,
+            # Forward pass with cache update
+            logits, new_cache = self.forward(
+                x=current_token,
+                cache=cache,
             )
 
-            # Extract final logits and apply temperature
             logits = logits[-1] / temperature
-
-            # Apply top-k sampling if specified
             if top_k is not None:
                 top_logits, top_indices = jax.lax.top_k(logits, top_k)
                 logits = jnp.full_like(logits, float("-inf"))
                 logits = logits.at[top_indices].set(top_logits)
-
-            # Sample next token
             rng, subrng = jax.random.split(rng)
             next_token = jax.random.categorical(subrng, logits[None, ...])[0]
+            new_output_seq = jax.lax.dynamic_update_slice(output_seq, next_token[None], (pos + 1,))
 
-            # Add token to sequence
-            new_seq = jnp.concatenate([seq, next_token[None]], axis=0)
-            return new_seq, new_cache, rng
+            return (new_output_seq, pos + 1, new_cache, rng), next_token
 
-        # Generate tokens one by one
-        for _ in range(max_len):
-            # Break if max sequence length reached
-            if sequence.shape[0] >= self.max_seq_len:
-                break
-
-            # Decode next token
-            sequence, cache, key = decode_step(seq=sequence, pos=sequence.shape[0] - 1, cur_cache=cache, rng=key)
-
-        return sequence
+        init_carry = (output_seq, prompt_len - 1, cache, key)
+        (final_seq, _, _, _), _ = jax.lax.scan(scan_fn, init_carry, length=max_len)
+        return final_seq
