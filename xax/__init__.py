@@ -23,10 +23,13 @@ __all__ = [
     "get_run_dir",
     "load_user_config",
     "State",
+    "AttentionCache",
+    "AttentionCacheDict",
     "CrossAttentionBlock",
     "SelfAttentionBlock",
     "Transformer",
     "TransformerBlock",
+    "TransformerCache",
     "TransformerStack",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
@@ -207,10 +210,13 @@ NAME_MAP: dict[str, str] = {
     "get_run_dir": "core.conf",
     "load_user_config": "core.conf",
     "State": "core.state",
+    "AttentionCache": "nn.attention",
+    "AttentionCacheDict": "nn.attention",
     "CrossAttentionBlock": "nn.attention",
     "SelfAttentionBlock": "nn.attention",
     "Transformer": "nn.attention",
     "TransformerBlock": "nn.attention",
+    "TransformerCache": "nn.attention",
     "TransformerStack": "nn.attention",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
@@ -388,10 +394,13 @@ if IMPORT_ALL or TYPE_CHECKING:
     )
     from xax.core.state import Phase, State
     from xax.nn.attention import (
+        AttentionCache,
+        AttentionCacheDict,
         CrossAttentionBlock,
         SelfAttentionBlock,
         Transformer,
         TransformerBlock,
+        TransformerCache,
         TransformerStack,
     )
     from xax.nn.embeddings import (
