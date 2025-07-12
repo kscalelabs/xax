@@ -225,9 +225,9 @@ class SSM(eqx.Module):
     vocab_embedding: eqx.nn.Embedding
     output_layer: eqx.nn.Linear
     blocks: list[BaseSSMBlock]
-    num_layers: int = eqx.static_field()
-    hidden_size: int = eqx.static_field()
-    skip_connections: bool = eqx.static_field()
+    num_layers: int = eqx.field(static=True)
+    hidden_size: int = eqx.field(static=True)
+    skip_connections: bool = eqx.field(static=True)
 
     def __init__(
         self,
