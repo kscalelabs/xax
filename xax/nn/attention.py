@@ -24,8 +24,8 @@ class RotaryEmbedding(eqx.Module):
     https://arxiv.org/abs/2104.09864
     """
 
-    head_dim: int = eqx.static_field()
-    base: float = eqx.static_field()
+    head_dim: int = eqx.field()
+    base: float = eqx.field()
 
     def __init__(
         self,
@@ -127,15 +127,15 @@ class TransformerCache(TypedDict):
 class SelfAttentionBlock(eqx.Module):
     """Self-attention block using jax.nn.dot_product_attention."""
 
-    q_proj: eqx.nn.Linear
-    k_proj: eqx.nn.Linear
-    v_proj: eqx.nn.Linear
-    output_proj: eqx.nn.Linear
-    rotary_emb: RotaryEmbedding | None
-    num_heads: int = eqx.static_field()
-    head_dim: int = eqx.static_field()
-    causal: bool = eqx.static_field()
-    context_length: int | None = eqx.static_field()
+    q_proj: eqx.nn.Linear = eqx.field()
+    k_proj: eqx.nn.Linear = eqx.field()
+    v_proj: eqx.nn.Linear = eqx.field()
+    output_proj: eqx.nn.Linear = eqx.field()
+    rotary_emb: RotaryEmbedding | None = eqx.field()
+    num_heads: int = eqx.field()
+    head_dim: int = eqx.field()
+    causal: bool = eqx.field()
+    context_length: int | None = eqx.field()
 
     def __init__(
         self,
@@ -296,8 +296,8 @@ class CrossAttentionBlock(eqx.Module):
     v_proj: eqx.nn.Linear
     output_proj: eqx.nn.Linear
     rotary_emb: RotaryEmbedding | None
-    num_heads: int = eqx.static_field()
-    head_dim: int = eqx.static_field()
+    num_heads: int = eqx.field()
+    head_dim: int = eqx.field()
 
     def __init__(
         self,
@@ -426,10 +426,10 @@ class TransformerBlock(eqx.Module):
     layer_norm1: eqx.nn.LayerNorm
     layer_norm2: eqx.nn.LayerNorm
     layer_norm3: eqx.nn.LayerNorm | None
-    num_heads: int = eqx.static_field()
-    head_dim: int = eqx.static_field()
-    causal: bool = eqx.static_field()
-    context_length: int | None = eqx.static_field()
+    num_heads: int = eqx.field()
+    head_dim: int = eqx.field()
+    causal: bool = eqx.field()
+    context_length: int | None = eqx.field()
 
     def __init__(
         self,
@@ -567,8 +567,8 @@ class TransformerStack(eqx.Module):
     """A stack of transformer blocks."""
 
     layers: list[TransformerBlock]
-    num_layers: int = eqx.static_field()
-    causal: bool = eqx.static_field()
+    num_layers: int = eqx.field()
+    causal: bool = eqx.field()
 
     def __init__(
         self,
@@ -662,9 +662,9 @@ class Transformer(eqx.Module):
     layers: TransformerStack
     output_layer: eqx.nn.Linear | None
     layer_norm: eqx.nn.LayerNorm
-    embed_dim: int = eqx.static_field()
-    causal: bool = eqx.static_field()
-    context_length: int | None = eqx.static_field()
+    embed_dim: int = eqx.field()
+    causal: bool = eqx.field()
+    context_length: int | None = eqx.field()
 
     def __init__(
         self,

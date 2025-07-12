@@ -33,10 +33,10 @@ class LearnedPositionalEmbeddings(eqx.Module):
         learnable: Whether the embeddings are learnable.
     """
 
-    max_tsz: int = eqx.field(static=True)
-    embed_dim: int = eqx.field(static=True)
-    learnable: bool = eqx.field(static=True)
-    embeddings_tc: Array
+    max_tsz: int = eqx.field()
+    embed_dim: int = eqx.field()
+    learnable: bool = eqx.field()
+    embeddings_tc: Array = eqx.field()
 
     def __init__(
         self,
@@ -74,10 +74,10 @@ class SinusoidalEmbeddings(eqx.Module):
         base: The base for the sinusoidal embeddings.
     """
 
-    base: int = eqx.field(static=True)
-    max_tsz: int | None = eqx.field(static=True)
-    embed_dim: int | None = eqx.field(static=True)
-    embeddings_tc: Array | None
+    base: int = eqx.field()
+    max_tsz: int | None = eqx.field()
+    embed_dim: int | None = eqx.field()
+    embeddings_tc: Array | None = eqx.field()
 
     def __init__(
         self,
@@ -91,8 +91,8 @@ class SinusoidalEmbeddings(eqx.Module):
         self.max_tsz = max_tsz
         self.embed_dim = embed_dim
         self.base = base
+        self.embeddings_tc = None
 
-        self.embeddings_tc: Array | None = None
         if learnable:
             assert max_tsz is not None, "Learnable parameters require `max_tsz` to be set"
             assert embed_dim is not None, "Learnable parameters require `embed_dim` to be set"
@@ -192,7 +192,7 @@ class RotaryEmbeddings(eqx.Module):
         base: The base for the sinusoidal embeddings.
     """
 
-    base: int = eqx.field(static=True)
+    base: int = eqx.field()
 
     def __init__(self, base: int = 10_000) -> None:
         """Defines a rotary embeddings module.
