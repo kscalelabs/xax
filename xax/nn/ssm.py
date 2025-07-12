@@ -222,12 +222,12 @@ class DiscreteDiagSSMBlock(DiagSSMBlock):
 
 
 class SSM(eqx.Module):
-    vocab_embedding: eqx.nn.Embedding
-    output_layer: eqx.nn.Linear
-    blocks: list[BaseSSMBlock]
-    num_layers: int = eqx.field(static=True)
-    hidden_size: int = eqx.field(static=True)
-    skip_connections: bool = eqx.field(static=True)
+    vocab_embedding: eqx.nn.Embedding = eqx.field()
+    output_layer: eqx.nn.Linear = eqx.field()
+    blocks: list[BaseSSMBlock] = eqx.field()
+    num_layers: int = eqx.field()
+    hidden_size: int = eqx.field()
+    skip_connections: bool = eqx.field()
 
     def __init__(
         self,
