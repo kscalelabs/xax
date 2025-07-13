@@ -41,6 +41,22 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
     return jnp.concatenate([roll, pitch, yaw], axis=-1)
 
 
+def quat_to_yaw(quat_4: Array, eps: float = 1e-6) -> Array:
+    """Converts a quaternion (w, x, y, z) to yaw.
+
+    Args:
+        quat_4: The quaternion to convert, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
+
+    Returns:
+        The yaw angle with shape (*).
+    """
+    quat_4 = quat_4 / (jnp.linalg.norm(quat_4, axis=-1, keepdims=True) + eps)
+    w, x, y, z = jnp.split(quat_4, 4, axis=-1)
+    yaw = jnp.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    return yaw
+
+
 def euler_to_quat(euler_3: Array) -> Array:
     """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
 
