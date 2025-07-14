@@ -566,7 +566,7 @@ class TransformerBlock(eqx.Module):
 class TransformerStack(eqx.Module):
     """A stack of transformer blocks."""
 
-    layers: list[TransformerBlock]
+    layers: tuple[TransformerBlock, ...]
     num_layers: int = eqx.field()
     causal: bool = eqx.field()
 
@@ -586,7 +586,7 @@ class TransformerStack(eqx.Module):
     ) -> None:
         keys = jax.random.split(key, num_layers)
 
-        self.layers = [
+        self.layers = tuple(
             TransformerBlock(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
@@ -599,7 +599,7 @@ class TransformerStack(eqx.Module):
                 rotary_base=rotary_base,
             )
             for i in range(num_layers)
-        ]
+        )
 
         self.num_layers = num_layers
         self.causal = causal
