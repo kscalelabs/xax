@@ -8,7 +8,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-import pytest
 from jaxtyping import Array, PRNGKeyArray
 
 import xax
