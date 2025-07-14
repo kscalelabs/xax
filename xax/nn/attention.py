@@ -5,6 +5,8 @@ supporting a fixed-size context window and caching that can be used to train
 transformers which can be unrolled with a fixed-length cache.
 """
 
+import math
+import warnings
 from typing import NotRequired, TypedDict
 
 import chex
@@ -135,7 +137,7 @@ class SelfAttentionBlock(eqx.Module):
     num_heads: int = eqx.field()
     head_dim: int = eqx.field()
     causal: bool = eqx.field()
-    context_length: int | None = eqx.field()
+    local_window_size: int | None = eqx.field()
 
     def __init__(
         self,
@@ -171,8 +173,12 @@ class SelfAttentionBlock(eqx.Module):
         else:
             self.rotary_emb = None
 
+        if context_length is not None and not causal:
+            warnings.warn("context_length is set but causal is False; overriding causal to True", stacklevel=2)
+            causal = True
+
         self.causal = causal
-        self.context_length = context_length
+        self.local_window_size = None if context_length is None else context_length - 1
 
     @property
     def embed_dim(self) -> int:
@@ -197,41 +203,25 @@ class SelfAttentionBlock(eqx.Module):
         Returns:
             Cache with fixed-length k and v tensors
         """
-        if self.context_length is None:
+        if self.local_window_size is None:
             raise ValueError("context_length must be set for caching")
 
         # Create fixed-length cache
-        k_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
-        v_cache = jnp.zeros((self.context_length - 1, self.num_heads, self.head_dim), dtype=dtype)
+        k_cache = jnp.zeros((self.local_window_size, self.num_heads, self.head_dim), dtype=dtype)
+        v_cache = jnp.zeros((self.local_window_size, self.num_heads, self.head_dim), dtype=dtype)
 
         return {"k": k_cache, "v": v_cache, "position": 0}
-
-    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
-        in_dim, out_dim = seq_len, seq_len
-        if with_cache:
-            if self.context_length is None:
-                raise ValueError("context_length must be set for caching")
-            in_dim = in_dim + self.context_length - 1
-
-        mask = jnp.tril(jnp.ones((in_dim, out_dim)))
-        if self.context_length is not None:
-            neg_mask = 1 - jnp.tril(jnp.ones((in_dim, out_dim)), -self.context_length)
-            mask = mask * neg_mask
-
-        return mask.astype(jnp.bool_).transpose()
 
     def forward(
         self,
         x_tn: Array,
         *,
-        mask: Array | None = None,
         cache: AttentionCache | None = None,
     ) -> tuple[Array, AttentionCache]:
         """Apply self-attention.
 
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
-            mask: Optional mask tensor
             cache: The cached key and value tensors (fixed-length)
 
         Returns:
@@ -265,6 +255,10 @@ class SelfAttentionBlock(eqx.Module):
             v_cache = cache["v"]
             k = jnp.concatenate([k_cache, k], axis=0)
             v = jnp.concatenate([v_cache, v], axis=0)
+
+            # Pads query with `k_cache.shape[0]` zeros.
+            q = jnp.pad(q, ((k_cache.shape[0], 0), (0, 0), (0, 0)), mode="constant", constant_values=0)
+
             new_position = cache["position"] + seq_len
 
         else:
@@ -274,16 +268,21 @@ class SelfAttentionBlock(eqx.Module):
             q,
             k,
             v,
-            mask=mask,
-            is_causal=self.causal and mask is None,
+            scale=1.0 / math.sqrt(self.head_dim),
+            is_causal=self.causal,
+            local_window_size=(self.local_window_size, 0) if self.local_window_size is not None else None,
         )
+
+        if cache is not None:
+            # Remove the padding.
+            attn_output = attn_output[cache["k"].shape[0] :]
 
         attn_output = self._combine_heads(attn_output)
         output = jax.vmap(self.output_proj)(attn_output)
 
-        if self.context_length is not None:
-            k = k[-(self.context_length - 1) :]
-            v = v[-(self.context_length - 1) :]
+        if self.local_window_size is not None:
+            k = k[-self.local_window_size :]
+            v = v[-self.local_window_size :]
 
         return output, {"k": k, "v": v, "position": new_position}
 
@@ -354,7 +353,6 @@ class CrossAttentionBlock(eqx.Module):
         *,
         kv_sn: Array | None = None,
         cache: AttentionCache | None = None,
-        mask: Array | None = None,
     ) -> tuple[Array, AttentionCache]:
         """Apply cross-attention.
 
@@ -364,7 +362,6 @@ class CrossAttentionBlock(eqx.Module):
                 If not provided, then `cache` must be provided.
             cache: The cached key and value tensors. If not provided, then
                 `kv_sn` must be provided.
-            mask: Optional mask tensor
 
         Returns:
             The output tensor of shape (q_seq_len, embed_dim)
@@ -406,7 +403,6 @@ class CrossAttentionBlock(eqx.Module):
             q_rot,
             k_rot,
             v,
-            mask=mask,
             is_causal=False,
         )
 
@@ -502,16 +498,11 @@ class TransformerBlock(eqx.Module):
             cache["cross_attn"] = self.cross_attn.init_cache(kv_sn=context_sn)
         return cache
 
-    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
-        return self.self_attn.init_mask(seq_len, with_cache=with_cache)
-
     def forward(
         self,
         x_tn: Array,
         *,
         context_sn: Array | None = None,
-        self_mask: Array | None = None,
-        cross_mask: Array | None = None,
         cache: AttentionCacheDict | None = None,
     ) -> tuple[Array, AttentionCacheDict]:
         """Apply transformer block.
@@ -519,8 +510,6 @@ class TransformerBlock(eqx.Module):
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
             context_sn: Optional context for cross-attention
-            self_mask: Mask for self-attention
-            cross_mask: Mask for cross-attention
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -533,7 +522,6 @@ class TransformerBlock(eqx.Module):
 
         attn_output, self_attn_cache = self.self_attn.forward(
             x_tn=norm_x,
-            mask=self_mask,
             cache=None if cache is None else cache["self_attn"],
         )
         updated_cache: AttentionCacheDict = {"self_attn": self_attn_cache}
@@ -549,7 +537,6 @@ class TransformerBlock(eqx.Module):
             cross_attn_output, updated_cache["cross_attn"] = self.cross_attn.forward(
                 q_tn=norm_x,
                 kv_sn=context_sn,
-                mask=cross_mask,
                 cache=None if cache is None else cache.get("cross_attn"),
             )
 
@@ -611,16 +598,11 @@ class TransformerStack(eqx.Module):
             cache[f"layer_{i}"] = layer.init_cache(dtype=dtype, context_sn=x_tn)
         return {"layers": cache}
 
-    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
-        return self.layers[0].init_mask(seq_len, with_cache=with_cache)
-
     def forward(
         self,
         x_tn: Array,
         *,
         context_sn: Array | None = None,
-        self_mask: Array | None = None,
-        cross_mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Apply transformer stack.
@@ -628,8 +610,6 @@ class TransformerStack(eqx.Module):
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
             context_sn: Optional context for cross-attention
-            self_mask: Mask for self-attention
-            cross_mask: Mask for cross-attention
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -649,8 +629,6 @@ class TransformerStack(eqx.Module):
             x_tn, updated_cache["layers"][f"layer_{i}"] = layer.forward(
                 x_tn,
                 context_sn=context_sn,
-                self_mask=self_mask,
-                cross_mask=cross_mask,
                 cache=layer_cache,
             )
 
@@ -715,21 +693,16 @@ class Transformer(eqx.Module):
         """Initialize cache for the input."""
         return self.layers.init_cache(dtype=dtype, x_tn=x_tn)
 
-    def init_mask(self, seq_len: int, with_cache: bool = True) -> Array:
-        return self.layers.init_mask(seq_len, with_cache=with_cache)
-
     def encode(
         self,
         x: Array,
         *,
-        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Encode the input sequence.
 
         Args:
             x: Input token indices of shape (seq_len)
-            mask: Optional attention mask
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -739,11 +712,7 @@ class Transformer(eqx.Module):
         x_embedded = jax.vmap(self.token_embedding)(x)
 
         # Apply transformer stack
-        x_embedded, updated_cache = self.layers.forward(
-            x_embedded,
-            self_mask=mask,
-            cache=cache,
-        )
+        x_embedded, updated_cache = self.layers.forward(x_embedded, cache=cache)
 
         # Apply final layer norm
         output = jax.vmap(self.layer_norm)(x_embedded)
@@ -755,8 +724,6 @@ class Transformer(eqx.Module):
         x_t: Array,
         context_s: Array,
         *,
-        self_mask: Array | None = None,
-        cross_mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Decode with self-attention and cross-attention.
@@ -765,8 +732,6 @@ class Transformer(eqx.Module):
             x_t: Input token indices, shape (seq_len)
             context_s: Context from encoder (token indices or embedded),
                 shape (context_len, embed_dim)
-            self_mask: Optional self-attention mask, shape (seq_len, seq_len)
-            cross_mask: Optional cross-attention mask, shape (seq_len, context_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -782,8 +747,6 @@ class Transformer(eqx.Module):
         x_embedded, updated_cache = self.layers.forward(
             x_embedded,
             context_sn=context_embedded,
-            self_mask=self_mask,
-            cross_mask=cross_mask,
             cache=cache,
         )
 
@@ -796,14 +759,12 @@ class Transformer(eqx.Module):
         self,
         x: Array,
         *,
-        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Forward pass for encoder-only or decoder-only transformers.
 
         Args:
             x: Input token indices of shape (seq_len)
-            mask: Optional attention mask
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -811,11 +772,7 @@ class Transformer(eqx.Module):
         """
         chex.assert_rank(x, 1)
 
-        output, updated_cache = self.encode(
-            x,
-            mask=mask,
-            cache=cache,
-        )
+        output, updated_cache = self.encode(x, cache=cache)
 
         # Apply output layer if it exists
         if self.output_layer is not None:
