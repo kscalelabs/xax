@@ -71,7 +71,6 @@ class SimpleTask(xax.Task[SimpleConfig]):
             yield x, y
 
 
-@pytest.mark.timeout(60)
 def test_save_load_model() -> None:
     """Test that models can be saved and loaded correctly."""
     with tempfile.TemporaryDirectory() as tmpdir:

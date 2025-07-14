@@ -57,6 +57,7 @@ def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
         ff_dim=64,
         key=subkey,
         cross_attention=True,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -101,6 +102,7 @@ def test_transformer_stack_loopback(use_rotary_embeddings: bool) -> None:
         num_layers=3,
         key=subkey,
         cross_attention=True,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -146,6 +148,7 @@ def test_transformer_loopback(use_rotary_embeddings: bool) -> None:
         num_layers=2,
         key=subkey,
         cross_attention=False,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
