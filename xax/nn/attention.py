@@ -256,26 +256,37 @@ class SelfAttentionBlock(eqx.Module):
             k = jnp.concatenate([k_cache, k], axis=0)
             v = jnp.concatenate([v_cache, v], axis=0)
 
-            # Pads query with `k_cache.shape[0]` zeros.
-            q = jnp.pad(q, ((k_cache.shape[0], 0), (0, 0), (0, 0)), mode="constant", constant_values=0)
-
             new_position = cache["position"] + seq_len
 
         else:
             new_position = seq_len
 
-        attn_output = jax.nn.dot_product_attention(
-            q,
-            k,
-            v,
-            scale=1.0 / math.sqrt(self.head_dim),
-            is_causal=self.causal,
-            local_window_size=(self.local_window_size, 0) if self.local_window_size is not None else None,
-        )
+        if seq_len == 1:
+            attn_output = jax.nn.dot_product_attention(q, k, v)
 
-        if cache is not None:
+        elif cache is not None:
+            # Pads query with `k_cache.shape[0]` zeros.
+            q = jnp.pad(q, ((cache["k"].shape[0], 0), (0, 0), (0, 0)), mode="constant", constant_values=0)
+
+            attn_output = jax.nn.dot_product_attention(
+                q,
+                k,
+                v,
+                is_causal=self.causal,
+                local_window_size=(self.local_window_size, 0) if self.local_window_size is not None else None,
+            )
+
             # Remove the padding.
             attn_output = attn_output[cache["k"].shape[0] :]
+
+        else:
+            attn_output = jax.nn.dot_product_attention(
+                q,
+                k,
+                v,
+                is_causal=self.causal,
+                local_window_size=(self.local_window_size, 0) if self.local_window_size is not None else None,
+            )
 
         attn_output = self._combine_heads(attn_output)
         output = jax.vmap(self.output_proj)(attn_output)
@@ -403,6 +414,7 @@ class CrossAttentionBlock(eqx.Module):
             q_rot,
             k_rot,
             v,
+            scale=1.0 / math.sqrt(self.head_dim),
             is_causal=False,
         )
 
