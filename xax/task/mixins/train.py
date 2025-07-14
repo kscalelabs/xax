@@ -40,7 +40,12 @@ from xax.core.state import Phase, State
 from xax.nn.functions import set_random_seed
 from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart, load_ckpt
+from xax.task.mixins.checkpointing import (
+    CheckpointingConfig,
+    CheckpointingMixin,
+    CheckpointPart,
+    load_ckpt,
+)
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
