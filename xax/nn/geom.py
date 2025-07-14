@@ -207,7 +207,7 @@ def quat_to_rotmat(quat: Array, eps: float = 1e-6) -> Array:
 
 def normalize(v: jnp.ndarray, axis: int = -1, eps: float = 1e-8) -> jnp.ndarray:
     norm = jnp.linalg.norm(v, axis=axis, keepdims=True)
-    return v / jnp.clip(norm, a_min=eps)
+    return v / jnp.clip(norm, min=eps)
 
 
 def rotation6d_to_rotation_matrix(r6d: jnp.ndarray) -> jnp.ndarray:
@@ -299,28 +299,28 @@ def rotation_matrix_to_quat(rotation_matrix: Array, eps: float = 1e-6) -> Array:
     trace = m00 + m11 + m22
 
     # Case 0: trace is positive
-    s0 = jnp.sqrt(jnp.clip(trace + 1.0, a_min=0.0)) * 2.0  # S = 4 * qw
+    s0 = jnp.sqrt(jnp.clip(trace + 1.0, min=0.0)) * 2.0  # S = 4 * qw
     w0 = 0.25 * s0
     x0 = (m21 - m12) / jnp.where(s0 < eps, 1.0, s0)
     y0 = (m02 - m20) / jnp.where(s0 < eps, 1.0, s0)
     z0 = (m10 - m01) / jnp.where(s0 < eps, 1.0, s0)
 
     # Case 1: m00 is the largest diagonal term
-    s1 = jnp.sqrt(jnp.clip(1.0 + m00 - m11 - m22, a_min=0.0)) * 2.0  # S = 4 * qx
+    s1 = jnp.sqrt(jnp.clip(1.0 + m00 - m11 - m22, min=0.0)) * 2.0  # S = 4 * qx
     w1 = (m21 - m12) / jnp.where(s1 < eps, 1.0, s1)
     x1 = 0.25 * s1
     y1 = (m01 + m10) / jnp.where(s1 < eps, 1.0, s1)
     z1 = (m02 + m20) / jnp.where(s1 < eps, 1.0, s1)
 
     # Case 2: m11 is the largest diagonal term
-    s2 = jnp.sqrt(jnp.clip(1.0 + m11 - m00 - m22, a_min=0.0)) * 2.0  # S = 4 * qy
+    s2 = jnp.sqrt(jnp.clip(1.0 + m11 - m00 - m22, min=0.0)) * 2.0  # S = 4 * qy
     w2 = (m02 - m20) / jnp.where(s2 < eps, 1.0, s2)
     x2 = (m01 + m10) / jnp.where(s2 < eps, 1.0, s2)
     y2 = 0.25 * s2
     z2 = (m12 + m21) / jnp.where(s2 < eps, 1.0, s2)
 
     # Case 3: m22 is the largest diagonal term
-    s3 = jnp.sqrt(jnp.clip(1.0 + m22 - m00 - m11, a_min=0.0)) * 2.0  # S = 4 * qz
+    s3 = jnp.sqrt(jnp.clip(1.0 + m22 - m00 - m11, min=0.0)) * 2.0  # S = 4 * qz
     w3 = (m10 - m01) / jnp.where(s3 < eps, 1.0, s3)
     x3 = (m02 + m20) / jnp.where(s3 < eps, 1.0, s3)
     y3 = (m12 + m21) / jnp.where(s3 < eps, 1.0, s3)

@@ -17,6 +17,7 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
         embed_dim=32,
         num_heads=2,
         key=subkey,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -40,8 +41,7 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    mask = block.init_mask(10, with_cache=True)
-    next_xs, _ = block.forward(prev_xs, mask=mask, cache=cache)
+    next_xs, _ = block.forward(prev_xs, cache=cache)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -57,6 +57,7 @@ def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
         ff_dim=64,
         key=subkey,
         cross_attention=True,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -84,8 +85,7 @@ def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    mask = block.init_mask(10, with_cache=True)
-    next_xs, _ = block.forward(prev_xs, context_sn=context_sn, self_mask=mask, cache=cache)
+    next_xs, _ = block.forward(prev_xs, context_sn=context_sn, cache=cache)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -102,6 +102,7 @@ def test_transformer_stack_loopback(use_rotary_embeddings: bool) -> None:
         num_layers=3,
         key=subkey,
         cross_attention=True,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -129,8 +130,7 @@ def test_transformer_stack_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    mask = stack.init_mask(10)
-    next_xs, _ = stack.forward(prev_xs, context_sn=context_sn, self_mask=mask, cache=cache)
+    next_xs, _ = stack.forward(prev_xs, context_sn=context_sn, cache=cache)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -148,6 +148,7 @@ def test_transformer_loopback(use_rotary_embeddings: bool) -> None:
         num_layers=2,
         key=subkey,
         cross_attention=False,
+        causal=True,
         context_length=5,
         use_rotary_embeddings=use_rotary_embeddings,
     )
@@ -160,8 +161,7 @@ def test_transformer_loopback(use_rotary_embeddings: bool) -> None:
     # Does next token prediction using the generated sequence.
     cache = transformer.init_cache(x.dtype)
     _, cache = transformer.encode(x, cache=cache)
-    mask = transformer.init_mask(10, with_cache=True)
-    next_x, _ = transformer.forward(seq[4:-1], mask=mask, cache=cache)
+    next_x, _ = transformer.forward(seq[4:-1], cache=cache)
     pseq = next_x.argmax(axis=-1)
 
     assert jnp.allclose(pseq, seq[5:])
