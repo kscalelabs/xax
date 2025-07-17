@@ -253,3 +253,16 @@ def tuple_insert(t: tuple[T, ...], index: int, value: T) -> tuple[T, ...]:
     mut = list(t)
     mut[index] = value
     return tuple(mut)
+
+
+def get_pytree_mapping(pytree: PyTree) -> dict[str, Array]:
+    leaves: dict[str, Array] = {}
+
+    def _get_leaf(path: tuple, x: PyTree) -> None:
+        if isinstance(x, jnp.ndarray):
+            # Convert path tuple to string, e.g. (1, 'a', 2) -> '1/a/2'
+            path_str = "/".join(str(p) for p in path)
+            leaves[path_str] = x
+
+    jax.tree.map_with_path(_get_leaf, pytree)
+    return leaves
