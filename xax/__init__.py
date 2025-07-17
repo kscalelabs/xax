@@ -324,7 +324,7 @@ NAME_MAP: dict[str, str] = {
     "compute_nan_ratio": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
-    "get_pytree_leaves": "utils.pytree",
+    "get_pytree_mapping": "utils.pytree",
     "get_pytree_param_count": "utils.pytree",
     "pytree_has_nans": "utils.pytree",
     "reshuffle_pytree": "utils.pytree",
