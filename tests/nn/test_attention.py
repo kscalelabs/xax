@@ -47,6 +47,32 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
 
 
 @pytest.mark.parametrize("use_rotary_embeddings", [True, False])
+def test_self_attention_block_mask(use_rotary_embeddings: bool) -> None:
+    key = jax.random.key(0)
+    key, subkey = jax.random.split(key)
+
+    block = xax.SelfAttentionBlock(
+        embed_dim=32,
+        num_heads=2,
+        key=subkey,
+        causal=True,
+        context_length=5,
+        use_rotary_embeddings=use_rotary_embeddings,
+    )
+
+    tsz = 10
+    mask = block.init_mask(tsz)
+
+    # Checks that the forward pass matches the autoregressive unrolling pass.
+    key, subkey = jax.random.split(key)
+    x = jax.random.normal(subkey, (tsz, block.embed_dim))
+    out_b, _ = block.forward(x)
+    out_a, _ = block.forward(x, mask=mask)
+
+    assert jnp.allclose(out_a, out_b, atol=1e-6)
+
+
+@pytest.mark.parametrize("use_rotary_embeddings", [True, False])
 def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)

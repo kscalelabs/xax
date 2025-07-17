@@ -212,16 +212,45 @@ class SelfAttentionBlock(eqx.Module):
 
         return {"k": k_cache, "v": v_cache, "position": 0}
 
+    def init_mask(
+        self,
+        seq_len: int,
+        add_cache: bool = False,
+    ) -> Array:
+        """Initialize the attention matrix mask.
+
+        Args:
+            seq_len: The length of the sequence
+            add_cache: Whether to add the cache to the mask
+
+        Returns:
+            The attention matrix mask of shape (bsz, 1, seq_len, seq_len + cache_len)
+        """
+        t, s = seq_len, seq_len
+        if add_cache:
+            if self.local_window_size is None:
+                raise ValueError("local_window_size must be set for caching")
+            s += self.local_window_size
+        mask = jnp.tril(jnp.ones((t, s), dtype=jnp.bool_))
+        if self.local_window_size is not None:
+            neg_mask = ~jnp.tril(jnp.ones((t, s), dtype=jnp.bool_), k=-(self.local_window_size + 1))
+            mask = mask & neg_mask
+        mask = mask.reshape(1, 1, t, s)
+        return mask
+
     def forward(
         self,
         x_tn: Array,
         *,
+        mask: Array | None = None,
         cache: AttentionCache | None = None,
     ) -> tuple[Array, AttentionCache]:
         """Apply self-attention.
 
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: The cached key and value tensors (fixed-length)
 
         Returns:
@@ -263,6 +292,9 @@ class SelfAttentionBlock(eqx.Module):
 
         if seq_len == 1:
             attn_output = jax.nn.dot_product_attention(q, k, v)
+
+        elif mask is not None:
+            attn_output = jax.nn.dot_product_attention(q, k, v, mask=mask)
 
         elif cache is not None:
             # Pads query with `k_cache.shape[0]` zeros.
@@ -510,11 +542,22 @@ class TransformerBlock(eqx.Module):
             cache["cross_attn"] = self.cross_attn.init_cache(kv_sn=context_sn)
         return cache
 
+    def init_mask(
+        self,
+        seq_len: int,
+        add_cache: bool = False,
+    ) -> Array:
+        return self.self_attn.init_mask(
+            seq_len,
+            add_cache=add_cache,
+        )
+
     def forward(
         self,
         x_tn: Array,
         *,
         context_sn: Array | None = None,
+        mask: Array | None = None,
         cache: AttentionCacheDict | None = None,
     ) -> tuple[Array, AttentionCacheDict]:
         """Apply transformer block.
@@ -522,6 +565,8 @@ class TransformerBlock(eqx.Module):
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
             context_sn: Optional context for cross-attention
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -534,6 +579,7 @@ class TransformerBlock(eqx.Module):
 
         attn_output, self_attn_cache = self.self_attn.forward(
             x_tn=norm_x,
+            mask=mask,
             cache=None if cache is None else cache["self_attn"],
         )
         updated_cache: AttentionCacheDict = {"self_attn": self_attn_cache}
@@ -610,11 +656,22 @@ class TransformerStack(eqx.Module):
             cache[f"layer_{i}"] = layer.init_cache(dtype=dtype, context_sn=x_tn)
         return {"layers": cache}
 
+    def init_mask(
+        self,
+        seq_len: int,
+        add_cache: bool = False,
+    ) -> Array:
+        return self.layers[0].init_mask(
+            seq_len,
+            add_cache=add_cache,
+        )
+
     def forward(
         self,
         x_tn: Array,
         *,
         context_sn: Array | None = None,
+        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Apply transformer stack.
@@ -622,6 +679,8 @@ class TransformerStack(eqx.Module):
         Args:
             x_tn: Input tensor of shape (seq_len, embed_dim)
             context_sn: Optional context for cross-attention
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -641,6 +700,7 @@ class TransformerStack(eqx.Module):
             x_tn, updated_cache["layers"][f"layer_{i}"] = layer.forward(
                 x_tn,
                 context_sn=context_sn,
+                mask=mask,
                 cache=layer_cache,
             )
 
@@ -705,16 +765,29 @@ class Transformer(eqx.Module):
         """Initialize cache for the input."""
         return self.layers.init_cache(dtype=dtype, x_tn=x_tn)
 
+    def init_mask(
+        self,
+        seq_len: int,
+        add_cache: bool = False,
+    ) -> Array:
+        return self.layers.init_mask(
+            seq_len,
+            add_cache=add_cache,
+        )
+
     def encode(
         self,
         x: Array,
         *,
+        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Encode the input sequence.
 
         Args:
             x: Input token indices of shape (seq_len)
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -724,7 +797,7 @@ class Transformer(eqx.Module):
         x_embedded = jax.vmap(self.token_embedding)(x)
 
         # Apply transformer stack
-        x_embedded, updated_cache = self.layers.forward(x_embedded, cache=cache)
+        x_embedded, updated_cache = self.layers.forward(x_embedded, mask=mask, cache=cache)
 
         # Apply final layer norm
         output = jax.vmap(self.layer_norm)(x_embedded)
@@ -736,6 +809,7 @@ class Transformer(eqx.Module):
         x_t: Array,
         context_s: Array,
         *,
+        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Decode with self-attention and cross-attention.
@@ -759,6 +833,7 @@ class Transformer(eqx.Module):
         x_embedded, updated_cache = self.layers.forward(
             x_embedded,
             context_sn=context_embedded,
+            mask=mask,
             cache=cache,
         )
 
@@ -771,6 +846,7 @@ class Transformer(eqx.Module):
         self,
         x: Array,
         *,
+        mask: Array | None = None,
         cache: TransformerCache | None = None,
     ) -> tuple[Array, TransformerCache]:
         """Forward pass for encoder-only or decoder-only transformers.
@@ -784,7 +860,7 @@ class Transformer(eqx.Module):
         """
         chex.assert_rank(x, 1)
 
-        output, updated_cache = self.encode(x, cache=cache)
+        output, updated_cache = self.encode(x, mask=mask, cache=cache)
 
         # Apply output layer if it exists
         if self.output_layer is not None:
