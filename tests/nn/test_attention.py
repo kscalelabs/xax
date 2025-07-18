@@ -41,7 +41,8 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    next_xs, _ = block.forward(prev_xs, cache=cache)
+    mask = block.init_mask(10, add_cache=True)
+    next_xs, _ = block.forward(prev_xs, cache=cache, mask=mask)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -111,7 +112,8 @@ def test_transformer_block_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    next_xs, _ = block.forward(prev_xs, context_sn=context_sn, cache=cache)
+    mask = block.init_mask(10, add_cache=True)
+    next_xs, _ = block.forward(prev_xs, context_sn=context_sn, cache=cache, mask=mask)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -156,7 +158,8 @@ def test_transformer_stack_loopback(use_rotary_embeddings: bool) -> None:
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    next_xs, _ = stack.forward(prev_xs, context_sn=context_sn, cache=cache)
+    mask = stack.init_mask(10, add_cache=True)
+    next_xs, _ = stack.forward(prev_xs, context_sn=context_sn, cache=cache, mask=mask)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
 
@@ -184,10 +187,12 @@ def test_transformer_loopback(use_rotary_embeddings: bool) -> None:
     x = jax.random.randint(subkey, (5,), 0, 1000)
     seq = transformer.generate_sequence(x, max_len=10, top_k=1)
 
-    # Does next token prediction using the generated sequence.
+    # Checks that the next token prediction matches the generated sequence.
     cache = transformer.init_cache(x.dtype)
-    _, cache = transformer.encode(x, cache=cache)
-    next_x, _ = transformer.forward(seq[4:-1], cache=cache)
+    mask = transformer.init_mask(5, add_cache=True)
+    _, cache = transformer.encode(x, cache=cache, mask=mask)
+    mask = transformer.init_mask(10, add_cache=True)
+    next_x, _ = transformer.forward(seq[4:-1], cache=cache, mask=mask)
     pseq = next_x.argmax(axis=-1)
 
     assert jnp.allclose(pseq, seq[5:])

@@ -216,26 +216,30 @@ class SelfAttentionBlock(eqx.Module):
         self,
         seq_len: int,
         add_cache: bool = False,
+        batch_dim: bool = False,
     ) -> Array:
         """Initialize the attention matrix mask.
 
         Args:
             seq_len: The length of the sequence
             add_cache: Whether to add the cache to the mask
+            batch_dim: Whether to add a batch dimension to the mask
 
         Returns:
             The attention matrix mask of shape (bsz, 1, seq_len, seq_len + cache_len)
+            if batch_dim is True, otherwise (seq_len, seq_len + cache_len).
         """
-        t, s = seq_len, seq_len
+        t, s, o = seq_len, seq_len, 0
         if add_cache:
             if self.local_window_size is None:
                 raise ValueError("local_window_size must be set for caching")
             s += self.local_window_size
-        mask = jnp.tril(jnp.ones((t, s), dtype=jnp.bool_))
+            o -= self.local_window_size
+        mask = jnp.tril(jnp.ones((t, s), dtype=jnp.bool_), k=-o)
         if self.local_window_size is not None:
-            neg_mask = ~jnp.tril(jnp.ones((t, s), dtype=jnp.bool_), k=-(self.local_window_size + 1))
+            neg_mask = ~jnp.tril(jnp.ones((t, s), dtype=jnp.bool_), k=-(self.local_window_size + 1 + o))
             mask = mask & neg_mask
-        mask = mask.reshape(1, 1, t, s)
+        mask = mask.reshape(1, 1, t, s) if batch_dim else mask.reshape(t, s)
         return mask
 
     def forward(
@@ -297,19 +301,7 @@ class SelfAttentionBlock(eqx.Module):
             attn_output = jax.nn.dot_product_attention(q, k, v, mask=mask)
 
         elif cache is not None:
-            # Pads query with `k_cache.shape[0]` zeros.
-            q = jnp.pad(q, ((cache["k"].shape[0], 0), (0, 0), (0, 0)), mode="constant", constant_values=0)
-
-            attn_output = jax.nn.dot_product_attention(
-                q,
-                k,
-                v,
-                is_causal=self.causal,
-                local_window_size=(self.local_window_size, 0) if self.local_window_size is not None else None,
-            )
-
-            # Remove the padding.
-            attn_output = attn_output[cache["k"].shape[0] :]
+            raise NotImplementedError("For training with a cache, provide a mask instead.")
 
         else:
             attn_output = jax.nn.dot_product_attention(
@@ -546,10 +538,12 @@ class TransformerBlock(eqx.Module):
         self,
         seq_len: int,
         add_cache: bool = False,
+        batch_dim: bool = False,
     ) -> Array:
         return self.self_attn.init_mask(
             seq_len,
             add_cache=add_cache,
+            batch_dim=batch_dim,
         )
 
     def forward(
@@ -660,10 +654,12 @@ class TransformerStack(eqx.Module):
         self,
         seq_len: int,
         add_cache: bool = False,
+        batch_dim: bool = False,
     ) -> Array:
         return self.layers[0].init_mask(
             seq_len,
             add_cache=add_cache,
+            batch_dim=batch_dim,
         )
 
     def forward(
@@ -769,10 +765,12 @@ class Transformer(eqx.Module):
         self,
         seq_len: int,
         add_cache: bool = False,
+        batch_dim: bool = False,
     ) -> Array:
         return self.layers.init_mask(
             seq_len,
             add_cache=add_cache,
+            batch_dim=batch_dim,
         )
 
     def encode(
@@ -909,7 +907,8 @@ class Transformer(eqx.Module):
 
         # Initialize cache with prompt
         cache = self.init_cache()
-        _, cache = self.encode(prompt_seq, cache=cache)
+        mask = self.init_mask(prompt_len, add_cache=True, batch_dim=False)
+        _, cache = self.encode(prompt_seq, cache=cache, mask=mask)
 
         # Define scan function for autoregressive generation
         def scan_fn(
