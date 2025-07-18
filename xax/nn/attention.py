@@ -818,6 +818,8 @@ class Transformer(eqx.Module):
             x_t: Input token indices, shape (seq_len)
             context_s: Context from encoder (token indices or embedded),
                 shape (context_len, embed_dim)
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
@@ -853,6 +855,8 @@ class Transformer(eqx.Module):
 
         Args:
             x: Input token indices of shape (seq_len)
+            mask: Optional mask of shape (batch_size, num_heads, seq_len,
+                seq_len + cache_len)
             cache: Optional dictionary containing cached key and value tensors
 
         Returns:
