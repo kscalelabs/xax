@@ -788,17 +788,16 @@ class TrainMixin(
                     state=state,
                 )
                 self.log_step(eqx.combine(model_arr, model_static), train_batches[-1], output, metrics, state)
-
-                state = state.replace(
-                    num_steps=state.num_steps + 1,
-                    num_samples=state.num_samples + (self.get_size_of_batch(train_batches[-1]) or 0),
-                )
-
                 state = self.on_step_end(state)
 
             state = state.replace(
+                num_steps=state.num_steps + 1,
+                num_samples=state.num_samples + (self.get_size_of_batch(train_batches[-1]) or 0),
                 elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
             )
+
+            if state.num_steps <= 3:
+                logger.log(LOG_PING, "Step %d took %.2f second", state.num_steps, timer.elapsed_time)
 
             if self.should_checkpoint(state):
                 model = eqx.combine(model_arr, model_static)
