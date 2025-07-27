@@ -177,7 +177,6 @@ class TrainConfig(
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
     updates_per_step: int = field(1, help="Number of updates to perform per step")
     random_seed: int = field(1337, help="Random seed for the task")
-    global_grad_clip: float = field(value=10.0, help="The maximum gradient norm to clip to.")
 
 
 Config = TypeVar("Config", bound=TrainConfig)
