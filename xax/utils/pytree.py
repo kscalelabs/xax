@@ -1,6 +1,6 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
-from typing import TypeVar
+from typing import Mapping, Sequence, TypeVar
 
 import chex
 import equinox as eqx
@@ -258,11 +258,18 @@ def tuple_insert(t: tuple[T, ...], index: int, value: T) -> tuple[T, ...]:
 def get_pytree_mapping(pytree: PyTree) -> dict[str, Array]:
     leaves: dict[str, Array] = {}
 
+    def _get_str(thing: PyTree) -> str:
+        if isinstance(thing, str):
+            return thing
+        if isinstance(thing, Sequence):
+            return "/".join(_get_str(x) for x in thing)
+        if isinstance(thing, Mapping):
+            return "/".join(f"{_get_str(k)}:{_get_str(v)}" for k, v in thing.items())
+        return str(thing)
+
     def _get_leaf(path: tuple, x: PyTree) -> None:
         if isinstance(x, jnp.ndarray):
-            # Convert path tuple to string, e.g. (1, 'a', 2) -> '1/a/2'
-            path_str = "/".join(str(p) for p in path)
-            leaves[path_str] = x
+            leaves[_get_str(path)] = x
 
     jax.tree.map_with_path(_get_leaf, pytree)
     return leaves
