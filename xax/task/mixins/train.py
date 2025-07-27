@@ -598,6 +598,7 @@ class TrainMixin(
         metrics = self.compute_metrics(model, batch, output, loss, state)
         return loss, (output, metrics)
 
+    @xax_jit(static_argnames=["self", "model_static", "optimizer"], jit_level=3)
     def update(
         self,
         model_arr: PyTree,
@@ -766,12 +767,9 @@ class TrainMixin(
                     output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
                     self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
 
-                    state = state.replace(
-                        num_steps=state.num_steps + 1,
-                        num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
-                    )
-
                 state = state.replace(
+                    num_steps=state.num_steps + 1,
+                    num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
                     elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
                 )
 
