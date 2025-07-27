@@ -31,6 +31,10 @@ __all__ = [
     "TransformerBlock",
     "TransformerCache",
     "TransformerStack",
+    "Categorical",
+    "Distribution",
+    "MixtureOfGaussians",
+    "Normal",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -219,6 +223,10 @@ NAME_MAP: dict[str, str] = {
     "TransformerBlock": "nn.attention",
     "TransformerCache": "nn.attention",
     "TransformerStack": "nn.attention",
+    "Categorical": "nn.distributions",
+    "Distribution": "nn.distributions",
+    "MixtureOfGaussians": "nn.distributions",
+    "Normal": "nn.distributions",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -405,6 +413,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         TransformerCache,
         TransformerStack,
     )
+    from xax.nn.distributions import Categorical, Distribution, MixtureOfGaussians, Normal
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
