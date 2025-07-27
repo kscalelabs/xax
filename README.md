@@ -6,4 +6,4 @@ JAX library for fast experimentation.
 
 ```bash
 pip install xax
-```
+``` 

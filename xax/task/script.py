@@ -20,6 +20,7 @@ from xax.task.mixins import (
     RunnableConfig,
     RunnableMixin,
 )
+from xax.task.mixins.profiler import ProfilerConfig, ProfilerMixin
 
 
 @jax.tree_util.register_dataclass
@@ -31,6 +32,7 @@ class ScriptConfig(
     LoggerConfig,
     ArtifactsConfig,
     RunnableConfig,
+    ProfilerConfig,
     BaseConfig,
 ):
     pass
@@ -46,6 +48,7 @@ class Script(
     LoggerMixin[ConfigT],
     ArtifactsMixin[ConfigT],
     RunnableMixin[ConfigT],
+    ProfilerMixin[ConfigT],
     BaseTask[ConfigT],
     Generic[ConfigT],
 ):
