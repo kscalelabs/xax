@@ -110,7 +110,12 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             "or `get_data_iterator` to return an iterator for the given dataset."
         )
 
-    def get_dataloader(self, dataset: Dataset[T, Tc_co], phase: Phase) -> Dataloader[T, Tc_co]:
+    def get_dataloader(
+        self,
+        dataset: Dataset[T, Tc_co],
+        phase: Phase,
+        prefetch_factor: int | None = None,
+    ) -> Dataloader[T, Tc_co]:
         debugging = self.config.debug_dataloader
         if debugging:
             logger.warning("Parallel dataloaders disabled in debugging mode")
@@ -135,7 +140,7 @@ class DataloadersMixin(ProcessMixin[Config], BaseTask[Config], Generic[Config], 
             dataset=dataset,
             batch_size=self.config.batch_size,
             num_workers=0 if debugging else cfg.num_workers,
-            prefetch_factor=cfg.prefetch_factor,
+            prefetch_factor=cfg.prefetch_factor if prefetch_factor is None else prefetch_factor,
             mp_manager=self.multiprocessing_manager,
             dataloader_worker_init_fn=self.dataloader_worker_init_fn,
             collate_worker_init_fn=self.collate_worker_init_fn,

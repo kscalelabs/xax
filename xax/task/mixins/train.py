@@ -60,7 +60,7 @@ from xax.utils.experiments import (
     get_state_file_string,
     get_training_code,
 )
-from xax.utils.jax import jit as xax_jit
+from xax.utils.jax import jit as xax_jit, scan as xax_scan
 from xax.utils.logging import LOG_PING, LOG_STATUS
 from xax.utils.pytree import get_pytree_param_count
 from xax.utils.text import highlight_exception_message, show_info
@@ -175,6 +175,7 @@ class TrainConfig(
     valid_first_n_seconds: float | None = field(60.0, help="Run first validation after N seconds")
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
+    updates_per_step: int = field(1, help="Number of updates to perform per step")
     random_seed: int = field(1337, help="Random seed for the task")
     global_grad_clip: float = field(value=10.0, help="The maximum gradient norm to clip to.")
 
@@ -597,6 +598,7 @@ class TrainMixin(
         metrics = self.compute_metrics(model, batch, output, loss, state)
         return loss, (output, metrics)
 
+    @xax_jit(static_argnames=["self", "model_static", "optimizer"], jit_level=3)
     def update(
         self,
         model_arr: PyTree,
@@ -609,44 +611,9 @@ class TrainMixin(
         grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
         grad_fn = xax_jit(static_argnums=[1], jit_level=3)(grad_fn)
         grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
-        model_arr, opt_state, grad_metrics = self.apply_gradients_with_clipping(model_arr, grads, optimizer, opt_state)
-        return model_arr, opt_state, output, metrics | grad_metrics
-
-    @xax_jit(static_argnames=["self", "optimizer"], jit_level=3)
-    def apply_gradients_with_clipping(
-        self,
-        model_arr: PyTree,
-        grads: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
-    ) -> tuple[PyTree, optax.OptState, dict[str, Array]]:
-        grad_norm = optax.global_norm(grads)
-        grad_metrics = {"grad_norm": grad_norm}
-
-        def apply(grads: PyTree, grad_norm: Array) -> tuple[PyTree, optax.OptState]:
-            # Clip gradients based on global norm, similar to optax.clip_by_global_norm
-            trigger = jnp.squeeze(grad_norm < self.config.global_grad_clip)
-
-            def clip_fn(t: Array) -> Array:
-                return jax.lax.select(trigger, t, (t / grad_norm.astype(t.dtype)) * self.config.global_grad_clip)
-
-            grads = jax.tree.map(clip_fn, grads)
-
-            # Apply the gradient updates.
-            updates, new_opt_state = optimizer.update(grads, opt_state, model_arr)
-            new_model_arr = eqx.apply_updates(model_arr, updates)
-            return new_model_arr, new_opt_state
-
-        # Don't apply updates if the gradient is NaN or Inf.
-        new_model_arr, new_opt_state = jax.lax.cond(
-            jnp.isnan(grad_norm) | jnp.isinf(grad_norm),
-            lambda *_: (model_arr, opt_state),
-            apply,
-            grads,
-            grad_norm,
-        )
-
-        return new_model_arr, new_opt_state, grad_metrics
+        updates, opt_state = optimizer.update(grads, opt_state, model_arr)
+        model_arr = eqx.apply_updates(model_arr, updates)
+        return model_arr, opt_state, output, metrics
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -729,11 +696,36 @@ class TrainMixin(
         model_static: PyTree,
         optimizer: optax.GradientTransformation,
         opt_state: optax.OptState,
-        batch: Batch,
+        batches: Batch,
         state: State,
     ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
-        model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
-        return model_arr, opt_state, output, FrozenDict(metrics)
+        def update_fn(
+            carry: tuple[PyTree, optax.OptState],
+            batch: Batch,
+        ) -> tuple[tuple[PyTree, optax.OptState], tuple[Output, FrozenDict[str, Array]]]:
+            model_arr, opt_state = carry
+            model_arr, opt_state, output, metrics = self.update(
+                model_arr,
+                model_static,
+                optimizer,
+                opt_state,
+                batch,
+                state,
+            )
+            return (model_arr, opt_state), (output, FrozenDict(metrics))
+
+        (model_arr, opt_state), (output, metrics) = xax_scan(
+            update_fn,
+            (model_arr, opt_state),
+            batches,
+            jit_level=3,
+        )
+
+        # Only get the final output and metrics.
+        output = jax.tree.map(lambda x: x[-1], output)
+        metrics = jax.tree.map(lambda x: x[-1], metrics)
+
+        return model_arr, opt_state, output, metrics
 
     @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
     def val_step(
@@ -775,39 +767,35 @@ class TrainMixin(
                     output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
                     self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
 
-                    state = state.replace(
-                        num_steps=state.num_steps + 1,
-                        num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
-                    )
-
                 state = state.replace(
+                    num_steps=state.num_steps + 1,
+                    num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
                     elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
                 )
 
             with ContextTimer() as timer:
                 state = self.on_step_start(state)
                 state = state.replace(phase="train")
-                train_batch = next(train_pf)
+                train_batches = list(itertools.islice(train_pf, self.config.updates_per_step))
                 model_arr, opt_state, output, metrics = self.train_step(
                     model_arr=model_arr,
                     model_static=model_static,
                     optimizer=optimizer,
                     opt_state=opt_state,
-                    batch=train_batch,
+                    batches=jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *train_batches),
                     state=state,
                 )
-                self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
-
-                state = state.replace(
-                    num_steps=state.num_steps + 1,
-                    num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
-                )
-
+                self.log_step(eqx.combine(model_arr, model_static), train_batches[-1], output, metrics, state)
                 state = self.on_step_end(state)
 
             state = state.replace(
+                num_steps=state.num_steps + 1,
+                num_samples=state.num_samples + (self.get_size_of_batch(train_batches[-1]) or 0),
                 elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
             )
+
+            if state.num_steps <= 3:
+                logger.log(LOG_PING, "Step %d took %.2f second", state.num_steps, timer.elapsed_time)
 
             if self.should_checkpoint(state):
                 model = eqx.combine(model_arr, model_static)
@@ -827,7 +815,7 @@ class TrainMixin(
             pass
 
         train_ds = self.get_dataset("train")
-        train_dl = self.get_dataloader(train_ds, "train")
+        train_dl = self.get_dataloader(train_ds, "train", prefetch_factor=self.config.updates_per_step + 1)
         train_pf = self.get_prefetcher(train_dl)
 
         try:
