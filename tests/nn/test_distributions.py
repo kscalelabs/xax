@@ -2,23 +2,8 @@
 
 import jax
 import jax.numpy as jnp
-import pytest
 
-from xax.nn.distributions import (
-    Categorical,
-    Distribution,
-    MixtureOfGaussians,
-    Normal,
-)
-
-
-class TestDistribution:
-    """Test the abstract base class."""
-
-    def test_abstract_methods(self) -> None:
-        """Test that Distribution is abstract and cannot be instantiated."""
-        with pytest.raises(TypeError):
-            Distribution()
+import xax
 
 
 class TestCategorical:
@@ -27,14 +12,14 @@ class TestCategorical:
     def test_init(self) -> None:
         """Test initialization."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
         assert cat.logits_n.shape == (3,)
         assert jnp.array_equal(cat.logits_n, logits)
 
     def test_log_prob(self) -> None:
         """Test log probability computation."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         # Test single category
         x = jnp.array(1)  # Second category
@@ -50,7 +35,7 @@ class TestCategorical:
     def test_sample(self) -> None:
         """Test sampling."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         key = jax.random.PRNGKey(0)
         samples = cat.sample(key)
@@ -63,7 +48,7 @@ class TestCategorical:
     def test_sample_batch(self) -> None:
         """Test sampling with batch dimensions."""
         logits = jnp.array([[1.0, 2.0, 3.0], [0.0, 1.0, 2.0]])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         key = jax.random.PRNGKey(0)
         samples = cat.sample(key)
@@ -76,7 +61,7 @@ class TestCategorical:
     def test_mode(self) -> None:
         """Test mode computation."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         mode = cat.mode()
         expected_mode = jnp.argmax(logits)
@@ -85,7 +70,7 @@ class TestCategorical:
     def test_entropy(self) -> None:
         """Test entropy computation."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         entropy = cat.entropy()
 
@@ -98,7 +83,7 @@ class TestCategorical:
     def test_entropy_uniform(self) -> None:
         """Test entropy for uniform distribution."""
         logits = jnp.array([0.0, 0.0, 0.0])  # Uniform distribution
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         entropy = cat.entropy()
         expected_entropy = jnp.log(3.0)  # log(n) for uniform over n categories
@@ -113,7 +98,7 @@ class TestNormal:
         """Test initialization."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
         assert normal.loc.shape == ()
         assert normal.scale.shape == ()
         assert jnp.array_equal(normal.loc, mean)
@@ -123,7 +108,7 @@ class TestNormal:
         """Test log probability computation."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         x = jnp.array(1.0)
         log_prob = normal.log_prob(x)
@@ -136,7 +121,7 @@ class TestNormal:
         """Test log probability computation with batch dimensions."""
         mean = jnp.array([0.0, 1.0])
         std = jnp.array([1.0, 2.0])
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         x = jnp.array([0.5, 1.5])
         log_probs = normal.log_prob(x)
@@ -150,7 +135,7 @@ class TestNormal:
         """Test sampling."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         key = jax.random.PRNGKey(0)
         samples = normal.sample(key)
@@ -164,7 +149,7 @@ class TestNormal:
         """Test sampling with batch dimensions."""
         mean = jnp.array([0.0, 1.0])
         std = jnp.array([1.0, 2.0])
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         key = jax.random.PRNGKey(0)
         samples = normal.sample(key)
@@ -178,7 +163,7 @@ class TestNormal:
         """Test mode computation."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         mode = normal.mode()
         assert jnp.allclose(mode, mean)
@@ -187,7 +172,7 @@ class TestNormal:
         """Test entropy computation."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         entropy = normal.entropy()
         expected_entropy = jnp.log(2 * jnp.pi * jnp.e) + jnp.log(std)
@@ -195,7 +180,7 @@ class TestNormal:
 
     def test_standard_normal(self) -> None:
         """Test standard normal distribution."""
-        normal = Normal(jnp.array(0.0), jnp.array(1.0))
+        normal = xax.Normal(jnp.array(0.0), jnp.array(1.0))
 
         # Test entropy
         entropy = normal.entropy()
@@ -212,7 +197,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([0.0, 2.0])
         stds = jnp.array([1.0, 1.0])
         logits = jnp.array([0.0, 0.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         assert mixture.means_nm.shape == (2,)
         assert mixture.stds_nm.shape == (2,)
@@ -226,7 +211,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([[0.0, 2.0], [1.0, 3.0]])
         stds = jnp.array([[1.0, 1.0], [0.5, 1.5]])
         logits = jnp.array([[0.0, 0.0], [1.0, 0.0]])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         assert mixture.means_nm.shape == (2, 2)
         assert mixture.stds_nm.shape == (2, 2)
@@ -237,7 +222,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([0.0, 2.0])
         stds = jnp.array([1.0, 1.0])
         logits = jnp.array([0.0, 0.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         x = jnp.array(1.0)
         log_prob = mixture.log_prob(x)
@@ -252,7 +237,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([[0.0, 2.0], [1.0, 3.0]])
         stds = jnp.array([[1.0, 1.0], [0.5, 1.5]])
         logits = jnp.array([[0.0, 0.0], [1.0, 0.0]])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         x = jnp.array([1.0, 2.0])
         log_probs = mixture.log_prob(x)
@@ -267,7 +252,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([0.0, 2.0])
         stds = jnp.array([1.0, 1.0])
         logits = jnp.array([0.0, 0.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         key = jax.random.PRNGKey(0)
         samples = mixture.sample(key)
@@ -283,7 +268,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([[0.0, 2.0], [1.0, 3.0]])
         stds = jnp.array([[1.0, 1.0], [0.5, 1.5]])
         logits = jnp.array([[0.0, 0.0], [1.0, 0.0]])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         key = jax.random.PRNGKey(0)
         samples = mixture.sample(key)
@@ -300,7 +285,7 @@ class TestMixtureOfGaussians:
         stds = jnp.array([1.0, 1.0])
         # Second component has much higher weight
         logits = jnp.array([0.0, 5.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         mode = mixture.mode()
         # Should be close to the mean of the highest weight component
@@ -312,7 +297,7 @@ class TestMixtureOfGaussians:
         means = jnp.array([0.0, 2.0])
         stds = jnp.array([1.0, 1.0])
         logits = jnp.array([0.0, 0.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         entropy = mixture.entropy()
 
@@ -327,7 +312,7 @@ class TestDistributionProperties:
     def test_categorical_properties(self) -> None:
         """Test properties specific to categorical distributions."""
         logits = jnp.array([1.0, 2.0, 3.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         # Test that log probabilities sum to 1 when exponentiated
         x = jnp.arange(3)
@@ -339,7 +324,7 @@ class TestDistributionProperties:
         """Test properties specific to normal distributions."""
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         # Test symmetry around mean
         x1 = jnp.array(1.0)
@@ -354,7 +339,7 @@ class TestDistributionProperties:
         stds = jnp.array([1.0, 1.0])
         # Second component has much higher weight
         logits = jnp.array([0.0, 5.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         # Test near second component
         x = jnp.array(10.0)
@@ -362,7 +347,7 @@ class TestDistributionProperties:
 
         # Should be close to second component's log probability
         # (but not exactly equal due to mixing)
-        second_component_log_prob = Normal(means[1], stds[1]).log_prob(x)
+        second_component_log_prob = xax.Normal(means[1], stds[1]).log_prob(x)
         # The mixture log prob should be slightly lower due to the mixing term
         assert log_prob < second_component_log_prob
         # But it should be close
@@ -374,7 +359,7 @@ class TestDistributionProperties:
         stds = jnp.array([1.0, 1.0])
         # Second component has much higher weight
         logits = jnp.array([0.0, 5.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         key = jax.random.PRNGKey(0)
         samples = [mixture.sample(jax.random.fold_in(key, i)) for i in range(50)]
@@ -392,7 +377,7 @@ class TestEdgeCases:
     def test_categorical_single_component(self) -> None:
         """Test categorical with single component."""
         logits = jnp.array([1.0])
-        cat = Categorical(logits)
+        cat = xax.Categorical(logits)
 
         # Test sampling
         key = jax.random.PRNGKey(0)
@@ -407,7 +392,7 @@ class TestEdgeCases:
         """Test normal distribution with zero standard deviation."""
         mean = jnp.array(0.0)
         std = jnp.array(0.0)
-        normal = Normal(mean, std)
+        normal = xax.Normal(mean, std)
 
         # Test log probability at mean
         log_prob = normal.log_prob(mean)
@@ -418,9 +403,9 @@ class TestEdgeCases:
         means = jnp.array([0.0])
         stds = jnp.array([1.0])
         logits = jnp.array([0.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
-        normal = Normal(means[0], stds[0])
+        normal = xax.Normal(means[0], stds[0])
 
         # Test log probability
         x = jnp.array(1.0)
@@ -442,7 +427,7 @@ class TestEdgeCases:
         stds = jnp.array([1.0, 1.0])
         # Extreme weight difference
         logits = jnp.array([-100.0, 100.0])
-        mixture = MixtureOfGaussians(means, stds, logits)
+        mixture = xax.MixtureOfGaussians(means, stds, logits)
 
         # Test mode
         mode = mixture.mode()
