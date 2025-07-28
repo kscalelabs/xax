@@ -13,8 +13,8 @@ class TestCategorical:
         """Test initialization."""
         logits = jnp.array([1.0, 2.0, 3.0])
         cat = xax.Categorical(logits)
-        assert cat.logits_n.shape == (3,)
-        assert jnp.array_equal(cat.logits_n, logits)
+        assert cat.logits_nc.shape == (3,)
+        assert jnp.array_equal(cat.logits_nc, logits)
 
     def test_log_prob(self) -> None:
         """Test log probability computation."""
@@ -99,10 +99,10 @@ class TestNormal:
         mean = jnp.array(0.0)
         std = jnp.array(1.0)
         normal = xax.Normal(mean, std)
-        assert normal.loc.shape == ()
-        assert normal.scale.shape == ()
-        assert jnp.array_equal(normal.loc, mean)
-        assert jnp.array_equal(normal.scale, std)
+        assert normal.loc_n.shape == ()
+        assert normal.scale_n.shape == ()
+        assert jnp.array_equal(normal.loc_n, mean)
+        assert jnp.array_equal(normal.scale_n, std)
 
     def test_log_prob(self) -> None:
         """Test log probability computation."""
@@ -110,11 +110,11 @@ class TestNormal:
         std = jnp.array(1.0)
         normal = xax.Normal(mean, std)
 
-        x = jnp.array(1.0)
-        log_prob = normal.log_prob(x)
+        x_n = jnp.array(1.0)
+        log_prob = normal.log_prob(x_n)
 
         # Manual computation
-        expected_log_prob = -0.5 * jnp.log(2 * jnp.pi) - jnp.log(std) - 0.5 * ((x - mean) / std) ** 2
+        expected_log_prob = -0.5 * jnp.log(2 * jnp.pi) - jnp.log(std) - 0.5 * ((x_n - mean) / std) ** 2
         assert jnp.allclose(log_prob, expected_log_prob)
 
     def test_log_prob_batch(self) -> None:
@@ -123,8 +123,8 @@ class TestNormal:
         std = jnp.array([1.0, 2.0])
         normal = xax.Normal(mean, std)
 
-        x = jnp.array([0.5, 1.5])
-        log_probs = normal.log_prob(x)
+        x_n = jnp.array([0.5, 1.5])
+        log_probs = normal.log_prob(x_n)
 
         # Check shape
         assert log_probs.shape == (2,)
@@ -133,9 +133,9 @@ class TestNormal:
 
     def test_sample(self) -> None:
         """Test sampling."""
-        mean = jnp.array(0.0)
-        std = jnp.array(1.0)
-        normal = xax.Normal(mean, std)
+        mean_n = jnp.array(0.0)
+        std_n = jnp.array(1.0)
+        normal = xax.Normal(mean_n, std_n)
 
         key = jax.random.PRNGKey(0)
         samples = normal.sample(key)
@@ -143,13 +143,13 @@ class TestNormal:
         # Check shape
         assert samples.shape == ()
         # Check that samples are reasonable (within 4 standard deviations)
-        assert jnp.abs(samples - mean) < 4 * std
+        assert jnp.abs(samples - mean_n) < 4 * std_n
 
     def test_sample_batch(self) -> None:
         """Test sampling with batch dimensions."""
-        mean = jnp.array([0.0, 1.0])
-        std = jnp.array([1.0, 2.0])
-        normal = xax.Normal(mean, std)
+        mean_n = jnp.array([0.0, 1.0])
+        std_n = jnp.array([1.0, 2.0])
+        normal = xax.Normal(mean_n, std_n)
 
         key = jax.random.PRNGKey(0)
         samples = normal.sample(key)
@@ -157,25 +157,25 @@ class TestNormal:
         # Check shape
         assert samples.shape == (2,)
         # Check that samples are reasonable
-        assert jnp.all(jnp.abs(samples - mean) < 4 * std)
+        assert jnp.all(jnp.abs(samples - mean_n) < 4 * std_n)
 
     def test_mode(self) -> None:
         """Test mode computation."""
-        mean = jnp.array(0.0)
-        std = jnp.array(1.0)
-        normal = xax.Normal(mean, std)
+        mean_n = jnp.array(0.0)
+        std_n = jnp.array(1.0)
+        normal = xax.Normal(mean_n, std_n)
 
         mode = normal.mode()
-        assert jnp.allclose(mode, mean)
+        assert jnp.allclose(mode, mean_n)
 
     def test_entropy(self) -> None:
         """Test entropy computation."""
-        mean = jnp.array(0.0)
-        std = jnp.array(1.0)
-        normal = xax.Normal(mean, std)
+        mean_n = jnp.array(0.0)
+        std_n = jnp.array(1.0)
+        normal = xax.Normal(mean_n, std_n)
 
         entropy = normal.entropy()
-        expected_entropy = jnp.log(2 * jnp.pi * jnp.e) + jnp.log(std)
+        expected_entropy = jnp.log(2 * jnp.pi * jnp.e) + jnp.log(std_n)
         assert jnp.allclose(entropy, expected_entropy)
 
     def test_standard_normal(self) -> None:
@@ -387,16 +387,6 @@ class TestEdgeCases:
         # Test log probability
         log_prob = cat.log_prob(jnp.array(0))
         assert jnp.allclose(log_prob, 0.0)  # log(1) = 0
-
-    def test_normal_zero_std(self) -> None:
-        """Test normal distribution with zero standard deviation."""
-        mean = jnp.array(0.0)
-        std = jnp.array(0.0)
-        normal = xax.Normal(mean, std)
-
-        # Test log probability at mean
-        log_prob = normal.log_prob(mean)
-        assert jnp.isnan(log_prob)  # Should be NaN due to division by zero
 
     def test_mixture_single_component(self) -> None:
         """Test mixture with single component (should behave like normal)."""

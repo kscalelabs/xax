@@ -12,11 +12,15 @@ __all__ = [
     "MixtureOfGaussians",
 ]
 
+import math
 from abc import ABC, abstractmethod
 
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
+
+STD_CLIP = 1e-6
+LOGIT_CLIP = math.log(1e4)
 
 
 class Distribution(ABC):
@@ -34,87 +38,91 @@ class Distribution(ABC):
 
 
 class Categorical(Distribution):
-    def __init__(self, logits_n: Array) -> None:
-        self.logits_n = logits_n
+    def __init__(self, logits_nc: Array, logit_clip: float = LOGIT_CLIP) -> None:
+        """Initialize a categorical distribution.
+
+        Args:
+            logits_nc: Array of shape (..., n_categories) containing logits
+            logit_clip: Clipping value for logits
+        """
+        self.logits_nc = jnp.clip(logits_nc, -logit_clip, logit_clip)
 
     @property
     def num_categories(self) -> int:
-        return self.logits_n.shape[-1]
+        return self.logits_nc.shape[-1]
 
-    def log_prob(self, x: Array) -> Array:
-        """Compute log probability for specific categories.
-
-        Args:
-            x: Array of category indices
-
-        Returns:
-            Log probabilities for the given categories
-        """
-        log_probs = jax.nn.log_softmax(self.logits_n, axis=-1)
-        # Use advanced indexing to get the log probabilities for the given categories
-        return log_probs[x]
+    def log_prob(self, x_n: Array) -> Array:
+        log_probs_n = jax.nn.log_softmax(self.logits_nc, axis=-1)
+        return log_probs_n[x_n]
 
     def sample(self, key: PRNGKeyArray) -> Array:
-        return jax.random.categorical(key, self.logits_n, axis=-1)
+        return jax.random.categorical(key, self.logits_nc, axis=-1)
 
     def mode(self) -> Array:
-        return self.logits_n.argmax(axis=-1)
+        return self.logits_nc.argmax(axis=-1)
 
     def entropy(self) -> Array:
-        """Compute entropy of the categorical distribution."""
-        probs = jax.nn.softmax(self.logits_n, axis=-1)
-        log_probs = jax.nn.log_softmax(self.logits_n, axis=-1)
+        probs = jax.nn.softmax(self.logits_nc, axis=-1)
+        log_probs = jax.nn.log_softmax(self.logits_nc, axis=-1)
         return -jnp.sum(probs * log_probs, axis=-1)
 
 
 class Normal(Distribution):
-    def __init__(self, loc: Array, scale: Array) -> None:
-        self.loc = loc
-        self.scale = scale
+    def __init__(self, loc_n: Array, scale_n: Array, std_clip: float = STD_CLIP) -> None:
+        """Initialize a normal distribution.
+
+        Args:
+            loc_n: Mean of the distribution
+            scale_n: Standard deviation of the distribution
+            std_clip: Minimum standard deviation
+        """
+        self.loc_n = loc_n
+        self.scale_n = jnp.clip(scale_n, min=std_clip)
 
     def log_prob(self, x: Array) -> Array:
-        return -0.5 * jnp.log(2 * jnp.pi) - jnp.log(self.scale) - (x - self.loc) ** 2 / (2 * self.scale**2)
+        return -0.5 * jnp.log(2 * jnp.pi) - jnp.log(self.scale_n) - (x - self.loc_n) ** 2 / (2 * self.scale_n**2)
 
     def sample(self, key: PRNGKeyArray) -> Array:
-        return self.loc + self.scale * jax.random.normal(key, self.loc.shape)
+        return self.loc_n + self.scale_n * jax.random.normal(key, self.loc_n.shape)
 
     def mode(self) -> Array:
-        return self.loc
+        return self.loc_n
 
     def entropy(self) -> Array:
-        return jnp.log(2 * jnp.pi * jnp.e) + jnp.log(self.scale)
+        return jnp.log(2 * jnp.pi * jnp.e) + jnp.log(self.scale_n)
 
 
 class MixtureOfGaussians(Distribution):
-    def __init__(self, means_nm: Array, stds_nm: Array, logits_nm: Array) -> None:
+    def __init__(
+        self,
+        means_nm: Array,
+        stds_nm: Array,
+        logits_nm: Array,
+        std_clip: float = STD_CLIP,
+        logit_clip: float = LOGIT_CLIP,
+    ) -> None:
         """Initialize a mixture of Gaussians.
 
         Args:
             means_nm: Array of shape (..., n_components) containing means
             stds_nm: Array of shape (..., n_components) containing standard deviations
             logits_nm: Array of shape (..., n_components) containing mixing logits
+            std_clip: Minimum standard deviation
+            logit_clip: Clipping value for logits
         """
         self.means_nm = means_nm
-        self.stds_nm = stds_nm
-        self.logits_nm = logits_nm
+        self.stds_nm = jnp.clip(stds_nm, min=std_clip)
+        self.logits_nm = jnp.clip(logits_nm, -logit_clip, logit_clip)
 
-    def log_prob(self, x: Array) -> Array:
-        """Compute log probability of the mixture.
-
-        Args:
-            x: Array of shape (...,) containing values to evaluate
-
-        Returns:
-            Log probabilities of shape (...,)
-        """
+    def log_prob(self, x_n: Array) -> Array:
         # Expand x to match component dimensions
-        x_expanded = x[..., None]  # Shape: (..., 1)
+        x_n_expanded = x_n[..., None]  # Shape: (..., 1)
 
         # Compute log probabilities for each component
         component_log_probs = (
             -0.5 * jnp.log(2 * jnp.pi)
             - jnp.log(self.stds_nm)
-            - (x_expanded - self.means_nm) ** 2 / (2 * self.stds_nm**2)
+            - (x_n_expanded - self.means_nm) ** 2 / (2 * self.stds_nm**2)
         )
 
         # Compute mixing weights
@@ -123,16 +131,7 @@ class MixtureOfGaussians(Distribution):
         # Combine using log-sum-exp trick for numerical stability
         return jax.scipy.special.logsumexp(component_log_probs + mixing_logits, axis=-1)
 
-    def sample(self, key: PRNGKeyArray) -> Array:
-        """Sample from the mixture of Gaussians.
-
-        Args:
-            key: PRNG key
-
-        Returns:
-            Samples of shape (...,) where ... are the batch dimensions
-        """
-        # Sample component indices
+    def sample(self, key: PRNGKeyArray) -> Array:  # Sample component indices
         component_key, sample_key = jax.random.split(key)
         component_indices = jax.random.categorical(component_key, self.logits_nm, axis=-1)
 
@@ -153,8 +152,8 @@ class MixtureOfGaussians(Distribution):
         noise = jax.random.normal(sample_key, selected_means.shape)
 
         # Reshape back to original batch shape
-        samples = selected_means + selected_stds * noise
-        return samples.reshape(batch_shape)
+        samples_n = selected_means + selected_stds * noise
+        return samples_n.reshape(batch_shape)
 
     def mode(self) -> Array:
         """Return the mode of the mixture (approximate - returns mean of highest weight component)."""
