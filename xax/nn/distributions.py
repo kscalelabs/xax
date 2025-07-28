@@ -20,7 +20,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray
 
 STD_CLIP = 1e-6
-LOGIT_CLIP = math.log(1e4)
+LOGIT_CLIP = 6.0
 
 
 class Distribution(ABC):
