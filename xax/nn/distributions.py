@@ -12,6 +12,7 @@ __all__ = [
     "MixtureOfGaussians",
 ]
 
+import math
 from abc import ABC, abstractmethod
 
 import jax
@@ -95,8 +96,8 @@ class MixtureOfGaussians(Distribution):
             logits_nm: Array of shape (..., n_components) containing mixing logits
         """
         self.means_nm = means_nm
-        self.stds_nm = stds_nm
-        self.logits_nm = logits_nm
+        self.stds_nm = jnp.clip(stds_nm, min=1e-6)
+        self.logits_nm = jnp.clip(logits_nm, -math.log(1e4), math.log(1e4))
 
     def log_prob(self, x: Array) -> Array:
         """Compute log probability of the mixture.
