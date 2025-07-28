@@ -274,6 +274,9 @@ def diff_pytree(tree_a: PyTree, tree_b: PyTree, prefix: str = "") -> list[str]:
 
     # Handles dataclasses.
     if is_dataclass(tree_a) and is_dataclass(tree_b):
+        if type(tree_a) is not type(tree_b):
+            diffs.append(f"{prefix}: type {type(tree_a)} vs {type(tree_b)}")
+            return diffs
         for field in fields(tree_a):
             attr_a, attr_b = getattr(tree_a, field.name), getattr(tree_b, field.name)
             diffs.extend(diff_pytree(attr_a, attr_b, prefix + f"{field.name}."))
@@ -328,11 +331,6 @@ def diff_pytree(tree_a: PyTree, tree_b: PyTree, prefix: str = "") -> list[str]:
         aval_b = get_aval(tree_b)
         if aval_a != aval_b:  # pyright: ignore[reportAttributeAccessIssue]
             diffs.append(f"{prefix}: aval {aval_a} vs {aval_b}")
-        return diffs
-
-    # Handle mismatched types
-    elif type(tree_a) is not type(tree_b):
-        diffs.append(f"{prefix}: type {type(tree_a)} vs {type(tree_b)}")
         return diffs
 
     else:
