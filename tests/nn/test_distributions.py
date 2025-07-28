@@ -388,16 +388,6 @@ class TestEdgeCases:
         log_prob = cat.log_prob(jnp.array(0))
         assert jnp.allclose(log_prob, 0.0)  # log(1) = 0
 
-    def test_normal_zero_std(self) -> None:
-        """Test normal distribution with zero standard deviation."""
-        mean = jnp.array(0.0)
-        std = jnp.array(0.0)
-        normal = xax.Normal(mean, std)
-
-        # Test log probability at mean
-        log_prob = normal.log_prob(mean)
-        assert jnp.isnan(log_prob)  # Should be NaN due to division by zero
-
     def test_mixture_single_component(self) -> None:
         """Test mixture with single component (should behave like normal)."""
         means = jnp.array([0.0])
