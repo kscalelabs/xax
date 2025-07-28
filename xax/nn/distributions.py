@@ -12,7 +12,6 @@ __all__ = [
     "MixtureOfGaussians",
 ]
 
-import math
 from abc import ABC, abstractmethod
 
 import jax
