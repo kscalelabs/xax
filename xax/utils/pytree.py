@@ -1,6 +1,6 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
-from typing import Mapping, Sequence, TypeVar
+from typing import TypeVar
 
 import chex
 import equinox as eqx
