@@ -138,6 +138,7 @@ __all__ = [
     "worker_chunk",
     "profile",
     "compute_nan_ratio",
+    "diff_pytree",
     "flatten_array",
     "flatten_pytree",
     "get_pytree_mapping",
@@ -330,6 +331,7 @@ NAME_MAP: dict[str, str] = {
     "worker_chunk": "utils.numpy",
     "profile": "utils.profile",
     "compute_nan_ratio": "utils.pytree",
+    "diff_pytree": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
     "get_pytree_mapping": "utils.pytree",
@@ -413,7 +415,12 @@ if IMPORT_ALL or TYPE_CHECKING:
         TransformerCache,
         TransformerStack,
     )
-    from xax.nn.distributions import Categorical, Distribution, MixtureOfGaussians, Normal
+    from xax.nn.distributions import (
+        Categorical,
+        Distribution,
+        MixtureOfGaussians,
+        Normal,
+    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -518,6 +525,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.utils.profile import profile
     from xax.utils.pytree import (
         compute_nan_ratio,
+        diff_pytree,
         flatten_array,
         flatten_pytree,
         get_pytree_mapping,

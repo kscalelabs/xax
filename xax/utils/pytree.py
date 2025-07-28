@@ -1,12 +1,15 @@
 """Utils for accessing, modifying, and otherwise manipulating pytrees."""
 
-from typing import TypeVar
+from dataclasses import fields, is_dataclass
+from typing import Mapping, Sequence, TypeVar
 
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
+from jax.core import get_aval
 from jaxtyping import PRNGKeyArray, PyTree
 
 T = TypeVar("T")
@@ -264,3 +267,73 @@ def get_pytree_mapping(pytree: PyTree) -> dict[str, Array]:
 
     jax.tree.map_with_path(_get_leaf, pytree)
     return leaves
+
+
+def diff_pytree(tree_a: PyTree, tree_b: PyTree, prefix: str = "") -> list[str]:
+    diffs = []
+
+    # Handles dataclasses.
+    if is_dataclass(tree_a) and is_dataclass(tree_b):
+        for field in fields(tree_a):
+            attr_a, attr_b = getattr(tree_a, field.name), getattr(tree_b, field.name)
+            diffs.extend(diff_pytree(attr_a, attr_b, prefix + f"{field.name}."))
+        return diffs
+
+    # Handle dict-like objects
+    elif isinstance(tree_a, Mapping) and isinstance(tree_b, Mapping):
+        if type(tree_a) is not type(tree_b):
+            diffs.append(f"{prefix}: type {type(tree_a)} vs {type(tree_b)}")
+            return diffs
+        keys_a, keys_b = set(tree_a.keys()), set(tree_b.keys())
+        for k in keys_a - keys_b:
+            diffs.append(f"{prefix}{k}: present in A only")
+        for k in keys_b - keys_a:
+            diffs.append(f"{prefix}{k}: present in B only")
+        for k in keys_a & keys_b:
+            diffs.extend(diff_pytree(tree_a[k], tree_b[k], prefix + f"{k}."))
+        return diffs
+
+    # Handle tuple/list
+    elif isinstance(tree_a, Sequence) and isinstance(tree_b, Sequence):
+        if type(tree_a) is not type(tree_b):
+            diffs.append(f"{prefix}: type {type(tree_a)} vs {type(tree_b)}")
+            return diffs
+        if len(tree_a) != len(tree_b):
+            diffs.append(f"{prefix}: different lengths {len(tree_a)} vs {len(tree_b)}")
+        for i, (a_i, b_i) in enumerate(zip(tree_a, tree_b, strict=True)):
+            diffs.extend(diff_pytree(a_i, b_i, prefix + f"[{i}]."))
+        return diffs
+
+    # Handles basic types.
+    elif isinstance(tree_a, (int, float, bool, str, type(None), np.number, np.bool, bytes)):
+        if tree_a != tree_b:
+            diffs.append(f"{prefix}: {tree_a!r} vs {tree_b!r}")
+        return diffs
+
+    # Handles Numpy arrays.
+    elif isinstance(tree_a, np.ndarray) and isinstance(tree_b, np.ndarray):
+        if tree_a.shape != tree_b.shape:
+            diffs.append(f"{prefix}: shape {tree_a.shape} vs {tree_b.shape}")
+        if tree_a.dtype != tree_b.dtype:
+            diffs.append(f"{prefix}: dtype {tree_a.dtype} vs {tree_b.dtype}")
+        return diffs
+
+    # Handle arrays (check shape/dtype)
+    elif isinstance(tree_a, jnp.ndarray) and isinstance(tree_b, jnp.ndarray):
+        if tree_a.shape != tree_b.shape:
+            diffs.append(f"{prefix}: shape {tree_a.shape} vs {tree_b.shape}")
+        if tree_a.dtype != tree_b.dtype:
+            diffs.append(f"{prefix}: dtype {tree_a.dtype} vs {tree_b.dtype}")
+        aval_a = get_aval(tree_a)
+        aval_b = get_aval(tree_b)
+        if aval_a != aval_b:  # pyright: ignore[reportAttributeAccessIssue]
+            diffs.append(f"{prefix}: aval {aval_a} vs {aval_b}")
+        return diffs
+
+    # Handle mismatched types
+    elif type(tree_a) is not type(tree_b):
+        diffs.append(f"{prefix}: type {type(tree_a)} vs {type(tree_b)}")
+        return diffs
+
+    else:
+        raise ValueError(f"Unknown type: {type(tree_a)}")
