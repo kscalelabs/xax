@@ -678,7 +678,7 @@ class TrainMixin(
 
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
-        logger.log(LOG_STATUS, self.task_name)
+        logger.log(LOG_STATUS, self.exp_dir)
         logger.log(LOG_STATUS, "JAX devices: %s", jax.devices())
         self.logger.log_file("state.txt", get_state_file_string(self))
         self.logger.log_file("training_code.py", get_training_code(self))
