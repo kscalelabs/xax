@@ -31,7 +31,7 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
     # Pitch (y-axis rotation)
     sinp = 2.0 * (w * y - z * x)
     sinp = jnp.clip(sinp, -1.0, 1.0)  # Clamp to valid domain
-    pitch = jnp.arcsin(sinp)
+    pitch = jax.lax.asin(sinp)
 
     # Yaw (z-axis rotation)
     siny_cosp = 2.0 * (w * z + x * y)
