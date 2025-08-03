@@ -15,7 +15,11 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
     Returns:
         The roll, pitch, yaw angles with shape (*, 3).
     """
-    quat_4 = quat_4 / (jnp.linalg.norm(quat_4, axis=-1, keepdims=True) + eps)
+    # Normalize with clamping
+    norm = jnp.linalg.norm(quat_4, axis=-1, keepdims=True)
+    norm = jnp.maximum(norm, eps)
+    quat_4 = quat_4 / norm
+
     w, x, y, z = jnp.split(quat_4, 4, axis=-1)
 
     # Roll (x-axis rotation)
@@ -25,13 +29,8 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
 
     # Pitch (y-axis rotation)
     sinp = 2.0 * (w * y - z * x)
-
-    # Handle edge cases where |sinp| >= 1
-    pitch = jnp.where(
-        jnp.abs(sinp) >= 1.0,
-        jnp.sign(sinp) * jnp.pi / 2.0,  # Use 90 degrees if out of range
-        jnp.arcsin(sinp),
-    )
+    sinp = jnp.clip(sinp, -1.0, 1.0)  # Clamp to valid domain
+    pitch = jnp.arcsin(sinp)
 
     # Yaw (z-axis rotation)
     siny_cosp = 2.0 * (w * z + x * y)
@@ -89,7 +88,12 @@ def get_projected_gravity_vector_from_quat(quat: Array, eps: float = 1e-6) -> Ar
     return rotate_vector_by_quat(jnp.array([0, 0, -9.81]), quat, inverse=True, eps=eps)
 
 
-def rotate_vector_by_quat(vector: Array, quat: Array, inverse: bool = False, eps: float = 1e-6) -> Array:
+def rotate_vector_by_quat(
+    vector: Array,
+    quat: Array,
+    inverse: bool = False,
+    eps: float = 1e-6,
+) -> Array:
     """Rotates a vector by a quaternion.
 
     Args:
