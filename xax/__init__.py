@@ -102,7 +102,7 @@ __all__ = [
     "collate_non_null",
     "breakpoint_if_nonfinite",
     "get_named_leaves",
-    "log_if_nan",
+    "log_if_nonfinite",
     "BaseFileDownloader",
     "ContextTimer",
     "CumulativeTimer",
@@ -198,7 +198,10 @@ if "XLA_FLAGS" in os.environ:
 # If Nvidia GPU is detected (meaning, is `nvidia-smi` available?), disable
 # Triton GEMM kernels. See https://github.com/NVIDIA/JAX-Toolbox
 if shutil.which("nvidia-smi") is not None:
-    xla_flags += ["--xla_gpu_enable_latency_hiding_scheduler=true", "--xla_gpu_enable_triton_gemm=false"]
+    xla_flags += [
+        "--xla_gpu_enable_latency_hiding_scheduler=true",
+        "--xla_gpu_enable_triton_gemm=false",
+    ]
 os.environ["XLA_FLAGS"] = " ".join(xla_flags)
 
 # If this flag is set, eagerly imports the entire package (not recommended).
@@ -295,7 +298,7 @@ NAME_MAP: dict[str, str] = {
     "collate_non_null": "utils.data.collate",
     "breakpoint_if_nonfinite": "utils.debugging",
     "get_named_leaves": "utils.debugging",
-    "log_if_nan": "utils.debugging",
+    "log_if_nonfinite": "utils.debugging",
     "BaseFileDownloader": "utils.experiments",
     "ContextTimer": "utils.experiments",
     "CumulativeTimer": "utils.experiments",
@@ -486,7 +489,11 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
-    from xax.utils.debugging import breakpoint_if_nonfinite, get_named_leaves, log_if_nan
+    from xax.utils.debugging import (
+        breakpoint_if_nonfinite,
+        get_named_leaves,
+        log_if_nonfinite,
+    )
     from xax.utils.experiments import (
         BaseFileDownloader,
         ContextTimer,
