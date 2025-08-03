@@ -100,7 +100,7 @@ __all__ = [
     "Task",
     "collate",
     "collate_non_null",
-    "breakpoint_if_nan",
+    "breakpoint_if_nonfinite",
     "get_named_leaves",
     "log_if_nan",
     "BaseFileDownloader",
@@ -293,7 +293,7 @@ NAME_MAP: dict[str, str] = {
     "Task": "task.task",
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
-    "breakpoint_if_nan": "utils.debugging",
+    "breakpoint_if_nonfinite": "utils.debugging",
     "get_named_leaves": "utils.debugging",
     "log_if_nan": "utils.debugging",
     "BaseFileDownloader": "utils.experiments",
@@ -486,7 +486,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.script import Script, ScriptConfig
     from xax.task.task import Config, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
-    from xax.utils.debugging import breakpoint_if_nan, get_named_leaves, log_if_nan
+    from xax.utils.debugging import breakpoint_if_nonfinite, get_named_leaves, log_if_nan
     from xax.utils.experiments import (
         BaseFileDownloader,
         ContextTimer,
