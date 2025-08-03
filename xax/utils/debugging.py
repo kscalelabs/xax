@@ -51,8 +51,16 @@ def get_named_leaves(
     return ret
 
 
-def breakpoint_if_nan(x: Array) -> None:
-    jax.lax.cond(jnp.any(jnp.isnan(x)), lambda: jax.debug.breakpoint(), lambda: None)
+def breakpoint_if_nonfinite(x: Array) -> None:
+    is_finite = jnp.isfinite(x).all()
+
+    def true_fn(x: Array) -> None:
+        pass
+
+    def false_fn(x: Array) -> None:
+        jax.debug.breakpoint()
+
+    jax.lax.cond(is_finite, true_fn, false_fn, x)
 
 
 def log_if_nan(x: Array, loc: str) -> None:
