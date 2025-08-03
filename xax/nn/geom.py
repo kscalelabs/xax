@@ -18,8 +18,8 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
     """
     # Normalize with clamping
     norm_sq = jnp.sum(quat_4**2, axis=-1, keepdims=True)
-    norm = jnp.sqrt(jnp.maximum(norm_sq, eps))
-    quat_4 = quat_4 / norm
+    inv_norm = jax.lax.rsqrt(jnp.maximum(norm_sq, eps))
+    quat_4 = quat_4 * inv_norm
 
     w, x, y, z = jnp.unstack(quat_4, axis=-1)
 
@@ -53,8 +53,8 @@ def quat_to_yaw(quat_4: Array, eps: float = 1e-6) -> Array:
     """
     # Normalize using a max + safe norm to handle extremely small values robustly
     norm_sq = jnp.sum(quat_4**2, axis=-1, keepdims=True)
-    norm = jnp.sqrt(jnp.maximum(norm_sq, eps))
-    quat_4 = quat_4 / norm
+    inv_norm = jax.lax.rsqrt(jnp.maximum(norm_sq, eps))
+    quat_4 = quat_4 * inv_norm
 
     w, x, y, z = jnp.unstack(quat_4, axis=-1)
 
