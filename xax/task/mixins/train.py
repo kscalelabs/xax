@@ -160,7 +160,7 @@ class ValidStepTimer:
 
 
 @jax.tree_util.register_dataclass
-@dataclass
+@dataclass(frozen=True)
 class ModelInitParams:
     key: PRNGKeyArray
 
@@ -385,7 +385,7 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            model, state, config = self.load_ckpt(init_ckpt_path, part="model_state_config")
+            model, state, config = self.load_ckpt(init_ckpt_path, params, part="model_state_config")
             config_diff = get_diff_string(diff_configs(asdict(config), asdict(self.config)))
             if config_diff:
                 logger.warning("Loaded config differs from current config:\n%s", config_diff)
@@ -393,8 +393,8 @@ class TrainMixin(
             if not load_optimizer:
                 return model, state
 
-            optimizer = self.load_ckpt(init_ckpt_path, part="opt")
-            opt_state = self.load_ckpt(init_ckpt_path, part="opt_state", model=model, optimizer=optimizer)
+            optimizer = self.load_ckpt(init_ckpt_path, params, part="opt")
+            opt_state = self.load_ckpt(init_ckpt_path, params, part="opt_state", model=model, optimizer=optimizer)
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
@@ -414,6 +414,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["all"],
     ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, Config]: ...
@@ -422,6 +423,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["model_state_config"],
     ) -> tuple[list[PyTree], State, Config]: ...
@@ -430,6 +432,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["model"],
     ) -> list[PyTree]: ...
@@ -438,6 +441,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["opt"],
     ) -> list[optax.GradientTransformation]: ...
@@ -446,6 +450,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["opt_state"],
         model: PyTree | None = None,
@@ -456,6 +461,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["state"],
     ) -> list[State]: ...
@@ -464,6 +470,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: ModelInitParams,
         *,
         part: Literal["config"],
     ) -> list[Config]: ...
@@ -471,6 +478,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: str | Path,
+        init_params: ModelInitParams,
         *,
         part: CheckpointPart = "all",
         model: PyTree | None = None,
@@ -486,18 +494,15 @@ class TrainMixin(
     ):
         path = Path(path)
 
-        # This key isn't used for anything, it's just a required argument.
-        key = jax.random.PRNGKey(0)
-
         match part:
             case "model_state_config":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 model, state, config = load_ckpt(path, part="model_state_config", model_templates=model_specs)
                 config = self.get_config(config, use_cli=False)
                 return model, state, config
 
             case "model":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 return load_ckpt(path, part="model", model_templates=model_specs)
 
             case "opt":
@@ -506,7 +511,7 @@ class TrainMixin(
 
             case "opt_state":
                 if model is None:
-                    model_specs = eqx.filter_eval_shape(self._get_models, key)
+                    model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                     model = load_ckpt(path, part="model", model_templates=model_specs)
                 if optimizer is None:
                     optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
@@ -521,7 +526,7 @@ class TrainMixin(
                 return self.get_config(load_ckpt(path, part="config"), use_cli=False)
 
             case "all":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 model = load_ckpt(path, part="model", model_templates=model_specs)
                 optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
                 optimizer = load_ckpt(path, part="opt", optimizer_templates=optimizer_specs)
