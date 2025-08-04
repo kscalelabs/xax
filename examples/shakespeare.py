@@ -221,7 +221,7 @@ class ShakespearePrediction(xax.Task[Config]):
             "acc": (yhat == y).astype(float).mean(),
         }
 
-    def get_model(self, key: PRNGKeyArray) -> SequenceModel:
+    def get_model(self, params: xax.ModelInitParams) -> SequenceModel:
         match self.config.model_type:
             case "rnn":
                 return RNN(
@@ -229,7 +229,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
                     num_layers=self.config.num_layers,
-                    key=key,
+                    key=params.key,
                 )
             case "lstm":
                 return LSTM(
@@ -237,7 +237,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     hidden_size=self.config.hidden_size,
                     output_size=self.config.output_size,
                     num_layers=self.config.num_layers,
-                    key=key,
+                    key=params.key,
                 )
             case "ssm":
                 return xax.SSM(
@@ -248,7 +248,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     block_type="diagonal",
                     skip_connections=True,
                     discretize=False,
-                    key=key,
+                    key=params.key,
                 )
             case "transformer":
                 return xax.Transformer(
@@ -258,7 +258,7 @@ class ShakespearePrediction(xax.Task[Config]):
                     ff_dim=self.config.hidden_size * 4,
                     num_layers=self.config.num_layers,
                     output_size=self.config.output_size,
-                    key=key,
+                    key=params.key,
                 )
             case _:
                 raise ValueError(f"Unknown model type: {self.config.model_type}")

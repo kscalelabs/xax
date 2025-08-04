@@ -48,8 +48,8 @@ class SimpleModel(eqx.Module):
 class SimpleTask(xax.Task[SimpleConfig]):
     """Test task for end-to-end training verification."""
 
-    def get_model(self, key: PRNGKeyArray) -> SimpleModel:
-        return SimpleModel(self.config, key=key)
+    def get_model(self, params: xax.ModelInitParams) -> SimpleModel:
+        return SimpleModel(self.config, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)

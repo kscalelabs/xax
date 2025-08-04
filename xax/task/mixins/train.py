@@ -161,6 +161,12 @@ class ValidStepTimer:
 
 @jax.tree_util.register_dataclass
 @dataclass
+class ModelInitParams:
+    key: PRNGKeyArray
+
+
+@jax.tree_util.register_dataclass
+@dataclass
 class TrainConfig(
     CheckpointingConfig,
     DataloadersConfig,
@@ -309,15 +315,18 @@ class TrainMixin(
         self.write_logs(state)
 
     @abstractmethod
-    def get_model(self, key: PRNGKeyArray) -> PyTree | Sequence[PyTree]:
+    def get_model(self, params: ModelInitParams) -> PyTree | Sequence[PyTree]:
         """Returns the Equinox model to train.
+
+        Args:
+            params: The parameters for initializing the model.
 
         Returns:
             The model to train.
         """
 
-    def _get_models(self, key: PRNGKeyArray) -> list[PyTree]:
-        models = self.get_model(key)
+    def _get_models(self, params: ModelInitParams) -> list[PyTree]:
+        models = self.get_model(params)
         if isinstance(models, Sequence):
             models = list(models)
         elif isinstance(models, eqx.Module):
@@ -353,20 +362,20 @@ class TrainMixin(
     @overload
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: ModelInitParams,
         load_optimizer: Literal[False] = False,
     ) -> tuple[PyTree, State]: ...
 
     @overload
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: ModelInitParams,
         load_optimizer: Literal[True],
     ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State]: ...
 
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: ModelInitParams,
         load_optimizer: bool = False,
     ) -> (
         tuple[list[PyTree], State]
@@ -389,7 +398,7 @@ class TrainMixin(
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
-        models = self._get_models(key)
+        models = self._get_models(params)
         state = State.init_state()
 
         if not load_optimizer:
@@ -866,7 +875,8 @@ class TrainMixin(
                 Thread(target=self.log_state, daemon=True).start()
 
             key, model_key = jax.random.split(key)
-            models, optimizers, opt_states, state = self.load_initial_state(model_key, load_optimizer=True)
+            init_params = ModelInitParams(key=model_key)
+            models, optimizers, opt_states, state = self.load_initial_state(init_params, load_optimizer=True)
             logger.info("Model size: %s", f"{get_pytree_param_count(models):,}")
             logger.info("Optimizer size: %s", f"{get_pytree_param_count(opt_states):,}")
 

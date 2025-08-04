@@ -40,8 +40,8 @@ class Model(eqx.Module):
 
 
 class LoggingExample(xax.Task[Config]):
-    def get_model(self, key: PRNGKeyArray) -> Model:
-        return Model(self.config.dims, key=key)
+    def get_model(self, params: xax.ModelInitParams) -> Model:
+        return Model(self.config.dims, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
