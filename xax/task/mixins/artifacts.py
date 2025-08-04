@@ -82,7 +82,7 @@ class ArtifactsMixin(BaseTask[Config]):
             return self._exp_dir
 
         def get_exp_dir(run_id: int) -> Path:
-            return self.run_dir / f"run_{run_id}"
+            return self.run_dir / f"run_{run_id:03d}"
 
         run_id = 0
         while (exp_dir := get_exp_dir(run_id)).is_dir():
