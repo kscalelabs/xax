@@ -62,9 +62,7 @@ def quat_to_yaw(quat_4: Array, eps: float = 1e-6) -> Array:
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
 
-    # Use lax.atan2 to avoid creating NaNs on edge cases
-    yaw = jax.lax.atan2(siny_cosp, cosy_cosp)
-    return yaw
+    return jax.lax.atan2(siny_cosp, cosy_cosp)
 
 
 def euler_to_quat(euler_3: Array) -> Array:
