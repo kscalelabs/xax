@@ -1,6 +1,7 @@
 """Defines geometry functions."""
 
 import chex
+import jax
 from jax import numpy as jnp
 from jaxtyping import Array
 
@@ -16,28 +17,52 @@ def quat_to_euler(quat_4: Array, eps: float = 1e-6) -> Array:
         The roll, pitch, yaw angles with shape (*, 3).
     """
     # Normalize with clamping
-    norm = jnp.linalg.norm(quat_4, axis=-1, keepdims=True)
-    norm = jnp.maximum(norm, eps)
-    quat_4 = quat_4 / norm
+    norm_sq = jnp.sum(quat_4**2, axis=-1, keepdims=True)
+    inv_norm = jax.lax.rsqrt(jnp.maximum(norm_sq, eps))
+    quat_4 = quat_4 * inv_norm
 
-    w, x, y, z = jnp.split(quat_4, 4, axis=-1)
+    w, x, y, z = jnp.unstack(quat_4, axis=-1)
 
     # Roll (x-axis rotation)
     sinr_cosp = 2.0 * (w * x + y * z)
     cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = jnp.arctan2(sinr_cosp, cosr_cosp)
+    roll = jax.lax.atan2(sinr_cosp, cosr_cosp)
 
     # Pitch (y-axis rotation)
     sinp = 2.0 * (w * y - z * x)
     sinp = jnp.clip(sinp, -1.0, 1.0)  # Clamp to valid domain
-    pitch = jnp.arcsin(sinp)
+    pitch = jax.lax.asin(sinp)
 
     # Yaw (z-axis rotation)
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = jnp.arctan2(siny_cosp, cosy_cosp)
+    yaw = jax.lax.atan2(siny_cosp, cosy_cosp)
 
-    return jnp.concatenate([roll, pitch, yaw], axis=-1)
+    return jnp.stack([roll, pitch, yaw], axis=-1)
+
+
+def quat_to_yaw(quat_4: Array, eps: float = 1e-6) -> Array:
+    """Converts a quaternion to a yaw angle.
+
+    Args:
+        quat_4: The quaternion to convert, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
+
+    Returns:
+        The yaw angle, shape (*).
+    """
+    # Normalize using a max + safe norm to handle extremely small values robustly
+    norm_sq = jnp.sum(quat_4**2, axis=-1, keepdims=True)
+    inv_norm = jax.lax.rsqrt(jnp.maximum(norm_sq, eps))
+    quat_4 = quat_4 * inv_norm
+
+    w, x, y, z = jnp.unstack(quat_4, axis=-1)
+
+    # Compute components with clamping to avoid rounding errors near limits
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+
+    return jax.lax.atan2(siny_cosp, cosy_cosp)
 
 
 def euler_to_quat(euler_3: Array) -> Array:
