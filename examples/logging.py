@@ -21,7 +21,7 @@ except ModuleNotFoundError as err:
 
 
 @dataclass
-class Config(xax.Config):
+class Config(xax.SupervisedConfig):
     batch_size: int = xax.field(128, help="The size of a minibatch")
     learning_rate: float = xax.field(1e-3, help="The learning rate")
     dims: int = xax.field(16, help="The dimension of the model")
@@ -39,9 +39,9 @@ class Model(eqx.Module):
         return self.layer(x)
 
 
-class LoggingExample(xax.Task[Config]):
-    def get_model(self, key: PRNGKeyArray) -> Model:
-        return Model(self.config.dims, key=key)
+class LoggingExample(xax.SupervisedTask[Config]):
+    def get_model(self, params: xax.InitParams) -> Model:
+        return Model(self.config.dims, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
