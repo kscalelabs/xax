@@ -16,7 +16,7 @@ import xax
 
 
 @dataclass
-class Config(xax.Config):
+class Config(xax.SupervisedConfig):
     batch_size: int = xax.field(128, help="The size of a minibatch")
     learning_rate: float = xax.field(1e-3, help="The learning rate")
     hidden_dim: int = xax.field(512, help="Hidden layer dimension")
@@ -68,7 +68,7 @@ class Model(eqx.Module):
         return x
 
 
-class MnistClassification(xax.Task[Config]):
+class MnistClassification(xax.SupervisedTask[Config]):
     def get_model(self, params: xax.InitParams) -> Model:
         return Model(
             self.config.num_hidden_layers,

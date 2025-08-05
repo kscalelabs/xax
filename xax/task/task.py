@@ -85,9 +85,12 @@ class SupervisedConfig(
     pass
 
 
+SupervisedConfigT = TypeVar("SupervisedConfigT", bound=SupervisedConfig)
+
+
 class SupervisedTask(
-    BaseSupervisedMixin[ConfigT],
-    Task[ConfigT, InitParams],
-    Generic[ConfigT],
+    BaseSupervisedMixin[SupervisedConfigT],
+    Task[SupervisedConfigT, InitParams],
+    Generic[SupervisedConfigT],
 ):
     pass

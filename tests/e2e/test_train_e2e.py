@@ -14,7 +14,7 @@ import xax
 
 
 @dataclass
-class SimpleConfig(xax.Config):
+class SimpleConfig(xax.SupervisedConfig):
     """Test configuration."""
 
     batch_size: int = xax.field(32, help="Batch size for training")
@@ -45,16 +45,10 @@ class SimpleModel(eqx.Module):
         return x
 
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class TestModelInitParams(xax.InitParams):
-    metadata: dict[str, str]
-
-
-class SimpleTask(xax.Task[SimpleConfig]):
+class SimpleTask(xax.SupervisedTask[SimpleConfig]):
     """Test task for end-to-end training verification."""
 
-    def get_model(self, params: TestModelInitParams) -> SimpleModel:
+    def get_model(self, params: xax.InitParams) -> SimpleModel:
         return SimpleModel(self.config, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:

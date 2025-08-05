@@ -49,7 +49,7 @@ def load_shakespeare_text() -> ShakespeareDataset:
 
 
 @dataclass
-class Config(xax.Config):
+class Config(xax.SupervisedConfig):
     input_size: int = xax.field(65)
     output_size: int = xax.field(65)
     num_layers: int = xax.field(4)
@@ -199,7 +199,7 @@ class LSTM(eqx.Module):
         return sequence
 
 
-class ShakespearePrediction(xax.Task[Config]):
+class ShakespearePrediction(xax.SupervisedTask[Config]):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
