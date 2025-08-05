@@ -94,11 +94,13 @@ __all__ = [
     "DataloaderConfig",
     "GPUStatsOptions",
     "StepContext",
-    "ModelInitParams",
+    "InitParams",
     "ValidStepTimer",
     "Script",
     "ScriptConfig",
     "Config",
+    "SupervisedConfig",
+    "SupervisedTask",
     "Task",
     "collate",
     "collate_non_null",
@@ -292,11 +294,13 @@ NAME_MAP: dict[str, str] = {
     "DataloaderConfig": "task.mixins.data_loader",
     "GPUStatsOptions": "task.mixins.gpu_stats",
     "StepContext": "task.mixins.step_wrapper",
-    "ModelInitParams": "task.mixins.train",
+    "InitParams": "task.mixins.train",
     "ValidStepTimer": "task.mixins.train",
     "Script": "task.script",
     "ScriptConfig": "task.script",
     "Config": "task.task",
+    "SupervisedConfig": "task.task",
+    "SupervisedTask": "task.task",
     "Task": "task.task",
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
@@ -490,9 +494,9 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
     from xax.task.mixins.step_wrapper import StepContext
-    from xax.task.mixins.train import Batch, ModelInitParams, Output, ValidStepTimer
+    from xax.task.mixins.train import Batch, InitParams, Output, ValidStepTimer
     from xax.task.script import Script, ScriptConfig
-    from xax.task.task import Config, Task
+    from xax.task.task import Config, SupervisedConfig, SupervisedTask, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
     from xax.utils.debugging import (
         breakpoint_if_nonfinite,

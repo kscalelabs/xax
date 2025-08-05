@@ -45,10 +45,16 @@ class SimpleModel(eqx.Module):
         return x
 
 
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class TestModelInitParams(xax.InitParams):
+    metadata: dict[str, str]
+
+
 class SimpleTask(xax.Task[SimpleConfig]):
     """Test task for end-to-end training verification."""
 
-    def get_model(self, params: xax.ModelInitParams) -> SimpleModel:
+    def get_model(self, params: TestModelInitParams) -> SimpleModel:
         return SimpleModel(self.config, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:

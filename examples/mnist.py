@@ -69,7 +69,7 @@ class Model(eqx.Module):
 
 
 class MnistClassification(xax.Task[Config]):
-    def get_model(self, params: xax.ModelInitParams) -> Model:
+    def get_model(self, params: xax.InitParams) -> Model:
         return Model(
             self.config.num_hidden_layers,
             self.config.hidden_dim,

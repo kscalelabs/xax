@@ -19,6 +19,7 @@ from xax.task.mixins import (
     DataloadersMixin,
     GPUStatsConfig,
     GPUStatsMixin,
+    InitParams,
     LoggerConfig,
     LoggerMixin,
     ProcessConfig,
@@ -27,6 +28,8 @@ from xax.task.mixins import (
     RunnableMixin,
     StepContextConfig,
     StepContextMixin,
+    SupervisedConfig as BaseSupervisedConfig,
+    SupervisedMixin as BaseSupervisedMixin,
     TrainConfig,
     TrainMixin,
 )
@@ -52,10 +55,11 @@ class Config(
 
 
 ConfigT = TypeVar("ConfigT", bound=Config)
+InitParamsT = TypeVar("InitParamsT", bound=InitParams)
 
 
 class Task(
-    TrainMixin[ConfigT],
+    TrainMixin[ConfigT, InitParamsT],
     CheckpointingMixin[ConfigT],
     CompileMixin[ConfigT],
     DataloadersMixin[ConfigT],
@@ -67,6 +71,23 @@ class Task(
     ArtifactsMixin[ConfigT],
     RunnableMixin[ConfigT],
     BaseTask[ConfigT],
+    Generic[ConfigT, InitParamsT],
+):
+    pass
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class SupervisedConfig(
+    BaseSupervisedConfig,
+    Config,
+):
+    pass
+
+
+class SupervisedTask(
+    BaseSupervisedMixin[ConfigT],
+    Task[ConfigT, InitParams],
     Generic[ConfigT],
 ):
     pass

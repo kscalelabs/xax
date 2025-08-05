@@ -221,7 +221,7 @@ class ShakespearePrediction(xax.Task[Config]):
             "acc": (yhat == y).astype(float).mean(),
         }
 
-    def get_model(self, params: xax.ModelInitParams) -> SequenceModel:
+    def get_model(self, params: xax.InitParams) -> SequenceModel:
         match self.config.model_type:
             case "rnn":
                 return RNN(

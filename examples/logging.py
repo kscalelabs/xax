@@ -40,7 +40,7 @@ class Model(eqx.Module):
 
 
 class LoggingExample(xax.Task[Config]):
-    def get_model(self, params: xax.ModelInitParams) -> Model:
+    def get_model(self, params: xax.InitParams) -> Model:
         return Model(self.config.dims, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
