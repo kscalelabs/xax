@@ -44,13 +44,11 @@ logger = logging.getLogger(__name__)
 
 @jax.tree_util.register_dataclass
 @dataclass
-class SupervisedConfig(
-    TrainConfig,
-):
+class SupervisedConfig(TrainConfig):
     updates_per_step: int = field(1, help="Number of updates to perform per step")
 
 
-Config = TypeVar("Config", bound=TrainConfig)
+Config = TypeVar("Config", bound=SupervisedConfig)
 
 
 class SupervisedMixin(
