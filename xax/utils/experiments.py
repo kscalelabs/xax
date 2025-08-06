@@ -5,6 +5,7 @@ import datetime
 import enum
 import functools
 import hashlib
+import importlib.metadata
 import inspect
 import itertools
 import json
@@ -29,7 +30,6 @@ from typing import Any, Iterator, Mapping, Self, Sequence, TypeVar, cast
 from urllib.parse import urlparse
 
 import git
-import pkg_resources
 import requests
 from jaxtyping import Array
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
@@ -464,7 +464,7 @@ def get_packages_with_versions() -> str:
     Returns:
         A dictionary of packages and their versions.
     """
-    packages = [(pkg.key, pkg.version) for pkg in pkg_resources.working_set]
+    packages = [(dist.metadata["Name"], dist.version) for dist in importlib.metadata.distributions()]
     return "\n".join([f"{key}=={version}" for key, version in sorted(packages)])
 
 
