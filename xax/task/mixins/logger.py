@@ -1,10 +1,11 @@
 """Defines a mixin for incorporating some logging functionality."""
 
+from enum import Enum
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Generic, Self, TypeVar, Any, Literal
+from typing import Generic, Self, TypeVar, Any
 
 import jax
 
@@ -21,6 +22,11 @@ from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
 
 
+class LoggerBackend(str, Enum):
+    TENSORBOARD = "tensorboard"
+    WANDB = "wandb"
+
+
 @jax.tree_util.register_dataclass
 @dataclass
 class LoggerConfig(BaseConfig):
@@ -28,8 +34,8 @@ class LoggerConfig(BaseConfig):
         value=1.0,
         help="The interval between successive log lines.",
     )
-    logger_backend: Literal['tensorboard', 'wandb'] = field(
-        value="tensorboard",
+    logger_backend: LoggerBackend = field(
+        value=LoggerBackend.TENSORBOARD,
         help="The logger backend to use",
     )
     tensorboard_log_interval_seconds: float = field(
@@ -120,16 +126,16 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
 
     def _create_logger_backend(self):
         match self.config.logger_backend:
-            case "tensorboard":
+            case LoggerBackend.TENSORBOARD:
                 return TensorboardLogger(
                     run_directory=self.exp_dir if isinstance(self, ArtifactsMixin) else "./",
                     log_interval_seconds=self.config.tensorboard_log_interval_seconds,
                 )
-            case "wandb":
+            case LoggerBackend.WANDB:
                 run_config = {}
                 if hasattr(self.config, '__dict__'):
                     # Convert config to a serializable dictionary
-                    run_config = self._config_to_dict(self.config)
+                    wandb_config = self._config_to_dict(self.config)
 
                 return WandbLogger(
                     project=self.config.wandb_project,
