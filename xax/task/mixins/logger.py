@@ -17,7 +17,7 @@ from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger
 from xax.task.loggers.tensorboard import TensorboardLogger
-from xax.task.loggers.wandb import WandbLogger, WandbConfigMode, WandbConfigResume
+from xax.task.loggers.wandb import WandbConfigModeOption, WandbLogger, WandbConfigMode, WandbConfigResume
 from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
 
@@ -67,7 +67,7 @@ class LoggerConfig(BaseConfig):
         help="The interval between successive W&B log lines.",
     )
     wandb_mode: WandbConfigMode = field(
-        value="online",
+        value=WandbConfigModeOption.ONLINE,
         help="Mode for wandb (online, offline, or disabled).",
     )
     wandb_resume: WandbConfigResume = field(
