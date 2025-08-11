@@ -1,9 +1,10 @@
 """Defines a Weights & Biases logger backend."""
 
+from enum import Enum
 import logging
 import os
 from pathlib import Path
-from typing import Any, TypeVar, Literal
+from typing import Any, TypeVar
 
 import numpy as np
 
@@ -33,8 +34,22 @@ def sanitize_metric_name(name: str) -> str:
     return ''.join(char for char in name if ord(char) <= 0xFFFF)
 
 
-WandbConfigResume = Literal['allow', 'never', 'must', 'auto'] | bool
-WandbConfigMode = Literal['online',  'offline', 'disabled', 'shared'] | None 
+class WandbConfigResumeOption(str, Enum):
+    ALLOW = "allow"
+    NEVER = "never"
+    MUST = "must"
+    AUTO = "auto"
+
+
+class WandbConfigModeOption(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    DISABLED = "disabled"
+    SHARED = "shared"
+
+
+WandbConfigResume = WandbConfigResumeOption | bool
+WandbConfigMode = WandbConfigModeOption | None 
 
 
 class WandbLogger(LoggerImpl):
@@ -124,8 +139,8 @@ class WandbLogger(LoggerImpl):
             tags=self.tags,
             notes=self.notes,
             reinit=self.reinit,
-            resume=self.resume,
-            mode=self.mode,
+            resume=self.resume, # pyright: ignore[reportArgumentType]
+            mode=self.mode, # pyright: ignore[reportArgumentType]
         )
 
         self._started = True

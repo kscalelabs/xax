@@ -135,7 +135,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                 run_config = {}
                 if hasattr(self.config, '__dict__'):
                     # Convert config to a serializable dictionary
-                    wandb_config = self._config_to_dict(self.config)
+                    run_config = self._config_to_dict(self.config)
 
                 return WandbLogger(
                     project=self.config.wandb_project,
