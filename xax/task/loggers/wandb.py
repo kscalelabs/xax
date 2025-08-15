@@ -1,8 +1,8 @@
 """Defines a Weights & Biases logger backend."""
 
-from enum import Enum
 import logging
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -19,19 +19,19 @@ T = TypeVar("T")
 
 def sanitize_metric_name(name: str) -> str:
     """Remove 4-byte unicode characters from metric names.
-    
+
     W&B has issues with 4-byte unicode characters in metric names,
     so we need to filter them out.
-    
+
     Args:
         name: The metric name to sanitize.
-        
+
     Returns:
         The sanitized metric name.
     """
     # Filter out characters that don't fit in UCS-2 (Basic Multilingual Plane)
     # These are characters with code points > 0xFFFF (4-byte UTF-8)
-    return ''.join(char for char in name if ord(char) <= 0xFFFF)
+    return "".join(char for char in name if ord(char) <= 0xFFFF)
 
 
 class WandbConfigResumeOption(str, Enum):
@@ -49,7 +49,7 @@ class WandbConfigModeOption(str, Enum):
 
 
 WandbConfigResume = WandbConfigResumeOption | bool
-WandbConfigMode = WandbConfigModeOption | None 
+WandbConfigMode = WandbConfigModeOption | None
 
 
 class WandbLogger(LoggerImpl):
@@ -84,14 +84,12 @@ class WandbLogger(LoggerImpl):
             mode: Mode for wandb ("online", "offline", or "disabled").
         """
         try:
-            import wandb  # noqa: F401
+            import wandb as _wandb  # noqa: F401,PLC0415
         except ImportError as e:
             raise RuntimeError(
-                "WandbLogger requires the 'wandb' package. "
-                "Install it with: pip install xax[wandb]"
+                "WandbLogger requires the 'wandb' package. Install it with: pip install xax[wandb]"
             ) from e
 
-        import wandb as _wandb
         self._wandb = _wandb
 
         super().__init__(log_interval_seconds)
@@ -131,7 +129,7 @@ class WandbLogger(LoggerImpl):
             os.environ["WANDB_DIR"] = str(self.wandb_dir)
 
         # Initialize wandb run
-        self.run = self._wandb.init( # pyright
+        self.run = self._wandb.init(  # pyright
             project=self.project,
             entity=self.entity,
             name=self.name,
@@ -139,8 +137,8 @@ class WandbLogger(LoggerImpl):
             tags=self.tags,
             notes=self.notes,
             reinit=self.reinit,
-            resume=self.resume, # pyright: ignore[reportArgumentType]
-            mode=self.mode, # pyright: ignore[reportArgumentType]
+            resume=self.resume,  # pyright: ignore[reportArgumentType]
+            mode=self.mode,  # pyright: ignore[reportArgumentType]
         )
 
         self._started = True
@@ -209,9 +207,9 @@ class WandbLogger(LoggerImpl):
                         if i == 0:
                             val = histogram_value.bucket_limits[0]
                         else:
-                            val = (histogram_value.bucket_limits[i-1] + histogram_value.bucket_limits[i]) / 2
+                            val = (histogram_value.bucket_limits[i - 1] + histogram_value.bucket_limits[i]) / 2
                         values.extend([val] * count)
-                
+
                 if values:
                     # wandb.Histogram accepts lists directly
                     metrics[key] = self._wandb.Histogram(values)
@@ -247,22 +245,22 @@ class WandbLogger(LoggerImpl):
                 # vertices: (batch_size, num_vertices, 3) or (num_vertices, 3)
                 # faces: (batch_size, num_faces, 3) or (num_faces, 3)
                 vertices = mesh_value.vertices
-                
+
                 # Handle batch dimension - take first batch if present
                 if vertices.ndim == 3:
                     vertices = vertices[0]
-                
+
                 obj3d_data = {
                     "type": "lidar/beta",
                     "vertices": vertices.tolist(),
                 }
-                
+
                 if mesh_value.faces is not None:
                     faces = mesh_value.faces
                     if faces.ndim == 3:
                         faces = faces[0]
                     obj3d_data["faces"] = faces.tolist()
-                
+
                 if mesh_value.colors is not None:
                     colors = mesh_value.colors
                     if colors.ndim == 3:
@@ -272,7 +270,7 @@ class WandbLogger(LoggerImpl):
                     if colors.dtype == np.uint8:
                         colors = colors.astype(np.float32) / 255.0
                     obj3d_data["colors"] = colors.tolist()
-                
+
                 metrics[key] = self._wandb.Object3D(obj3d_data)
 
         # Log any pending files as artifacts or text

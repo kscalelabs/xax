@@ -1,11 +1,11 @@
 """Defines a mixin for incorporating some logging functionality."""
 
-from enum import Enum
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import TracebackType
-from typing import Generic, Self, TypeVar, Any
+from typing import Any, Generic, Self, TypeVar
 
 import jax
 
@@ -17,7 +17,7 @@ from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger
 from xax.task.loggers.tensorboard import TensorboardLogger
-from xax.task.loggers.wandb import WandbConfigModeOption, WandbLogger, WandbConfigMode, WandbConfigResume
+from xax.task.loggers.wandb import WandbConfigMode, WandbConfigModeOption, WandbConfigResume, WandbLogger
 from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
 
@@ -124,7 +124,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                 self._create_logger_backend(),
             )
 
-    def _create_logger_backend(self):
+    def _create_logger_backend(self) -> LoggerImpl:
         match self.config.logger_backend:
             case LoggerBackend.TENSORBOARD:
                 return TensorboardLogger(
@@ -133,7 +133,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                 )
             case LoggerBackend.WANDB:
                 run_config = {}
-                if hasattr(self.config, '__dict__'):
+                if hasattr(self.config, "__dict__"):
                     # Convert config to a serializable dictionary
                     run_config = self._config_to_dict(self.config)
 
@@ -154,38 +154,36 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                 # This shouldn't happen, as validation should take care of this
                 raise Exception(f"Invalid logger_backend '{self.config.logger_backend}'")
 
-    def _config_to_dict(self, config: Any) -> dict[str, Any]:
+    def _config_to_dict(self, config: Config) -> dict[str, Any]:
         """Convert a config object to a dictionary for W&B logging.
-        
+
         Args:
             config: The configuration object to convert.
-            
+
         Returns:
             A dictionary representation of the config.
         """
-        if hasattr(config, '__dict__'):
+        if hasattr(config, "__dict__"):
             result = {}
             for key, value in config.__dict__.items():
-                if not key.startswith('_'):
+                if not key.startswith("_"):
                     # Recursively convert nested configs
-                    if hasattr(value, '__dict__'):
+                    if hasattr(value, "__dict__"):
                         result[key] = self._config_to_dict(value)
                     elif isinstance(value, (list, tuple)):
                         # Handle lists/tuples that might contain configs
                         result[key] = [
-                            self._config_to_dict(item) if hasattr(item, '__dict__') else item
-                            for item in value
+                            self._config_to_dict(item) if hasattr(item, "__dict__") else item for item in value
                         ]
                     elif isinstance(value, dict):
                         # Handle dicts that might contain configs
                         result[key] = {
-                            k: self._config_to_dict(v) if hasattr(v, '__dict__') else v
-                            for k, v in value.items()
+                            k: self._config_to_dict(v) if hasattr(v, "__dict__") else v for k, v in value.items()
                         }
                     else:
                         result[key] = value
             return result
-        return config
+        return {}
 
     def write_logs(self, state: State) -> None:
         self.logger.write(state)
