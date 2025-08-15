@@ -164,7 +164,7 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
             A dictionary representation of the config.
         """
         if hasattr(config, "__dict__"):
-            result = {}
+            result: dict[str, Any] = {}
             for key, value in config.__dict__.items():
                 if not key.startswith("_"):
                     # Recursively convert nested configs

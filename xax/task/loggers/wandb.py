@@ -108,10 +108,7 @@ class WandbLogger(LoggerImpl):
         if run_directory is not None:
             self.wandb_dir = Path(run_directory).expanduser().resolve() / "wandb"
             self.wandb_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            self.wandb_dir = None
 
-        self.run = None
         self._started = False
 
         # Store pending files to log
@@ -137,8 +134,8 @@ class WandbLogger(LoggerImpl):
             tags=self.tags,
             notes=self.notes,
             reinit=self.reinit,
-            resume=self.resume,  # pyright: ignore[reportArgumentType]
-            mode=self.mode,  # pyright: ignore[reportArgumentType]
+            resume=self.resume,  # type: ignore[arg-type]
+            mode=self.mode,  # type: ignore[arg-type]
         )
 
         self._started = True
@@ -151,7 +148,6 @@ class WandbLogger(LoggerImpl):
 
         if self.run is not None:
             self.run.finish()
-            self.run = None
         self._started = False
 
     def log_file(self, name: str, contents: str) -> None:
@@ -178,7 +174,7 @@ class WandbLogger(LoggerImpl):
         global_step = line.state.num_steps.item()
 
         # Dictionary to collect all metrics for this step
-        metrics = {}
+        metrics: dict[str, Any] = {}
 
         # Log scalars
         for namespace, scalars in line.scalars.items():
