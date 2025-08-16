@@ -17,7 +17,13 @@ from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger
 from xax.task.loggers.tensorboard import TensorboardLogger
-from xax.task.loggers.wandb import WandbConfigMode, WandbConfigModeOption, WandbConfigResume, WandbLogger
+from xax.task.loggers.wandb import (
+    WandbConfigMode,
+    WandbConfigModeOption,
+    WandbConfigReinitOption,
+    WandbConfigResume,
+    WandbLogger,
+)
 from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
 
@@ -74,8 +80,8 @@ class LoggerConfig(BaseConfig):
         value=False,
         help="Whether to resume a previous run. Can be a run ID string.",
     )
-    wandb_reinit: bool = field(
-        value=True,
+    wandb_reinit: WandbConfigReinitOption = field(
+        value=WandbConfigReinitOption.RETURN_PREVIOUS,
         help="Whether to allow multiple wandb.init() calls in the same process.",
     )
 

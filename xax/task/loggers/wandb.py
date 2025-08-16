@@ -48,6 +48,11 @@ class WandbConfigModeOption(str, Enum):
     SHARED = "shared"
 
 
+class WandbConfigReinitOption(str, Enum):
+    RETURN_PREVIOUS = "return_previous"
+    FINISH_PREVIOUS = "finish_previous"
+
+
 WandbConfigResume = WandbConfigResumeOption | bool
 WandbConfigMode = WandbConfigModeOption | None
 
@@ -63,7 +68,7 @@ class WandbLogger(LoggerImpl):
         tags: list[str] | None = None,
         notes: str | None = None,
         log_interval_seconds: float = 10.0,
-        reinit: bool = True,
+        reinit: WandbConfigReinitOption = WandbConfigReinitOption.RETURN_PREVIOUS,
         resume: WandbConfigResume = False,
         mode: WandbConfigMode = None,
     ) -> None:
@@ -133,9 +138,9 @@ class WandbLogger(LoggerImpl):
             config=self.config,
             tags=self.tags,
             notes=self.notes,
-            reinit=self.reinit,
-            resume=self.resume,  # type: ignore[arg-type]
-            mode=self.mode,  # type: ignore[arg-type]
+            reinit=self.reinit.value,
+            resume=self.resume.value if isinstance(self.resume, WandbConfigResumeOption) else self.resume,
+            mode=self.mode.value if isinstance(self.mode, WandbConfigModeOption) else self.mode,
         )
 
         self._started = True
