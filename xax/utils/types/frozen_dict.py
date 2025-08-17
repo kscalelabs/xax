@@ -146,3 +146,7 @@ def unfreeze(x: FrozenDict[K, V] | dict[str, Any]) -> dict[Any, Any]:  # noqa: A
         return ys
     else:
         return x
+
+
+def freeze_dict(x: Mapping[K, V]) -> FrozenDict[K, V]:
+    return FrozenDict(x)
