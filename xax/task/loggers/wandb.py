@@ -285,7 +285,7 @@ class WandbLogger(LoggerImpl):
             )
             with artifact.new_file(name) as f:
                 f.write(contents)
-            metrics[key] = artifact
+            artifact.save()
         self.files.clear()
 
         # Log all metrics at once
