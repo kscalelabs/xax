@@ -277,8 +277,15 @@ class WandbLogger(LoggerImpl):
         # Log any pending files as artifacts or text
         for name, contents in self.files.items():
             # Log as HTML text
-            key = sanitize_metric_name(f"files/{name}")
-            metrics[key] = self._wandb.Html(f"<pre>{contents}</pre>")
+            key = sanitize_metric_name(name)
+            is_training_code = "code" in name
+            artifact = self._wandb.Artifact(
+                name=key if not is_training_code else "training_code",
+                type="code" if is_training_code else "unspecified",
+            )
+            with artifact.new_file(name) as f:
+                f.write(contents)
+            metrics[key] = artifact
         self.files.clear()
 
         # Log all metrics at once
