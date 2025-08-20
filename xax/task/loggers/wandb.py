@@ -278,6 +278,7 @@ class WandbLogger(LoggerImpl):
         for name, contents in self.files.items():
             # Log as HTML text
             key = sanitize_metric_name(name)
+            key = f"{self.run.name}_{key}"
             is_training_code = "code" in name
             artifact = self._wandb.Artifact(
                 name=key if not is_training_code else "training_code",
