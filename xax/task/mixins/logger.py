@@ -2,9 +2,10 @@
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import TracebackType
-from typing import Generic, Self, TypeVar
+from typing import Any, Generic, Self, TypeVar
 
 import jax
 
@@ -16,8 +17,20 @@ from xax.task.loggers.json import JsonLogger
 from xax.task.loggers.state import StateLogger
 from xax.task.loggers.stdout import StdoutLogger
 from xax.task.loggers.tensorboard import TensorboardLogger
+from xax.task.loggers.wandb import (
+    WandbConfigMode,
+    WandbConfigModeOption,
+    WandbConfigReinitOption,
+    WandbConfigResume,
+    WandbLogger,
+)
 from xax.task.mixins.artifacts import ArtifactsMixin
 from xax.utils.text import is_interactive_session
+
+
+class LoggerBackend(str, Enum):
+    TENSORBOARD = "tensorboard"
+    WANDB = "wandb"
 
 
 @jax.tree_util.register_dataclass
@@ -27,9 +40,49 @@ class LoggerConfig(BaseConfig):
         value=1.0,
         help="The interval between successive log lines.",
     )
+    logger_backend: LoggerBackend = field(
+        value=LoggerBackend.TENSORBOARD,
+        help="The logger backend to use",
+    )
     tensorboard_log_interval_seconds: float = field(
         value=10.0,
         help="The interval between successive Tensorboard log lines.",
+    )
+    wandb_project: str | None = field(
+        value=None,
+        help="The name of the W&B project to log to.",
+    )
+    wandb_entity: str | None = field(
+        value=None,
+        help="The W&B entity (team or user) to log to.",
+    )
+    wandb_name: str | None = field(
+        value=None,
+        help="The name of this run in W&B.",
+    )
+    wandb_tags: list[str] | None = field(
+        value=None,
+        help="List of tags for this W&B run.",
+    )
+    wandb_notes: str | None = field(
+        value=None,
+        help="Notes about this W&B run.",
+    )
+    wandb_log_interval_seconds: float = field(
+        value=10.0,
+        help="The interval between successive W&B log lines.",
+    )
+    wandb_mode: WandbConfigMode = field(
+        value=WandbConfigModeOption.ONLINE,
+        help="Mode for wandb (online, offline, or disabled).",
+    )
+    wandb_resume: WandbConfigResume = field(
+        value=False,
+        help="Whether to resume a previous run. Can be a run ID string.",
+    )
+    wandb_reinit: WandbConfigReinitOption = field(
+        value=WandbConfigReinitOption.RETURN_PREVIOUS,
+        help="Whether to allow multiple wandb.init() calls in the same process.",
     )
 
 
@@ -74,11 +127,69 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                 StateLogger(
                     run_directory=self.exp_dir,
                 ),
-                TensorboardLogger(
-                    run_directory=self.exp_dir,
-                    log_interval_seconds=self.config.tensorboard_log_interval_seconds,
-                ),
+                self._create_logger_backend(),
             )
+
+    def _create_logger_backend(self) -> LoggerImpl:
+        match self.config.logger_backend:
+            case LoggerBackend.TENSORBOARD:
+                return TensorboardLogger(
+                    run_directory=self.exp_dir if isinstance(self, ArtifactsMixin) else "./",
+                    log_interval_seconds=self.config.tensorboard_log_interval_seconds,
+                )
+            case LoggerBackend.WANDB:
+                run_config = {}
+                if hasattr(self.config, "__dict__"):
+                    # Convert config to a serializable dictionary
+                    run_config = self._config_to_dict(self.config)
+
+                return WandbLogger(
+                    project=self.config.wandb_project,
+                    entity=self.config.wandb_entity,
+                    name=self.config.wandb_name,
+                    run_directory=self.exp_dir if isinstance(self, ArtifactsMixin) else None,
+                    config=run_config,
+                    tags=self.config.wandb_tags,
+                    notes=self.config.wandb_notes,
+                    log_interval_seconds=self.config.wandb_log_interval_seconds,
+                    reinit=self.config.wandb_reinit,
+                    resume=self.config.wandb_resume,
+                    mode=self.config.wandb_mode,
+                )
+            case _:
+                # This shouldn't happen, as validation should take care of this
+                raise Exception(f"Invalid logger_backend '{self.config.logger_backend}'")
+
+    def _config_to_dict(self, config: Config) -> dict[str, Any]:
+        """Convert a config object to a dictionary for W&B logging.
+
+        Args:
+            config: The configuration object to convert.
+
+        Returns:
+            A dictionary representation of the config.
+        """
+        if hasattr(config, "__dict__"):
+            result: dict[str, Any] = {}
+            for key, value in config.__dict__.items():
+                if not key.startswith("_"):
+                    # Recursively convert nested configs
+                    if hasattr(value, "__dict__"):
+                        result[key] = self._config_to_dict(value)
+                    elif isinstance(value, (list, tuple)):
+                        # Handle lists/tuples that might contain configs
+                        result[key] = [
+                            self._config_to_dict(item) if hasattr(item, "__dict__") else item for item in value
+                        ]
+                    elif isinstance(value, dict):
+                        # Handle dicts that might contain configs
+                        result[key] = {
+                            k: self._config_to_dict(v) if hasattr(v, "__dict__") else v for k, v in value.items()
+                        }
+                    else:
+                        result[key] = value
+            return result
+        return {}
 
     def write_logs(self, state: State) -> None:
         self.logger.write(state)
