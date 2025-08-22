@@ -12,7 +12,7 @@ and running the update script:
     python -m scripts.update_api --inplace
 """
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 # This list shouldn't be modified by hand; instead, run the update script.
 __all__ = [
@@ -171,6 +171,7 @@ __all__ = [
     "uncolored",
     "wrapped",
     "FrozenDict",
+    "freeze_dict",
     "HashableArray",
     "hashable_array",
 ]
@@ -371,6 +372,7 @@ NAME_MAP: dict[str, str] = {
     "uncolored": "utils.text",
     "wrapped": "utils.text",
     "FrozenDict": "utils.types.frozen_dict",
+    "freeze_dict": "utils.types.frozen_dict",
     "HashableArray": "utils.types.hashable_array",
     "hashable_array": "utils.types.hashable_array",
 }
@@ -572,7 +574,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         uncolored,
         wrapped,
     )
-    from xax.utils.types.frozen_dict import FrozenDict
+    from xax.utils.types.frozen_dict import FrozenDict, freeze_dict
     from xax.utils.types.hashable_array import HashableArray, hashable_array
 
 del TYPE_CHECKING, IMPORT_ALL
