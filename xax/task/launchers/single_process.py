@@ -64,7 +64,7 @@ def select_best_gpu() -> int | None:
 
     # Find GPU with most available memory
     best_gpu = None
-    max_available = -1
+    max_available: float = -1.0
 
     for gpu_id, (total_mem, used_mem) in gpu_info.items():
         available_mem = total_mem - used_mem
