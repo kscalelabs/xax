@@ -33,6 +33,7 @@ setup(
     tests_require=requirements_dev,
     extras_require={
         "dev": requirements_dev,
+        "wandb": ["wandb[media]"],
     },
     package_data={
         "xax": [
