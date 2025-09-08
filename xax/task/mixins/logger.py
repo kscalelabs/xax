@@ -1,11 +1,11 @@
 """Defines a mixin for incorporating some logging functionality."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Generic, Self, TypeVar
+from typing import Generic, Self, TypeVar
 
 import jax
 
@@ -137,18 +137,14 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                     run_directory=self.exp_dir if isinstance(self, ArtifactsMixin) else "./",
                     log_interval_seconds=self.config.tensorboard_log_interval_seconds,
                 )
-            case LoggerBackend.WANDB:
-                run_config = {}
-                if hasattr(self.config, "__dict__"):
-                    # Convert config to a serializable dictionary
-                    run_config = self._config_to_dict(self.config)
 
+            case LoggerBackend.WANDB:
                 return WandbLogger(
                     project=self.config.wandb_project,
                     entity=self.config.wandb_entity,
                     name=self.config.wandb_name,
                     run_directory=self.exp_dir if isinstance(self, ArtifactsMixin) else None,
-                    config=run_config,
+                    config=asdict(self.config),
                     tags=self.config.wandb_tags,
                     notes=self.config.wandb_notes,
                     log_interval_seconds=self.config.wandb_log_interval_seconds,
@@ -156,40 +152,10 @@ class LoggerMixin(BaseTask[Config], Generic[Config]):
                     resume=self.config.wandb_resume,
                     mode=self.config.wandb_mode,
                 )
+
             case _:
                 # This shouldn't happen, as validation should take care of this
                 raise Exception(f"Invalid logger_backend '{self.config.logger_backend}'")
-
-    def _config_to_dict(self, config: Config) -> dict[str, Any]:
-        """Convert a config object to a dictionary for W&B logging.
-
-        Args:
-            config: The configuration object to convert.
-
-        Returns:
-            A dictionary representation of the config.
-        """
-        if hasattr(config, "__dict__"):
-            result: dict[str, Any] = {}
-            for key, value in config.__dict__.items():
-                if not key.startswith("_"):
-                    # Recursively convert nested configs
-                    if hasattr(value, "__dict__"):
-                        result[key] = self._config_to_dict(value)
-                    elif isinstance(value, (list, tuple)):
-                        # Handle lists/tuples that might contain configs
-                        result[key] = [
-                            self._config_to_dict(item) if hasattr(item, "__dict__") else item for item in value
-                        ]
-                    elif isinstance(value, dict):
-                        # Handle dicts that might contain configs
-                        result[key] = {
-                            k: self._config_to_dict(v) if hasattr(v, "__dict__") else v for k, v in value.items()
-                        }
-                    else:
-                        result[key] = value
-            return result
-        return {}
 
     def write_logs(self, state: State) -> None:
         self.logger.write(state)
