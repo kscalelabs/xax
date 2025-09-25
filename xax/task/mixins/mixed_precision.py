@@ -71,8 +71,10 @@ class MixedPrecisionMixin(BaseTask[Config], Generic[Config]):
         }
         
         if self.config.precision_policy not in policies:
-            logger.warning(f"Unknown precision policy '{self.config.precision_policy}', falling back to 'full'")
-            return policies["full"]
+            raise ValueError(
+                f"Unknown precision policy '{self.config.precision_policy}'. "
+                f"Available policies are: {list(policies.keys())}"
+            )
         
         return policies[self.config.precision_policy]
     
@@ -201,7 +203,4 @@ class MixedPrecisionMixin(BaseTask[Config], Generic[Config]):
 
     def get_current_loss_scale(self) -> Array:
         """Helper function to get current loss scale value for tuning dynamic loss scaling."""
-        if hasattr(self.loss_scaler, 'loss_scale'):
-            return self.loss_scaler.loss_scale
-        return jnp.array(1.0)
-
+        return self.loss_scaler.loss_scale

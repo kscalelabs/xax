@@ -145,5 +145,23 @@ if __name__ == "__main__":
         print(f"\n=== Training with {policy} precision policy ===")
         MnistClassification.launch(Config(
             precision_policy=policy,
-            max_steps=50,  # Reduced for demo
+            max_steps=150,
         ))
+
+    # Now we try an invalid policy to test whether an exception is raised
+    print("\n=== Testing invalid policy: 'invalid_policy' ===")
+    invalid_policy = "quarter_compute"
+    try:
+        MnistClassification.launch(Config(
+        precision_policy=invalid_policy,
+        max_steps = 150,
+        ), use_cli=False)
+        
+        print(f"Test failed! No exception raised for invalid policy. '{invalid_policy}'.")
+        
+    except ValueError as e:
+        print(f"Test passed! Exception raised for invalid policy.")
+        print(f"   Error message: {e}")
+    except Exception as e:
+        print(f"Test failed! Unexpected error occured (not an invalid policy).")
+        print(f"   Error message: {e}")
