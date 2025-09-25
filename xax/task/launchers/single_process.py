@@ -10,7 +10,6 @@ import jax
 
 from xax.task.base import RawConfigType
 from xax.task.launchers.base import BaseLauncher
-from xax.task.mixins.gpu_stats import get_num_gpus
 from xax.utils.logging import configure_logging
 
 if TYPE_CHECKING:
@@ -78,6 +77,9 @@ def select_best_gpu() -> int | None:
 def configure_gpu_devices(logger: logging.Logger | None = None) -> None:
     if logger is None:
         logger = configure_logging()
+
+    # Lazy import to avoid circular dependency
+    from xax.task.mixins.gpu_stats import get_num_gpus
 
     # If there are multiple devices, choose the one with the most
     # available memory (i.e., the one which is likely not being used
