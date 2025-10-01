@@ -10,6 +10,7 @@ jax
 jaxtyping
 optax
 orbax-checkpoint
+jmp
 
 # Data processing and serialization
 pillow

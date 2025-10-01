@@ -23,6 +23,7 @@ from xax.core.conf import field
 from xax.core.state import State
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
+from xax.utils.gpu import get_num_gpus
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -69,22 +70,6 @@ class GPUStatsInfo:
             temperature=stats.temperature,
             utilization=stats.utilization,
         )
-
-
-@functools.lru_cache(maxsize=None)
-def get_num_gpus() -> int:
-    command = "nvidia-smi --query-gpu=index --format=csv --format=csv,noheader"
-
-    try:
-        with subprocess.Popen(command.split(), stdout=subprocess.PIPE, universal_newlines=True) as proc:
-            stdout = proc.stdout
-            assert stdout is not None
-            rows = iter(stdout.readline, "")
-            return len(list(rows))
-
-    except Exception:
-        logger.exception("Caught exception while trying to query `nvidia-smi`")
-        return 0
 
 
 def parse_number(s: str) -> float:
