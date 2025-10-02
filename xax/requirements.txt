@@ -11,6 +11,7 @@ jaxtyping
 optax
 orbax-checkpoint
 jmp
+enum
 
 # Data processing and serialization
 pillow

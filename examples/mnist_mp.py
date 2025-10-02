@@ -13,6 +13,7 @@ from dpshdl.impl.mnist import MNIST
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import xax
+from xax.task.mixins.mixed_precision import PrecisionPolicy
 
 
 @dataclass
@@ -23,7 +24,7 @@ class Config(xax.MixedPrecisionConfig, xax.SupervisedConfig):
     num_hidden_layers: int = xax.field(2, help="Number of hidden layers")
 
     # Mixed precision configuration
-    precision_policy: str = xax.field("half_param", help="Mixed precision policy")
+    precision_policy: PrecisionPolicy = xax.field(PrecisionPolicy.FULL, help="Mixed precision policy...")
 
     # Added for testing:
     valid_every_n_seconds: float = xax.field(60.0, help="Run validation every N seconds")
@@ -139,29 +140,37 @@ if __name__ == "__main__":
     # python -m examples.mnist_mp
 
     # Test different precision policies
-    policies = ["full", "half_param", "half_compute"]
+    policies = [
+        PrecisionPolicy.FULL,
+        PrecisionPolicy.HALF_PARAM,
+        PrecisionPolicy.HALF_COMPUTE,
+    ]
 
     for policy in policies:
-        print(f"\n=== Training with {policy} precision policy ===")
-        MnistClassification.launch(Config(
-            precision_policy=policy,
-            max_steps=150,
-        ))
+        print(f"\n=== Training with {policy.value} precision policy ===")
+        MnistClassification.launch(
+            Config(
+                precision_policy=policy,
+                max_steps=500,
+            )
+        )
 
     # Now we try an invalid policy to test whether an exception is raised
-    print("\n=== Testing invalid policy: 'invalid_policy' ===")
-    invalid_policy = "quarter_compute"
+    print("\n=== Testing OmegaConf validation with invalid policy ===")
     try:
-        MnistClassification.launch(Config(
-        precision_policy=invalid_policy,
-        max_steps = 150,
-        ), use_cli=False)
-        
-        print(f"Test failed! No exception raised for invalid policy. '{invalid_policy}'.")
-        
-    except ValueError as e:
-        print(f"Test passed! Exception raised for invalid policy.")
-        print(f"   Error message: {e}")
+        from omegaconf import OmegaConf
+
+        cfg_dict = {
+            "precision_policy": "quarter_compute",
+            "max_steps": 150,
+        }
+
+        cfg = OmegaConf.create(cfg_dict)
+        config = OmegaConf.to_object(cfg)
+
+        print("Test failed! OmegaConf didn't validate the enum.")
+
     except Exception as e:
-        print(f"Test failed! Unexpected error occured (not an invalid policy).")
+        print("Test passed! OmegaConf validation caught invalid policy.")
+        print(f"   Error type: {type(e).__name__}")
         print(f"   Error message: {e}")

@@ -4,7 +4,6 @@ This logs GPU memory and utilization in a background process using
 ``nvidia-smi``, if a GPU is available in the system.
 """
 
-import functools
 import logging
 import os
 import re

@@ -11,6 +11,7 @@ import optax
 from jaxtyping import Array, PRNGKeyArray
 
 import xax
+from xax.task.mixins.mixed_precision import PrecisionPolicy
 
 
 @dataclass
@@ -22,7 +23,7 @@ class SimpleConfig(xax.MixedPrecisionConfig, xax.SupervisedConfig):
     learning_rate: float = xax.field(1e-3, help="Learning rate")
     max_steps: int = xax.field(10, help="Maximum number of training steps")
 
-    precision_policy: str = xax.field("half_param", help="Mixed precision policy")
+    precision_policy: PrecisionPolicy = xax.field(PrecisionPolicy.HALF_PARAM)
 
 
 class SimpleModel(eqx.Module):
@@ -47,8 +48,7 @@ class SimpleModel(eqx.Module):
         return x
 
 
-class SimpleTask(xax.MixedPrecisionMixin[SimpleConfig],
-                 xax.SupervisedTask[SimpleConfig]):
+class SimpleTask(xax.MixedPrecisionMixin[SimpleConfig], xax.SupervisedTask[SimpleConfig]):
     """Test task for end-to-end mixed precision training verification."""
 
     def get_model(self, params: xax.InitParams) -> SimpleModel:
@@ -80,7 +80,7 @@ def test_mixed_precision_training() -> None:
             SimpleConfig(
                 max_steps=5,
                 exp_dir=tmpdir,
-                precision_policy="half_param",
+                precision_policy=PrecisionPolicy.HALF_PARAM,
             ),
             use_cli=False,
         )
@@ -88,7 +88,7 @@ def test_mixed_precision_training() -> None:
 
 def test_multiple_precision_policies() -> None:
     """Test different precision policies."""
-    policies = ["full", "half_param", "half_compute"]
+    policies = [PrecisionPolicy.FULL, PrecisionPolicy.HALF_PARAM, PrecisionPolicy.HALF_COMPUTE]
 
     for policy in policies:
         with tempfile.TemporaryDirectory() as tmpdir:
