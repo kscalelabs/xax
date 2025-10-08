@@ -93,6 +93,8 @@ __all__ = [
     "CPUStatsOptions",
     "DataloaderConfig",
     "GPUStatsOptions",
+    "MixedPrecisionConfig",
+    "MixedPrecisionMixin",
     "StepContext",
     "InitParams",
     "ValidStepTimer",
@@ -294,6 +296,8 @@ NAME_MAP: dict[str, str] = {
     "CPUStatsOptions": "task.mixins.cpu_stats",
     "DataloaderConfig": "task.mixins.data_loader",
     "GPUStatsOptions": "task.mixins.gpu_stats",
+    "MixedPrecisionConfig": "task.mixins.mixed_precision",
+    "MixedPrecisionMixin": "task.mixins.mixed_precision",
     "StepContext": "task.mixins.step_wrapper",
     "InitParams": "task.mixins.train",
     "ValidStepTimer": "task.mixins.train",
@@ -495,6 +499,7 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.cpu_stats import CPUStatsOptions
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
+    from xax.task.mixins.mixed_precision import MixedPrecisionConfig, MixedPrecisionMixin
     from xax.task.mixins.step_wrapper import StepContext
     from xax.task.mixins.train import Batch, InitParams, Output, ValidStepTimer
     from xax.task.script import Script, ScriptConfig
