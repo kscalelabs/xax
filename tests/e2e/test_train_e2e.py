@@ -8,14 +8,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-import pytest
 from jaxtyping import Array, PRNGKeyArray
 
 import xax
 
 
 @dataclass
-class SimpleConfig(xax.Config):
+class SimpleConfig(xax.SupervisedConfig):
     """Test configuration."""
 
     batch_size: int = xax.field(32, help="Batch size for training")
@@ -46,11 +45,11 @@ class SimpleModel(eqx.Module):
         return x
 
 
-class SimpleTask(xax.Task[SimpleConfig]):
+class SimpleTask(xax.SupervisedTask[SimpleConfig]):
     """Test task for end-to-end training verification."""
 
-    def get_model(self, key: PRNGKeyArray) -> SimpleModel:
-        return SimpleModel(self.config, key=key)
+    def get_model(self, params: xax.InitParams) -> SimpleModel:
+        return SimpleModel(self.config, key=params.key)
 
     def get_optimizer(self) -> optax.GradientTransformation:
         return optax.adam(self.config.learning_rate)
@@ -71,7 +70,6 @@ class SimpleTask(xax.Task[SimpleConfig]):
             yield x, y
 
 
-@pytest.mark.timeout(60)
 def test_save_load_model() -> None:
     """Test that models can be saved and loaded correctly."""
     with tempfile.TemporaryDirectory() as tmpdir:

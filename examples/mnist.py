@@ -4,7 +4,7 @@ Run this example with `python -m examples.mnist`.
 """
 
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 import equinox as eqx
 import jax
@@ -16,7 +16,7 @@ import xax
 
 
 @dataclass
-class Config(xax.Config):
+class Config(xax.SupervisedConfig):
     batch_size: int = xax.field(128, help="The size of a minibatch")
     learning_rate: float = xax.field(1e-3, help="The learning rate")
     hidden_dim: int = xax.field(512, help="Hidden layer dimension")
@@ -26,7 +26,7 @@ class Config(xax.Config):
 class Model(eqx.Module):
     num_hidden_layers: int
     hidden_dim: int
-    layers: list
+    layers: tuple[Callable[[Array], Array], ...]
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class Model(eqx.Module):
         keys = jax.random.split(key, num_hidden_layers + 1)
 
         # Build layers list
-        layers = []
+        layers: list[Callable[[Array], Array]] = []
         current_dim = input_dim
 
         # Add hidden layers
@@ -59,7 +59,7 @@ class Model(eqx.Module):
         # Add output layer
         layers.extend([eqx.nn.Linear(current_dim, output_dim, key=keys[-1]), jax.nn.log_softmax])
 
-        self.layers = layers
+        self.layers = tuple(layers)
 
     def __call__(self, x: Array) -> Array:
         x = x.reshape(28 * 28)
@@ -68,12 +68,12 @@ class Model(eqx.Module):
         return x
 
 
-class MnistClassification(xax.Task[Config]):
-    def get_model(self, key: PRNGKeyArray) -> Model:
+class MnistClassification(xax.SupervisedTask[Config]):
+    def get_model(self, params: xax.InitParams) -> Model:
         return Model(
             self.config.num_hidden_layers,
             self.config.hidden_dim,
-            key=key,
+            key=params.key,
         )
 
     def get_optimizer(self) -> optax.GradientTransformation:

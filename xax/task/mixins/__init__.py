@@ -10,4 +10,5 @@ from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.process import ProcessConfig, ProcessMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
-from xax.task.mixins.train import TrainConfig, TrainMixin
+from xax.task.mixins.supervised import SupervisedConfig, SupervisedMixin
+from xax.task.mixins.train import InitParams, TrainConfig, TrainMixin

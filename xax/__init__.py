@@ -12,7 +12,7 @@ and running the update script:
     python -m scripts.update_api --inplace
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.4"
 
 # This list shouldn't be modified by hand; instead, run the update script.
 __all__ = [
@@ -23,10 +23,18 @@ __all__ = [
     "get_run_dir",
     "load_user_config",
     "State",
+    "AttentionCache",
+    "AttentionCacheDict",
     "CrossAttentionBlock",
     "SelfAttentionBlock",
     "Transformer",
     "TransformerBlock",
+    "TransformerCache",
+    "TransformerStack",
+    "Categorical",
+    "Distribution",
+    "MixtureOfGaussians",
+    "Normal",
     "FourierEmbeddings",
     "IdentityPositionalEmbeddings",
     "LearnedPositionalEmbeddings",
@@ -42,10 +50,13 @@ __all__ = [
     "euler_to_quat",
     "get_projected_gravity_vector_from_quat",
     "normalize",
+    "quat_mul",
     "quat_to_euler",
     "quat_to_rotmat",
+    "quat_to_yaw",
     "rotate_vector_by_quat",
     "rotation6d_to_rotation_matrix",
+    "rotation_matrix_to_quat",
     "rotation_matrix_to_rotation6d",
     "cross_entropy",
     "cast_norm_type",
@@ -83,16 +94,19 @@ __all__ = [
     "DataloaderConfig",
     "GPUStatsOptions",
     "StepContext",
+    "InitParams",
     "ValidStepTimer",
     "Script",
     "ScriptConfig",
     "Config",
+    "SupervisedConfig",
+    "SupervisedTask",
     "Task",
     "collate",
     "collate_non_null",
-    "breakpoint_if_nan",
+    "breakpoint_if_nonfinite",
     "get_named_leaves",
-    "log_if_nan",
+    "log_if_nonfinite",
     "BaseFileDownloader",
     "ContextTimer",
     "CumulativeTimer",
@@ -128,8 +142,10 @@ __all__ = [
     "worker_chunk",
     "profile",
     "compute_nan_ratio",
+    "diff_pytree",
     "flatten_array",
     "flatten_pytree",
+    "get_pytree_mapping",
     "get_pytree_param_count",
     "pytree_has_nans",
     "reshuffle_pytree",
@@ -155,6 +171,7 @@ __all__ = [
     "uncolored",
     "wrapped",
     "FrozenDict",
+    "freeze_dict",
     "HashableArray",
     "hashable_array",
 ]
@@ -186,7 +203,10 @@ if "XLA_FLAGS" in os.environ:
 # If Nvidia GPU is detected (meaning, is `nvidia-smi` available?), disable
 # Triton GEMM kernels. See https://github.com/NVIDIA/JAX-Toolbox
 if shutil.which("nvidia-smi") is not None:
-    xla_flags += ["--xla_gpu_enable_latency_hiding_scheduler=true", "--xla_gpu_enable_triton_gemm=false"]
+    xla_flags += [
+        "--xla_gpu_enable_latency_hiding_scheduler=true",
+        "--xla_gpu_enable_triton_gemm=false",
+    ]
 os.environ["XLA_FLAGS"] = " ".join(xla_flags)
 
 # If this flag is set, eagerly imports the entire package (not recommended).
@@ -204,10 +224,18 @@ NAME_MAP: dict[str, str] = {
     "get_run_dir": "core.conf",
     "load_user_config": "core.conf",
     "State": "core.state",
+    "AttentionCache": "nn.attention",
+    "AttentionCacheDict": "nn.attention",
     "CrossAttentionBlock": "nn.attention",
     "SelfAttentionBlock": "nn.attention",
     "Transformer": "nn.attention",
     "TransformerBlock": "nn.attention",
+    "TransformerCache": "nn.attention",
+    "TransformerStack": "nn.attention",
+    "Categorical": "nn.distributions",
+    "Distribution": "nn.distributions",
+    "MixtureOfGaussians": "nn.distributions",
+    "Normal": "nn.distributions",
     "FourierEmbeddings": "nn.embeddings",
     "IdentityPositionalEmbeddings": "nn.embeddings",
     "LearnedPositionalEmbeddings": "nn.embeddings",
@@ -223,10 +251,13 @@ NAME_MAP: dict[str, str] = {
     "euler_to_quat": "nn.geom",
     "get_projected_gravity_vector_from_quat": "nn.geom",
     "normalize": "nn.geom",
+    "quat_mul": "nn.geom",
     "quat_to_euler": "nn.geom",
     "quat_to_rotmat": "nn.geom",
+    "quat_to_yaw": "nn.geom",
     "rotate_vector_by_quat": "nn.geom",
     "rotation6d_to_rotation_matrix": "nn.geom",
+    "rotation_matrix_to_quat": "nn.geom",
     "rotation_matrix_to_rotation6d": "nn.geom",
     "cross_entropy": "nn.losses",
     "cast_norm_type": "nn.metrics",
@@ -264,16 +295,19 @@ NAME_MAP: dict[str, str] = {
     "DataloaderConfig": "task.mixins.data_loader",
     "GPUStatsOptions": "task.mixins.gpu_stats",
     "StepContext": "task.mixins.step_wrapper",
+    "InitParams": "task.mixins.train",
     "ValidStepTimer": "task.mixins.train",
     "Script": "task.script",
     "ScriptConfig": "task.script",
     "Config": "task.task",
+    "SupervisedConfig": "task.task",
+    "SupervisedTask": "task.task",
     "Task": "task.task",
     "collate": "utils.data.collate",
     "collate_non_null": "utils.data.collate",
-    "breakpoint_if_nan": "utils.debugging",
+    "breakpoint_if_nonfinite": "utils.debugging",
     "get_named_leaves": "utils.debugging",
-    "log_if_nan": "utils.debugging",
+    "log_if_nonfinite": "utils.debugging",
     "BaseFileDownloader": "utils.experiments",
     "ContextTimer": "utils.experiments",
     "CumulativeTimer": "utils.experiments",
@@ -309,8 +343,10 @@ NAME_MAP: dict[str, str] = {
     "worker_chunk": "utils.numpy",
     "profile": "utils.profile",
     "compute_nan_ratio": "utils.pytree",
+    "diff_pytree": "utils.pytree",
     "flatten_array": "utils.pytree",
     "flatten_pytree": "utils.pytree",
+    "get_pytree_mapping": "utils.pytree",
     "get_pytree_param_count": "utils.pytree",
     "pytree_has_nans": "utils.pytree",
     "reshuffle_pytree": "utils.pytree",
@@ -336,6 +372,7 @@ NAME_MAP: dict[str, str] = {
     "uncolored": "utils.text",
     "wrapped": "utils.text",
     "FrozenDict": "utils.types.frozen_dict",
+    "freeze_dict": "utils.types.frozen_dict",
     "HashableArray": "utils.types.hashable_array",
     "hashable_array": "utils.types.hashable_array",
 }
@@ -358,6 +395,9 @@ NAME_MAP.update(
     },
 )
 
+# In NAME_MAP
+NAME_MAP["TransformerStack"] = "nn.attention"
+
 
 def __getattr__(name: str) -> object:
     if name not in NAME_MAP:
@@ -378,7 +418,22 @@ if IMPORT_ALL or TYPE_CHECKING:
         load_user_config,
     )
     from xax.core.state import Phase, State
-    from xax.nn.attention import CrossAttentionBlock, SelfAttentionBlock, Transformer, TransformerBlock
+    from xax.nn.attention import (
+        AttentionCache,
+        AttentionCacheDict,
+        CrossAttentionBlock,
+        SelfAttentionBlock,
+        Transformer,
+        TransformerBlock,
+        TransformerCache,
+        TransformerStack,
+    )
+    from xax.nn.distributions import (
+        Categorical,
+        Distribution,
+        MixtureOfGaussians,
+        Normal,
+    )
     from xax.nn.embeddings import (
         EmbeddingKind,
         FourierEmbeddings,
@@ -398,19 +453,17 @@ if IMPORT_ALL or TYPE_CHECKING:
         euler_to_quat,
         get_projected_gravity_vector_from_quat,
         normalize,
+        quat_mul,
         quat_to_euler,
         quat_to_rotmat,
+        quat_to_yaw,
         rotate_vector_by_quat,
         rotation6d_to_rotation_matrix,
+        rotation_matrix_to_quat,
         rotation_matrix_to_rotation6d,
     )
     from xax.nn.losses import cross_entropy
-    from xax.nn.metrics import (
-        NormType,
-        cast_norm_type,
-        dynamic_time_warping,
-        get_norm,
-    )
+    from xax.nn.metrics import NormType, cast_norm_type, dynamic_time_warping, get_norm
     from xax.nn.parallel import is_master
     from xax.nn.ssm import SSM, BaseSSMBlock, DiagSSMBlock, SSMBlock
     from xax.task.base import RawConfigType
@@ -443,11 +496,15 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.task.mixins.data_loader import DataloaderConfig
     from xax.task.mixins.gpu_stats import GPUStatsOptions
     from xax.task.mixins.step_wrapper import StepContext
-    from xax.task.mixins.train import Batch, Output, ValidStepTimer
+    from xax.task.mixins.train import Batch, InitParams, Output, ValidStepTimer
     from xax.task.script import Script, ScriptConfig
-    from xax.task.task import Config, Task
+    from xax.task.task import Config, SupervisedConfig, SupervisedTask, Task
     from xax.utils.data.collate import CollateMode, collate, collate_non_null
-    from xax.utils.debugging import breakpoint_if_nan, get_named_leaves, log_if_nan
+    from xax.utils.debugging import (
+        breakpoint_if_nonfinite,
+        get_named_leaves,
+        log_if_nonfinite,
+    )
     from xax.utils.experiments import (
         BaseFileDownloader,
         ContextTimer,
@@ -486,8 +543,10 @@ if IMPORT_ALL or TYPE_CHECKING:
     from xax.utils.profile import profile
     from xax.utils.pytree import (
         compute_nan_ratio,
+        diff_pytree,
         flatten_array,
         flatten_pytree,
+        get_pytree_mapping,
         get_pytree_param_count,
         pytree_has_nans,
         reshuffle_pytree,
@@ -515,7 +574,7 @@ if IMPORT_ALL or TYPE_CHECKING:
         uncolored,
         wrapped,
     )
-    from xax.utils.types.frozen_dict import FrozenDict
+    from xax.utils.types.frozen_dict import FrozenDict, freeze_dict
     from xax.utils.types.hashable_array import HashableArray, hashable_array
 
 del TYPE_CHECKING, IMPORT_ALL

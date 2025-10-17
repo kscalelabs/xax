@@ -107,7 +107,7 @@ class State:
     @classmethod
     def from_dict(cls, **d: Unpack[StateDict]) -> "State":
         if "phase" in d:
-            d["_phase"] = _phase_to_int(cast(Phase, d.pop("phase")))
+            d["_phase"] = _phase_to_int(d.pop("phase"))
 
         int32_arr = jnp.array(
             [

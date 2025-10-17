@@ -1,24 +1,15 @@
 """Defines a mixin for running the training loop."""
 
-import bdb
-import contextlib
 import functools
 import itertools
 import logging
-import signal
-import sys
-import textwrap
 import time
-import traceback
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from threading import Thread
 from typing import (
     Any,
-    Generator,
     Generic,
-    Iterator,
     Literal,
     Mapping,
     Sequence,
@@ -30,7 +21,6 @@ from typing import (
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import numpy as np
 import optax
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -38,27 +28,26 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 from xax.core.conf import field
 from xax.core.state import Phase, State
 from xax.nn.functions import set_random_seed
-from xax.nn.parallel import is_master
 from xax.task.mixins.artifacts import ArtifactsConfig, ArtifactsMixin
-from xax.task.mixins.checkpointing import CheckpointingConfig, CheckpointingMixin, CheckpointPart, load_ckpt
+from xax.task.mixins.checkpointing import (
+    CheckpointingConfig,
+    CheckpointingMixin,
+    CheckpointPart,
+    load_ckpt,
+)
 from xax.task.mixins.data_loader import DataloadersConfig, DataloadersMixin
 from xax.task.mixins.logger import LoggerConfig, LoggerMixin
 from xax.task.mixins.runnable import RunnableConfig, RunnableMixin
 from xax.task.mixins.step_wrapper import StepContextConfig, StepContextMixin
 from xax.utils.experiments import (
-    ContextTimer,
     StateTimer,
-    TrainingFinishedError,
     diff_configs,
     get_diff_string,
     get_info_json,
     get_state_file_string,
     get_training_code,
 )
-from xax.utils.jax import jit as xax_jit
 from xax.utils.logging import LOG_PING, LOG_STATUS
-from xax.utils.pytree import get_pytree_param_count
-from xax.utils.text import highlight_exception_message, show_info
 from xax.utils.types.frozen_dict import FrozenDict
 
 logger = logging.getLogger(__name__)
@@ -155,6 +144,16 @@ class ValidStepTimer:
 
 
 @jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class InitParams:
+    key: PRNGKeyArray
+
+
+# Subclasses should be able to override the init params.
+InitParamsT = TypeVar("InitParamsT", bound=InitParams)
+
+
+@jax.tree_util.register_dataclass
 @dataclass
 class TrainConfig(
     CheckpointingConfig,
@@ -171,7 +170,6 @@ class TrainConfig(
     max_steps: int | None = field(None, help="Maximum number of steps to run")
     step_kind: str = field("step", help=f"How to measure a step; one of [{', '.join(get_args(StepKind))}]")
     random_seed: int = field(1337, help="Random seed for the task")
-    global_grad_clip: float = field(value=10.0, help="The maximum gradient norm to clip to.")
 
 
 Config = TypeVar("Config", bound=TrainConfig)
@@ -184,7 +182,7 @@ class TrainMixin(
     StepContextMixin[Config],
     ArtifactsMixin[Config],
     RunnableMixin[Config],
-    Generic[Config],
+    Generic[Config, InitParamsT],
     ABC,
 ):
     valid_step_timer: ValidStepTimer
@@ -304,15 +302,18 @@ class TrainMixin(
         self.write_logs(state)
 
     @abstractmethod
-    def get_model(self, key: PRNGKeyArray) -> PyTree | Sequence[PyTree]:
+    def get_model(self, params: InitParamsT) -> PyTree | Sequence[PyTree]:
         """Returns the Equinox model to train.
+
+        Args:
+            params: The parameters for initializing the model.
 
         Returns:
             The model to train.
         """
 
-    def _get_models(self, key: PRNGKeyArray) -> list[PyTree]:
-        models = self.get_model(key)
+    def _get_models(self, params: InitParamsT) -> list[PyTree]:
+        models = self.get_model(params)
         if isinstance(models, Sequence):
             models = list(models)
         elif isinstance(models, eqx.Module):
@@ -348,20 +349,20 @@ class TrainMixin(
     @overload
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: InitParamsT,
         load_optimizer: Literal[False] = False,
     ) -> tuple[PyTree, State]: ...
 
     @overload
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: InitParamsT,
         load_optimizer: Literal[True],
     ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State]: ...
 
     def load_initial_state(
         self,
-        key: PRNGKeyArray,
+        params: InitParamsT,
         load_optimizer: bool = False,
     ) -> (
         tuple[list[PyTree], State]
@@ -371,7 +372,7 @@ class TrainMixin(
 
         if init_ckpt_path is not None:
             logger.info("Loading checkpoint from %s", init_ckpt_path)
-            model, state, config = self.load_ckpt(init_ckpt_path, part="model_state_config")
+            model, state, config = self.load_ckpt(init_ckpt_path, params, part="model_state_config")
             config_diff = get_diff_string(diff_configs(asdict(config), asdict(self.config)))
             if config_diff:
                 logger.warning("Loaded config differs from current config:\n%s", config_diff)
@@ -379,12 +380,12 @@ class TrainMixin(
             if not load_optimizer:
                 return model, state
 
-            optimizer = self.load_ckpt(init_ckpt_path, part="opt")
-            opt_state = self.load_ckpt(init_ckpt_path, part="opt_state", model=model, optimizer=optimizer)
+            optimizer = self.load_ckpt(init_ckpt_path, params, part="opt")
+            opt_state = self.load_ckpt(init_ckpt_path, params, part="opt_state", model=model, optimizer=optimizer)
             return model, optimizer, opt_state, state
 
         logger.info("Starting a new training run")
-        models = self._get_models(key)
+        models = self._get_models(params)
         state = State.init_state()
 
         if not load_optimizer:
@@ -400,6 +401,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["all"],
     ) -> tuple[list[PyTree], list[optax.GradientTransformation], list[optax.OptState], State, Config]: ...
@@ -408,6 +410,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["model_state_config"],
     ) -> tuple[list[PyTree], State, Config]: ...
@@ -416,6 +419,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["model"],
     ) -> list[PyTree]: ...
@@ -424,6 +428,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["opt"],
     ) -> list[optax.GradientTransformation]: ...
@@ -432,6 +437,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["opt_state"],
         model: PyTree | None = None,
@@ -442,6 +448,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["state"],
     ) -> list[State]: ...
@@ -450,6 +457,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: Path,
+        init_params: InitParamsT,
         *,
         part: Literal["config"],
     ) -> list[Config]: ...
@@ -457,6 +465,7 @@ class TrainMixin(
     def load_ckpt(
         self,
         path: str | Path,
+        init_params: InitParamsT,
         *,
         part: CheckpointPart = "all",
         model: PyTree | None = None,
@@ -472,18 +481,15 @@ class TrainMixin(
     ):
         path = Path(path)
 
-        # This key isn't used for anything, it's just a required argument.
-        key = jax.random.PRNGKey(0)
-
         match part:
             case "model_state_config":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 model, state, config = load_ckpt(path, part="model_state_config", model_templates=model_specs)
                 config = self.get_config(config, use_cli=False)
                 return model, state, config
 
             case "model":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 return load_ckpt(path, part="model", model_templates=model_specs)
 
             case "opt":
@@ -492,7 +498,7 @@ class TrainMixin(
 
             case "opt_state":
                 if model is None:
-                    model_specs = eqx.filter_eval_shape(self._get_models, key)
+                    model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                     model = load_ckpt(path, part="model", model_templates=model_specs)
                 if optimizer is None:
                     optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
@@ -507,7 +513,7 @@ class TrainMixin(
                 return self.get_config(load_ckpt(path, part="config"), use_cli=False)
 
             case "all":
-                model_specs = eqx.filter_eval_shape(self._get_models, key)
+                model_specs = eqx.filter_eval_shape(self._get_models, init_params)
                 model = load_ckpt(path, part="model", model_templates=model_specs)
                 optimizer_specs = eqx.filter_eval_shape(self._get_optimizers)
                 optimizer = load_ckpt(path, part="opt", optimizer_templates=optimizer_specs)
@@ -519,129 +525,6 @@ class TrainMixin(
 
             case _:
                 raise ValueError(f"Unknown checkpoint part: {part}")
-
-    def get_output(self, model: PyTree, batch: Batch, state: State) -> Output:
-        """Gets the output from the model.
-
-        By default, we assume the model is a function that takes the batch as
-        input and returns the loss. This function can be patched to do more
-        complex operations instead.
-
-        Args:
-            model: The current model.
-            batch: The current minibatch of samples.
-            state: The current training state.
-        """
-        raise NotImplementedError("`get_output` must be implemented by the subclass")
-
-    def compute_loss(self, model: PyTree, batch: Batch, output: Output, state: State) -> Array:
-        """Gets the loss for the current batch.
-
-        By default, we assume the model is a function that takes the batch as
-        input and returns the loss. This function can be patched to do more
-        complex operations instead.
-
-        Args:
-            model: The current model.
-            batch: The current minibatch of samples.
-            output: The output from the model.
-            state: The current training state.
-
-        Returns:
-            The computed loss, as a tensor.
-        """
-        if not isinstance(output, Array):
-            raise ValueError(f"When model output is not the loss, you must override `compute_loss`. Got {type(output)}")
-        return output
-
-    def compute_metrics(
-        self,
-        model: PyTree,
-        batch: Batch,
-        output: Output,
-        loss: Array,
-        state: State,
-    ) -> dict[str, Array]:
-        """Computes the metrics for the current batch.
-
-        Args:
-            model: The current model.
-            batch: The current minibatch of samples.
-            output: The output from the model.
-            loss: The loss for the current batch.
-            state: The current training state.
-
-        Returns:
-            A dictionary of metrics.
-        """
-        return {
-            "loss": loss,
-        }
-
-    @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
-    def get_output_and_loss(
-        self,
-        model_arr: PyTree,
-        model_static: PyTree,
-        batch: Batch,
-        state: State,
-    ) -> tuple[Array, tuple[Output, dict[str, Array]]]:
-        model = eqx.combine(model_arr, model_static)
-        output = self.get_output(model, batch, state)
-        loss = self.compute_loss(model, batch, output, state)
-        metrics = self.compute_metrics(model, batch, output, loss, state)
-        return loss, (output, metrics)
-
-    def update(
-        self,
-        model_arr: PyTree,
-        model_static: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
-        batch: Batch,
-        state: State,
-    ) -> tuple[PyTree, optax.OptState, Output, dict[str, Array]]:
-        grad_fn = jax.grad(self.get_output_and_loss, argnums=0, has_aux=True)
-        grad_fn = xax_jit(static_argnums=[1], jit_level=3)(grad_fn)
-        grads, (output, metrics) = grad_fn(model_arr, model_static, batch, state)
-        model_arr, opt_state, grad_metrics = self.apply_gradients_with_clipping(model_arr, grads, optimizer, opt_state)
-        return model_arr, opt_state, output, metrics | grad_metrics
-
-    @xax_jit(static_argnames=["self", "optimizer"], jit_level=3)
-    def apply_gradients_with_clipping(
-        self,
-        model_arr: PyTree,
-        grads: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
-    ) -> tuple[PyTree, optax.OptState, dict[str, Array]]:
-        grad_norm = optax.global_norm(grads)
-        grad_metrics = {"grad_norm": grad_norm}
-
-        def apply(grads: PyTree, grad_norm: Array) -> tuple[PyTree, optax.OptState]:
-            # Clip gradients based on global norm, similar to optax.clip_by_global_norm
-            trigger = jnp.squeeze(grad_norm < self.config.global_grad_clip)
-
-            def clip_fn(t: Array) -> Array:
-                return jax.lax.select(trigger, t, (t / grad_norm.astype(t.dtype)) * self.config.global_grad_clip)
-
-            grads = jax.tree.map(clip_fn, grads)
-
-            # Apply the gradient updates.
-            updates, new_opt_state = optimizer.update(grads, opt_state, model_arr)
-            new_model_arr = eqx.apply_updates(model_arr, updates)
-            return new_model_arr, new_opt_state
-
-        # Don't apply updates if the gradient is NaN or Inf.
-        new_model_arr, new_opt_state = jax.lax.cond(
-            jnp.isnan(grad_norm) | jnp.isinf(grad_norm),
-            lambda *_: (model_arr, opt_state),
-            apply,
-            grads,
-            grad_norm,
-        )
-
-        return new_model_arr, new_opt_state, grad_metrics
 
     def get_size_of_batch(self, batch: Batch) -> int | None:
         """Gets the batch size for the current batch.
@@ -707,7 +590,7 @@ class TrainMixin(
 
     def log_state(self) -> None:
         logger.log(LOG_STATUS, self.task_path)
-        logger.log(LOG_STATUS, self.task_name)
+        logger.log(LOG_STATUS, self.exp_dir)
         logger.log(LOG_STATUS, "JAX devices: %s", jax.devices())
         self.logger.log_file("state.txt", get_state_file_string(self))
         self.logger.log_file("training_code.py", get_training_code(self))
@@ -716,203 +599,3 @@ class TrainMixin(
 
     def model_partition_fn(self, item: Any) -> bool:  # noqa: ANN401
         return eqx.is_inexact_array(item)
-
-    @xax_jit(static_argnames=["self", "model_static", "optimizer"], jit_level=3)
-    def train_step(
-        self,
-        model_arr: PyTree,
-        model_static: PyTree,
-        optimizer: optax.GradientTransformation,
-        opt_state: optax.OptState,
-        batch: Batch,
-        state: State,
-    ) -> tuple[PyTree, optax.OptState, Output, FrozenDict[str, Array]]:
-        model_arr, opt_state, output, metrics = self.update(model_arr, model_static, optimizer, opt_state, batch, state)
-        return model_arr, opt_state, output, FrozenDict(metrics)
-
-    @xax_jit(static_argnames=["self", "model_static"], jit_level=3)
-    def val_step(
-        self,
-        model_arr: PyTree,
-        model_static: PyTree,
-        batch: Batch,
-        state: State,
-    ) -> tuple[Output, FrozenDict[str, Array]]:
-        _, (output, metrics) = self.get_output_and_loss(model_arr, model_static, batch, state)
-        return output, FrozenDict(metrics)
-
-    def train_loop(
-        self,
-        models: Sequence[PyTree],
-        optimizers: Sequence[optax.GradientTransformation],
-        opt_states: Sequence[optax.OptState],
-        train_pf: Iterator[Batch],
-        valid_pf: Iterator[Batch],
-        state: State,
-    ) -> None:
-        if len(models) != 1 or len(optimizers) != 1 or len(opt_states) != 1:
-            raise ValueError(
-                "Vanilla training expects a single model, optimizer and optimizer state. "
-                f"Found {len(models)} models, {len(optimizers)} optimizers and {len(opt_states)} optimizer states."
-            )
-
-        model_arr, model_static = eqx.partition(models[0], self.model_partition_fn)
-        optimizer = optimizers[0]
-        opt_state = opt_states[0]
-
-        while not self.is_training_over(state):
-            valid_step = self.valid_step_timer(state)
-
-            if valid_step:
-                with ContextTimer() as timer:
-                    state = state.replace(phase="valid")
-                    valid_batch = next(valid_pf)
-                    output, metrics = self.val_step(model_arr, model_static, valid_batch, state)
-                    self.log_step(eqx.combine(model_arr, model_static), valid_batch, output, metrics, state)
-
-                    state = state.replace(
-                        num_steps=state.num_steps + 1,
-                        num_samples=state.num_samples + (self.get_size_of_batch(valid_batch) or 0),
-                    )
-
-                state = state.replace(
-                    elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
-                )
-
-            with ContextTimer() as timer:
-                state = self.on_step_start(state)
-                state = state.replace(phase="train")
-                train_batch = next(train_pf)
-                model_arr, opt_state, output, metrics = self.train_step(
-                    model_arr=model_arr,
-                    model_static=model_static,
-                    optimizer=optimizer,
-                    opt_state=opt_state,
-                    batch=train_batch,
-                    state=state,
-                )
-                self.log_step(eqx.combine(model_arr, model_static), train_batch, output, metrics, state)
-
-                state = state.replace(
-                    num_steps=state.num_steps + 1,
-                    num_samples=state.num_samples + (self.get_size_of_batch(train_batch) or 0),
-                )
-
-                state = self.on_step_end(state)
-
-            state = state.replace(
-                elapsed_time_s=state.elapsed_time_s + timer.elapsed_time,
-            )
-
-            if self.should_checkpoint(state):
-                model = eqx.combine(model_arr, model_static)
-                self.save_checkpoint(models=[model], optimizers=[optimizer], opt_states=[opt_state], state=state)
-
-        # After finishing training, save the final checkpoint.
-        model = eqx.combine(model_arr, model_static)
-        self.save_checkpoint(models=[model], optimizers=[optimizer], opt_states=[opt_state], state=state)
-
-    @contextlib.contextmanager
-    def get_train_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
-        try:
-            train_iterator: Iterator[Batch] = self.get_data_iterator("train", key=key)
-            yield train_iterator
-            return
-        except NotImplementedError:
-            pass
-
-        train_ds = self.get_dataset("train")
-        train_dl = self.get_dataloader(train_ds, "train")
-        train_pf = self.get_prefetcher(train_dl)
-
-        try:
-            with train_pf as train_pf_ctx:
-                yield train_pf_ctx
-        finally:
-            logger.info("Closing train prefetcher")
-
-    @contextlib.contextmanager
-    def get_valid_iterator(self, key: PRNGKeyArray) -> Generator[Iterator[Batch], None, None]:
-        try:
-            valid_iterator: Iterator[Batch] = self.get_data_iterator("valid", key=key)
-            yield valid_iterator
-            return
-        except NotImplementedError:
-            pass
-
-        valid_ds = self.get_dataset("valid")
-        valid_dl = self.get_dataloader(valid_ds, "valid")
-        valid_pf = self.get_prefetcher(valid_dl)
-
-        try:
-            with valid_pf as valid_pf_ctx:
-                yield valid_pf_ctx
-        finally:
-            logger.info("Closing valid prefetcher")
-
-    def run(self) -> None:
-        self.run_training()
-
-    def run_training(self) -> None:
-        """Runs the training loop.
-
-        Args:
-            model: The current model
-            task: The current task
-            optimizer: The current optimizer
-            lr_scheduler: The current learning rate scheduler
-
-        Raises:
-            ValueError: If the task is not a supervised learning task
-        """
-        with self:
-            key = self.prng_key()
-
-            self.set_loggers()
-
-            if is_master():
-                Thread(target=self.log_state, daemon=True).start()
-
-            key, model_key = jax.random.split(key)
-            models, optimizers, opt_states, state = self.load_initial_state(model_key, load_optimizer=True)
-            logger.info("Model size: %s", f"{get_pytree_param_count(models):,}")
-            logger.info("Optimizer size: %s", f"{get_pytree_param_count(opt_states):,}")
-
-            state = self.on_training_start(state)
-
-            def on_exit() -> None:
-                self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
-
-            # Handle user-defined interrupts during the training loop.
-            self.add_signal_handler(on_exit, signal.SIGUSR1, signal.SIGTERM)
-
-            key, tkey, vkey = jax.random.split(key, 3)
-            with self.get_train_iterator(tkey) as train_pf, self.get_valid_iterator(vkey) as valid_pf:
-                try:
-                    self.train_loop(
-                        models=models,
-                        optimizers=optimizers,
-                        opt_states=opt_states,
-                        train_pf=train_pf,
-                        valid_pf=valid_pf,
-                        state=state,
-                    )
-
-                except TrainingFinishedError:
-                    if is_master():
-                        num_steps, num_samples = int(state.num_steps), int(state.num_samples)
-                        show_info(f"Finished training after {num_steps} steps, {num_samples} samples", important=True)
-                    self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
-
-                except (KeyboardInterrupt, bdb.BdbQuit):
-                    if is_master():
-                        show_info("Interrupted training", important=True)
-
-                except BaseException:
-                    exception_tb = textwrap.indent(highlight_exception_message(traceback.format_exc()), "  ")
-                    sys.stdout.write(f"Caught exception during training loop:\n\n{exception_tb}\n")
-                    sys.stdout.flush()
-                    self.save_checkpoint(models=models, optimizers=optimizers, opt_states=opt_states, state=state)
-
-                finally:
-                    state = self.on_training_end(state)

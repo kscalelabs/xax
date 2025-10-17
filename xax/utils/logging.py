@@ -146,7 +146,7 @@ def configure_logging(
     rank: int | None = None,
     world_size: int | None = None,
     debug: bool | None = None,
-) -> None:
+) -> logging.Logger:
     """Instantiates logging.
 
     This captures logs and reroutes them to the Toasts module, which is
@@ -185,6 +185,8 @@ def configure_logging(
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
         logging.getLogger("PIL").setLevel(logging.WARNING)
         logging.getLogger("torch").setLevel(logging.WARNING)
+
+    return root_logger
 
 
 def get_unused_port(default: int | None = None) -> int:
