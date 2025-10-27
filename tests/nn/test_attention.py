@@ -35,13 +35,14 @@ def test_self_attention_block_loopback(use_rotary_embeddings: bool) -> None:
     x = jax.random.normal(subkey, (1, block.embed_dim))
 
     # Autoregressive unrolling.
+    tsz = 10
     cache = block.init_cache(x.dtype)
-    _, xs = xax.scan(scan_fn, (x, cache), length=10, jit_level=-1)
+    _, xs = xax.scan(scan_fn, (x, cache), length=tsz, jit_level=-1)
     xs = xs.squeeze(1)
     prev_xs = jnp.concatenate([x, xs[:-1]], axis=0)
 
     # Calls the batched forward function.
-    mask = block.init_mask(10, add_cache=True)
+    mask = block.init_mask(tsz, add_cache=True)
     next_xs, _ = block.forward(prev_xs, cache=cache, mask=mask)
 
     assert jnp.allclose(xs, next_xs, atol=1e-6)
