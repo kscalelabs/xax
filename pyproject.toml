@@ -41,6 +41,7 @@ module = [
     "tensorboard.*",
     "tensorflow_datasets.*",
     "transformers.*",
+    "jmp.*",
 ]
 
 ignore_missing_imports = true
